@@ -152,6 +152,9 @@ export async function execute(kind, { wallet, account, market: m, token, amount,
   const axn = await BUILDERS[kind]({
     kaminoMarket: market, amount: base, reserveAddress: reserve.address, owner: createNoopSigner(owner),
     obligation: ob ?? obligationType(), useV2Ixs: true, scopeRefreshConfig: undefined, currentLedgerInstant: now,
+    // The per-user lookup table only serves Kamino leverage flows; skipping it keeps first-time setup to plain
+    // ATA + metadata + obligation init (fewer programs for wallet simulators, less rent for the user).
+    initUserMetadata: { skipInitialization: false, skipLutCreation: true },
   })
   return send(wallet, account, owner, axn)
 }
