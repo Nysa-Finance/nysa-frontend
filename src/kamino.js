@@ -33,13 +33,35 @@ function reserveOf(market, token) {
   return r
 }
 
-// Per-token position for the wallet: supplied, borrowed, maxWithdraw (token units).
+// Live reserve metrics (same shape as the REST-derived ones in store.js), read at the current block.
+function reserveMetrics(m, t, r, now) {
+  const f = num(r.getMintFactor()) || 1
+  const price = num(r.getOracleMarketPrice())
+  const supplied = num(r.getTotalSupply()) / f
+  const borrowed = num(r.getBorrowedAmount()) / f
+  return {
+    supplyAPR: r.totalSupplyAPY(now) * 100,
+    borrowAPR: m.loans.includes(t.token_id) ? r.totalBorrowAPY(now) * 100 : null,
+    totalSupplied: supplied,
+    totalBorrowed: borrowed,
+    supplyUsd: supplied * price,
+    borrowUsd: borrowed * price,
+    utilization: r.calculateUtilizationRatio() * 100,
+    availableLiquidity: num(r.getLiquidityAvailableAmount()) / f,
+    price,
+    maxLtv: r.stats.loanToValue * 100,
+  }
+}
+
+// Per-token position for the wallet (supplied, borrowed, maxWithdraw in token units) plus live reserve metrics.
 export async function loadPositions(m, tokens, owner) {
   const [market, now] = await Promise.all([loadMarket(m), getCurrentLedgerInstant(rpc)])
   const ob = await market.getObligationByWallet(address(owner), obligationType())
   const out = {}
+  const reserves = {}
   for (const t of tokens) {
     const r = reserveOf(market, t)
+    reserves[t.token_id] = reserveMetrics(m, t, r, now)
     const f = num(r.getMintFactor()) || 1
     const supplied = ob ? num(ob.getDepositByReserve(r.address)?.amount) / f : 0
     const borrowed = ob ? num(ob.getBorrowByReserve(r.address)?.amount) / f : 0
@@ -49,7 +71,7 @@ export async function loadPositions(m, tokens, owner) {
     }
     out[t.token_id] = { supplied, borrowed, maxWithdraw }
   }
-  return out
+  return { positions: out, reserves }
 }
 
 async function fetchLuts(luts) {

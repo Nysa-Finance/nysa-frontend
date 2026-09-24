@@ -106,10 +106,16 @@ async function loadBalances(owner) {
   state.balances = out
 }
 
+// Positions via klend-sdk. The same read also yields reserve metrics at the current block, which replace the
+// REST ones (Kamino's API lags a few minutes after activity, e.g. showing 0% APY right after a borrow).
 async function loadPositions(owner) {
   const { loadPositions: read } = await kamino()
   const out = {}
-  for (const m of LIVE) Object.assign(out, await read(m, tokensOf(m), owner))
+  for (const m of LIVE) {
+    const { positions, reserves } = await read(m, tokensOf(m), owner)
+    Object.assign(out, positions)
+    Object.assign(state.reserves, reserves)
+  }
   state.positions = out
 }
 
