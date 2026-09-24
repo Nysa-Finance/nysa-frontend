@@ -1,0 +1,24 @@
+{
+  "name": "nysa-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node src/logic.test.js"
+  },
+  "dependencies": {
+    "@kamino-finance/klend-sdk": "^12.0.0",
+    "@solana/kit": "^2.3.0",
+    "@wallet-standard/app": "^1.1.1",
+    "buffer": "^6.0.3",
+    "decimal.js": "^10.6.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.0",
+    "vite": "^5.4.0"
+  }
+}

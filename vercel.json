@@ -1,0 +1,6 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://app.nysa.finance/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
