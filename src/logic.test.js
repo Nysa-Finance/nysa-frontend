@@ -31,8 +31,6 @@ const day = 86400
 const snap = snapshotPoints([{ address: 'A', points: 10, supplied: 1000, ts: 0 }], new Map([['A', 200], ['C', 50]]), 1.5 * day)
 assert.deepEqual(snap.find((r) => r.address === 'A'), { address: 'A', points: 1510, supplied: 200, ts: 1.5 * day })
 assert.deepEqual(snap.find((r) => r.address === 'C'), { address: 'C', points: 0, supplied: 50, ts: 1.5 * day })
-// Seeded state is re-baselined, never back-filled for time we did not observe.
-assert.equal(snapshotPoints([{ address: 'A', points: 10, supplied: 1000, ts: 0 }], new Map(), 9 * day, false)[0].points, 10)
 // Round-trips through the CSV the leaderboard reads.
 assert.deepEqual(parsePoints(pointsCsv(snap)).rows.map((r) => [r.address, r.points]), [['A', 1510], ['C', 0]])
 

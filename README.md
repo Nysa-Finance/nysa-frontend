@@ -33,8 +33,8 @@ A first deposit also creates the user's obligation: that setup goes in its own t
 Points accrue as **supplied USD × days**: each daily snapshot adds `last_supplied_usd × days since last snapshot` to every wallet's total,
 then records its current deposits (USDC lent + USDY collateral) in the Nysa Kamino market. Logic: `snapshotPoints` in `src/logic.js` (tested).
 - `api/points-snapshot.js` — Vercel Cron, daily at 00:00 UTC (`vercel.json`). Requires `Authorization: Bearer $CRON_SECRET`.
-  The first run carries over the old leaderboard from `POINTS_SEED_URL` (default `https://app.nysa.finance/api/points`) without back-filling unobserved time.
-- `api/points.js` — serves the leaderboard CSV from a private Vercel Blob; until the first snapshot it serves the seed leaderboard.
+  Only wallets with deposits in the Nysa market(s) listed in `src/config.js` (`LIVE`) are tracked; nothing is imported from elsewhere.
+- `api/points.js` — serves the leaderboard CSV from a private Vercel Blob (empty until the first snapshot).
 
 Vercel setup: create a **Blob** store and connect it to the project (adds `BLOB_READ_WRITE_TOKEN`), add `CRON_SECRET`, deploy, then run the first snapshot:
 

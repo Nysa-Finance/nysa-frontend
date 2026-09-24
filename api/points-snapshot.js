@@ -4,7 +4,7 @@
 import { put } from '@vercel/blob'
 import { LIVE } from '../src/config.js'
 import { parsePoints, snapshotPoints, pointsCsv } from '../src/logic.js'
-import { POINTS_BLOB, SEED_URL, readPoints } from './points.js'
+import { POINTS_BLOB, readPoints } from './points.js'
 
 // klend-sdk is imported lazily so auth is checked (and a clean 401 returned) before loading it.
 async function suppliedByOwner(rpcUrl) {
@@ -33,13 +33,10 @@ export default async function handler(req, res) {
     const rpcUrl = process.env.SOLANA_RPC || process.env.VITE_SOLANA_RPC
     if (!rpcUrl) throw new Error('SOLANA_RPC (or VITE_SOLANA_RPC) is not set')
     const balances = await suppliedByOwner(rpcUrl)
-    const existing = await readPoints()
-    // First run: carry over cumulative points from the previous leaderboard (re-baselined, not back-filled).
-    const prevCsv = existing ?? (await fetch(SEED_URL).then((r) => (r.ok ? r.text() : '')).catch(() => ''))
-    const rows = snapshotPoints(parsePoints(prevCsv).rows, balances, Math.floor(Date.now() / 1000), existing !== null)
+    const rows = snapshotPoints(parsePoints((await readPoints()) ?? '').rows, balances, Math.floor(Date.now() / 1000))
     await put(POINTS_BLOB, pointsCsv(rows), { access: 'private', addRandomSuffix: false, allowOverwrite: true, contentType: 'text/csv' })
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ ok: true, wallets: rows.length, suppliers: balances.size, seeded: existing === null }))
+    res.end(JSON.stringify({ ok: true, wallets: rows.length, suppliers: balances.size }))
   } catch (e) {
     console.error('[points-snapshot] failed', e)
     res.statusCode = 500

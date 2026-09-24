@@ -88,10 +88,10 @@ export function ago(ts, now = Date.now()) {
 }
 
 // One Farm Points snapshot: points accrue as supplied USD × days, using the balance seen at the previous snapshot.
-// prev: rows from parsePoints; balances: Map(owner -> supplied USD now); accrue=false re-baselines (e.g. seeded state).
-export function snapshotPoints(prev, balances, nowSec, accrue = true) {
+// prev: rows from parsePoints; balances: Map(owner -> supplied USD now).
+export function snapshotPoints(prev, balances, nowSec) {
   const rows = new Map(prev.map((r) => {
-    const days = accrue && Number.isFinite(r.ts) ? Math.max(nowSec - r.ts, 0) / 86400 : 0
+    const days = Number.isFinite(r.ts) ? Math.max(nowSec - r.ts, 0) / 86400 : 0
     return [r.address, { address: r.address, points: r.points + (r.supplied || 0) * days, supplied: balances.get(r.address) ?? 0, ts: nowSec }]
   }))
   for (const [address, usd] of balances) if (!rows.has(address)) rows.set(address, { address, points: 0, supplied: usd, ts: nowSec })
