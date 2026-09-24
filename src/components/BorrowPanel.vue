@@ -64,12 +64,13 @@ const repayWarning = computed(() => {
   if (!loanRow.value) return noData
   if (debt.value <= 0) return `You have no ${loan.value.name} debt to repay.`
   const a = num(repayAmt.value)
-  const wallet = loanRow.value?.walletBalance ?? 0
+  const name = loan.value.name
   if (!a) return null
   // A full repay settles the exact on-chain debt (incl. sub-unit interest), so the wallet must cover all of it.
-  if (repayAll.value && wallet < debt.value)
-    return `Repaying in full needs about ${amt(ceilTo(debt.value, loan.value.decimals), 6)} ${loan.value.name} (interest keeps accruing); you hold ${amt(wallet, 6)}.`
-  if (a > wallet) return `You only hold ${amt(wallet)} ${loan.value.name}.`
+  if (repayAll.value && !canCloseAll.value)
+    return `Your wallet is ${amt(shortfall.value, 6)} ${name} short of the full debt. Add a little ${name} to close the loan, or repay up to ${amt(maxPartial.value, 6)} ${name} now.`
+  if (a > repayWallet.value) return `You only hold ${amt(repayWallet.value)} ${name}.`
+  if (a > maxPartial.value) return `That would leave less than Kamino's minimum balance behind. Repay at most ${amt(maxPartial.value, 6)} ${name}, or the full debt.`
   return null
 })
 const canBorrow = computed(() => on.value && num(borrowAmt.value) > 0 && !borrowWarning.value && tx.status !== 'running')
@@ -77,9 +78,16 @@ const canRepay = computed(() => on.value && num(repayAmt.value) > 0 && !repayWar
 // Paying within one smallest unit of the debt means "repay everything": Kamino rejects leaving sub-unit dust
 // (NetValueRemainingTooSmall), so such repays are sent as a full repay and settled exactly on-chain.
 const repayAll = computed(() => coversAll(num(repayAmt.value), debt.value, loan.value.decimals))
+const repayWallet = computed(() => loanRow.value?.walletBalance ?? 0)
+const canCloseAll = computed(() => repayWallet.value >= ceilTo(debt.value, loan.value.decimals))
+const shortfall = computed(() => Math.max(ceilTo(debt.value, loan.value.decimals) - repayWallet.value, 0))
+// Largest partial repay that still leaves a couple of units of debt, safely above Kamino's dust minimum.
+const maxPartial = computed(() => floorTo(Math.min(repayWallet.value, debt.value - 2 * 10 ** -loan.value.decimals), loan.value.decimals))
+const atMaxPartial = computed(() => !canCloseAll.value && debt.value > 0 && num(repayAmt.value) > 0 && num(repayAmt.value) === maxPartial.value)
+// MAX closes the loan when the wallet covers it, otherwise repays as much as Kamino allows.
 const quickRepay = (p) => {
   const d = loan.value.decimals
-  const v = p === 100 ? ceilTo(debt.value, d) : floorTo((debt.value * p) / 100, d)
+  const v = p < 100 ? floorTo((debt.value * p) / 100, d) : canCloseAll.value ? ceilTo(debt.value, d) : maxPartial.value
   repayAmt.value = v > 0 ? String(v) : ''
 }
 
@@ -151,6 +159,10 @@ async function submitRepay() {
       </div>
       <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(num(repayAmt) * loanPrice) }}</span></div>
       <p v-if="repayAll && canRepay" class="n-note" style="margin-bottom: 16px">Repaying in full. The exact debt is settled on-chain so no dust is left behind.</p>
+      <p v-if="atMaxPartial && canRepay" class="n-note" style="margin-bottom: 16px">
+        Your wallet is {{ amt(shortfall, 6) }} {{ loan.name }} short of the full debt (interest accrued), so this repays all but a tiny balance.
+        Add a little {{ loan.name }} to your wallet to close the loan completely.
+      </p>
       <p v-if="repayWarning" class="n-warn" style="margin-bottom: 16px">{{ repayWarning }}</p>
       <button class="n-btn-block" :disabled="!canRepay" @click="submitRepay">Repay {{ loan.name }}</button>
     </template>
