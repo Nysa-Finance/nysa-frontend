@@ -62,6 +62,12 @@ onMounted(loadPoints)
 </template>
 
 <style scoped>
+/* Gentle open: backdrop fades, card rises. */
+.overlay { animation: fp-fade .2s ease-out; }
+.fp-modal { animation: fp-rise .24s ease-out; }
+@keyframes fp-fade { from { opacity: 0; } }
+@keyframes fp-rise { from { opacity: 0; transform: translateY(10px) scale(.98); } }
+@media (prefers-reduced-motion: reduce) { .overlay, .fp-modal { animation: none; } }
 .fp-modal { width: 100%; max-width: 560px; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 6px; padding: 24px; box-shadow: 0 40px 100px -20px #000c; }
 .fp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .fp-title { font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 28px; line-height: 1.1; }

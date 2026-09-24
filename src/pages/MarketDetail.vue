@@ -45,8 +45,14 @@ function openDd() {
             <span class="n-chip mainnet">Solana</span>
             <button class="n-pill" @click="openDd"><span class="n-dot" />Safety Score {{ m.dueDiligence.safetyScore }}/10</button>
           </div>
-          <button v-if="m.farmPoints" class="n-farm-points" style="margin: 0 0 14px" title="View the Farm Points leaderboard" @click="pointsOpen = true">Farm Points</button>
           <p class="n-sub blurb">{{ m.blurb }}</p>
+          <div v-if="m.farmPoints" class="farm-cta">
+            <div>
+              <div class="farm-cta-t">This market is eligible for farming Nysa Points.</div>
+              <div class="farm-cta-s">Lend out tokens and earn points.</div>
+            </div>
+            <button class="n-btn-sm ghost" @click="pointsOpen = true">Check your points →</button>
+          </div>
           <div class="n-stats stat-2 head-stats">
             <div class="n-stat"><div class="k">Collateral deposited</div><div class="v"><span v-if="state.loaded">{{ usd(sum(m.collateral, 'supplyUsd')) }}</span><span v-else class="n-skel" /></div></div>
             <div class="n-stat"><div class="k">Global borrowed</div><div class="v"><span v-if="state.loaded">{{ usd(sum(m.loans, 'borrowUsd')) }}</span><span v-else class="n-skel" /></div></div>
@@ -159,6 +165,10 @@ function openDd() {
 .side { position: sticky; top: 96px; }
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
+.farm-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ec008c59; border-radius: 8px; background: #ec008c0f; }
+.farm-cta-t { font-size: 14px; font-weight: 500; }
+.farm-cta-s { margin-top: 2px; font-size: 13px; color: var(--n-text-3); }
+.farm-cta .n-btn-sm { flex-shrink: 0; }
 .n-thead { font-size: 11px; padding: 14px 20px; }
 .n-tr.sm { padding: 15px 20px; font-size: 14px; }
 .ad-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr 1fr; }
@@ -188,6 +198,7 @@ function openDd() {
 @media (max-width: 1320px) { .addr-full { display: none; } .addr-short { display: inline; } }
 @media (max-width: 1180px) { .n-table { overflow-x: auto; } }
 @media (max-width: 860px) {
+  .farm-cta { flex-direction: column; align-items: stretch; }
   .n-detail-grid { grid-template-columns: 1fr; gap: 30px; }
   .side { position: static; }
   .addr-row { padding: 14px 18px; gap: 12px; }
