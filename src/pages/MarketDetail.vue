@@ -10,6 +10,7 @@ import LendPanel from '../components/LendPanel.vue'
 import BorrowPanel from '../components/BorrowPanel.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 import NotFound from './NotFound.vue'
+import Section from '../components/Section.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,13 +21,14 @@ const collateral = computed(() => m.value.collateral.map(tok))
 const loans = computed(() => m.value.loans.map(tok))
 const r = (id) => rowOf(id)?.reserve
 const sum = (ids, k) => ids.reduce((s, id) => s + (r(id)?.[k] ?? 0), 0)
-const ddOpen = ref(false)
 const pointsOpen = ref(false)
 const back = () => (history.state?.back ? router.back() : router.push('/'))
 
 function openDd() {
-  ddOpen.value = true
-  document.getElementById('dd')?.scrollIntoView({ behavior: 'smooth' })
+  const dd = document.getElementById('dd')
+  if (!dd) return
+  dd.open = true
+  dd.scrollIntoView({ behavior: 'smooth' })
 }
 </script>
 
@@ -45,14 +47,13 @@ function openDd() {
           </div>
           <button v-if="m.farmPoints" class="n-farm-points" style="margin: 0 0 14px" title="View the Farm Points leaderboard" @click="pointsOpen = true">Farm Points</button>
           <p class="n-sub blurb">{{ m.blurb }}</p>
-          <div class="n-stats stat-2">
+          <div class="n-stats stat-2 head-stats">
             <div class="n-stat"><div class="k">Collateral deposited</div><div class="v"><span v-if="state.loaded">{{ usd(sum(m.collateral, 'supplyUsd')) }}</span><span v-else class="n-skel" /></div></div>
             <div class="n-stat"><div class="k">Global borrowed</div><div class="v"><span v-if="state.loaded">{{ usd(sum(m.loans, 'borrowUsd')) }}</span><span v-else class="n-skel" /></div></div>
           </div>
         </div>
 
-        <section>
-          <h2 class="n-h2">Asset data</h2>
+        <Section title="Asset data" open>
           <div class="n-table">
             <div class="n-thead ad-grid"><div>Asset</div><div>Deposits</div><div>Borrowed</div><div>Utilization</div><div>Supply APY</div><div>Borrow APY</div></div>
             <div v-for="t in tokens" :key="t.token_id" class="n-tr sm ad-grid">
@@ -64,10 +65,9 @@ function openDd() {
               <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r(t.token_id)?.borrowAPR) }}</div>
             </div>
           </div>
-        </section>
+        </Section>
 
-        <section>
-          <h2 class="n-h2">Interest rate model</h2>
+        <Section title="Interest rate model">
           <div class="n-table">
             <div class="n-thead irm-grid"><div>Asset</div><div>Base rate</div><div>Rate at kink</div><div>Max rate</div><div>Kink</div></div>
             <div v-for="t in tokens" :key="t.token_id" class="n-tr sm irm-grid">
@@ -88,10 +88,9 @@ function openDd() {
               <IrmChart :irm="t.irm" :utilization="r(t.token_id)?.utilization" />
             </div>
           </div>
-        </section>
+        </Section>
 
-        <section>
-          <h2 class="n-h2">Risk parameters</h2>
+        <Section title="Risk parameters">
           <div class="n-table">
             <div class="n-thead rp-grid"><div>Collateral</div><div>Liability</div><div>Max LTV</div><div>Liquidation LTV</div><div>Max discount</div><div>Supply cap</div><div>Borrow cap</div></div>
             <div v-for="p in m.pairs" :key="p.collateral + p.liability" class="n-tr sm rp-grid">
@@ -105,10 +104,9 @@ function openDd() {
             </div>
           </div>
           <p class="hint">An LTV belongs to a (collateral, liability) pair, not to an asset on its own — the same collateral can carry a different limit against a different loan.</p>
-        </section>
+        </Section>
 
-        <section>
-          <h2 class="n-h2">Addresses</h2>
+        <Section title="Addresses">
           <div class="n-table">
             <div class="addr-row">
               <span class="addr-k">Vault ID</span>
@@ -125,27 +123,18 @@ function openDd() {
               </div>
             </template>
           </div>
-        </section>
+        </Section>
 
-        <section id="dd" class="dd-section">
-          <h2 class="n-h2">Due Diligence</h2>
-          <div class="n-table">
-            <button class="dd-head" :aria-expanded="ddOpen" @click="ddOpen = !ddOpen">
-              <span class="dd-k">Safety Score</span>
-              <span class="dd-score"><span class="dd-dot" />{{ m.dueDiligence.safetyScore }}/10</span>
-              <span class="dd-toggle">{{ ddOpen ? 'Hide details' : 'View details' }} <span class="chev" :class="{ open: ddOpen }">⌄</span></span>
-            </button>
-            <div v-if="ddOpen" class="dd-body">
-              <div class="dd-title">Due Diligence — {{ m.dueDiligence.subject }}</div>
-              <dl class="dd-list">
-                <template v-for="row in m.dueDiligence.rows" :key="row.label">
-                  <dt>{{ row.label }}</dt>
-                  <dd><a v-if="row.href" class="addr-link" :href="row.href" target="_blank" rel="noopener noreferrer">{{ row.value }} <span class="ext">↗</span></a><template v-else>{{ row.value }}</template></dd>
-                </template>
-              </dl>
-            </div>
-          </div>
-        </section>
+        <Section id="dd" title="Due Diligence" class="dd-section">
+          <template #meta><span class="dd-score"><span class="dd-dot" />Safety Score {{ m.dueDiligence.safetyScore }}/10</span></template>
+          <div class="dd-title">{{ m.dueDiligence.subject }}</div>
+          <dl class="dd-list">
+            <template v-for="row in m.dueDiligence.rows" :key="row.label">
+              <dt>{{ row.label }}</dt>
+              <dd><a v-if="row.href" class="addr-link" :href="row.href" target="_blank" rel="noopener noreferrer">{{ row.value }} <span class="ext">↗</span></a><template v-else>{{ row.value }}</template></dd>
+            </template>
+          </dl>
+        </Section>
       </div>
 
       <aside class="side">
@@ -165,7 +154,8 @@ function openDd() {
 
 <style scoped>
 .n-detail-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 40px; align-items: start; }
-.col { display: flex; flex-direction: column; gap: 38px; min-width: 0; }
+.col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.head-stats { margin-bottom: 22px; }
 .side { position: sticky; top: 96px; }
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
@@ -190,16 +180,9 @@ function openDd() {
 .addr-full, .addr-short { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
 .addr-short { display: none; }
 .dd-section { scroll-margin-top: 96px; }
-.dd-head { display: flex; align-items: center; gap: 14px; width: 100%; padding: 18px 20px; font-size: 14px; text-align: left; transition: background .15s; }
-.dd-head:hover { background: var(--n-bg-2); }
-.dd-k { color: var(--n-text-3); }
-.dd-score { display: inline-flex; align-items: center; gap: 9px; font-size: 20px; font-weight: 600; color: var(--n-green); }
-.dd-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--n-green); box-shadow: 0 0 0 4px #3ddc8429; }
-.dd-toggle { margin-left: auto; color: var(--n-text-3); font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
-.chev { display: inline-block; transition: transform .15s; transform: translateY(-3px); }
-.chev.open { transform: rotate(180deg) translateY(-3px); }
-.dd-body { border-top: 1px solid var(--n-line); padding: 20px; }
-.dd-title { font-size: 15px; font-weight: 500; margin-bottom: 16px; }
+.dd-score { display: inline-flex; align-items: center; gap: 9px; font-weight: 500; color: var(--n-green); }
+.dd-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--n-green); box-shadow: 0 0 0 4px #3ddc8429; }
+.dd-title { font-size: 15px; font-weight: 500; margin-bottom: 16px; color: var(--n-text-2); }
 .dd-list { display: grid; grid-template-columns: max-content 1fr; gap: 12px 32px; font-size: 14px; }
 .dd-list dt { color: var(--n-text-3); }
 @media (max-width: 1320px) { .addr-full { display: none; } .addr-short { display: inline; } }

@@ -11,7 +11,7 @@ export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 
 export const TOKENS = {
   'svm-usdy': {
-    token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.png', decimals: 6, price: 1.09,
+    token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.png', decimals: 6, price: 1.09, rwa: true,
     mint: 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6', reserve: 'rpTGWR3JDjjPfXLCg5Fx1GpSdUxPt1pxW7fwXGUT6js',
     priceFeed: '3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH', feedNote: 'Scope · index 406',
     irm: null, // collateral only

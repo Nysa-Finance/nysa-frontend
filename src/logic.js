@@ -86,3 +86,28 @@ export function ago(ts, now = Date.now()) {
   const h = Math.floor(m / 60)
   return h < 48 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`
 }
+
+// One Farm Points snapshot: points accrue as supplied USD × days, using the balance seen at the previous snapshot.
+// prev: rows from parsePoints; balances: Map(owner -> supplied USD now); accrue=false re-baselines (e.g. seeded state).
+export function snapshotPoints(prev, balances, nowSec, accrue = true) {
+  const rows = new Map(prev.map((r) => {
+    const days = accrue && Number.isFinite(r.ts) ? Math.max(nowSec - r.ts, 0) / 86400 : 0
+    return [r.address, { address: r.address, points: r.points + (r.supplied || 0) * days, supplied: balances.get(r.address) ?? 0, ts: nowSec }]
+  }))
+  for (const [address, usd] of balances) if (!rows.has(address)) rows.set(address, { address, points: 0, supplied: usd, ts: nowSec })
+  return [...rows.values()]
+}
+
+export const pointsCsv = (rows) =>
+  ['address,cumulative_points,last_supplied_usd,last_snapshot_ts', ...rows.map((r) => `${r.address},${r.points},${r.supplied},${r.ts}`)].join('\n') + '\n'
+
+// Health factor display (∞ when there is no debt) and its traffic-light colour.
+export const hfText = (v) => (!Number.isFinite(v) || v > 999 ? '∞' : v.toFixed(2))
+export const hfColor = (v) => (!Number.isFinite(v) || v >= 1.8 ? 'var(--n-green)' : v >= 1.3 ? 'var(--n-amber)' : 'var(--n-red)')
+
+// Compact duration: 45s, 3m, 5h, 2d.
+export function dur(sec) {
+  if (!Number.isFinite(sec)) return '—'
+  const s = Math.max(Math.round(sec), 0)
+  return s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`
+}

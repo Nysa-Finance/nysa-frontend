@@ -12,6 +12,7 @@ const router = createRouter({
     { path: '/borrow', name: 'borrow', component: () => import('./pages/Borrow.vue') },
     { path: '/portfolio', name: 'portfolio', component: () => import('./pages/Portfolio.vue') },
     { path: '/market/:id', name: 'market-detail', component: () => import('./pages/MarketDetail.vue') },
+    { path: '/analytics', name: 'analytics', component: () => import('./pages/Analytics.vue') },
     { path: '/dashboard', redirect: { name: 'markets' } },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./pages/NotFound.vue') },
   ],

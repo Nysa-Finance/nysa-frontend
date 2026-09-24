@@ -158,3 +158,41 @@ export async function execute(kind, { wallet, account, market: m, token, amount,
   })
   return send(wallet, account, owner, axn)
 }
+
+// Everything the Analytics page shows, read live from chain: reserves (incl. Scope oracle freshness) and positions.
+export async function loadAnalytics(m, tokens) {
+  const now = await getCurrentLedgerInstant(rpc)
+  const market = await loadMarket(m)
+  const reserves = tokens.map((t) => {
+    const r = reserveOf(market, t)
+    const f = num(r.getMintFactor()) || 1
+    const price = num(r.getOracleMarketPrice())
+    const supplied = num(r.getTotalSupply()) / f
+    const borrowed = num(r.getBorrowedAmount()) / f
+    return {
+      token: t, price, supplied, borrowed,
+      supplyUsd: supplied * price, borrowUsd: borrowed * price,
+      utilization: r.calculateUtilizationRatio() * 100,
+      supplyApy: r.totalSupplyAPY(now) * 100,
+      borrowApy: r.totalBorrowAPY(now) * 100,
+      supplyCap: num(r.stats.reserveDepositLimit) / f,
+      borrowCap: num(r.stats.reserveBorrowLimit) / f,
+      maxLtv: r.stats.loanToValue * 100,
+      oracleTs: Number(r.tokenOraclePrice?.timestamp ?? 0),
+      maxAge: Number(r.state.config.tokenInfo.maxAgePriceSeconds),
+    }
+  })
+  const positions = (await market.getAllObligationsForMarket(now)).map((ob) => {
+    const s = ob.refreshedStats
+    const debt = num(s.userTotalBorrow)
+    return {
+      owner: String(ob.state.owner),
+      deposits: num(s.userTotalDeposit),
+      debt,
+      ltv: num(s.loanToValue) * 100,
+      liqLtv: num(s.liquidationLtv) * 100,
+      hf: debt > 0 ? num(s.borrowLiquidationLimit) / debt : Infinity,
+    }
+  }).sort((a, b) => a.hf - b.hf || b.deposits - a.deposits)
+  return { reserves, positions, blockTime: Number(now.blockTime) }
+}

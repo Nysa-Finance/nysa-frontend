@@ -1,25 +1,17 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { state } from '../store.js'
+import { computed, onMounted } from 'vue'
+import { state, loadPoints, myPoints } from '../store.js'
 import { explorer } from '../config.js'
-import { parsePoints, short, ago } from '../logic.js'
+import { short, ago } from '../logic.js'
 
 const emit = defineEmits(['close'])
-const board = ref(null)
-const error = ref(null)
+const board = computed(() => state.points.board)
+const error = computed(() => state.points.error)
 const fmt = (n) => (n === 0 ? '0' : n < 0.01 ? '<0.01' : n.toLocaleString('en-US', { maximumFractionDigits: 2 }))
-const me = computed(() => board.value?.rows.find((r) => r.address === state.address))
+const me = computed(myPoints)
 const stale = computed(() => board.value && Date.now() / 1000 - board.value.updatedTs > 36 * 3600)
 
-onMounted(async () => {
-  try {
-    const res = await fetch('/api/points', { headers: { accept: 'text/csv' } })
-    if (!res.ok) throw new Error(`Points source responded ${res.status}`)
-    board.value = parsePoints(await res.text())
-  } catch (e) {
-    error.value = e.message || 'Could not load Farm Points.'
-  }
-})
+onMounted(loadPoints)
 </script>
 
 <template>
@@ -44,7 +36,7 @@ onMounted(async () => {
         <div v-else-if="state.address" class="fp-you-note">
           No points for <b>{{ short(state.address, 6) }}</b> yet. Supply to this market and your first points appear after the next daily snapshot.
         </div>
-        <div v-else class="fp-you-note">Connect a Phantom wallet to see your position.</div>
+        <div v-else class="fp-you-note"><button class="fp-connect" @click="state.connectOpen = true">Connect a wallet</button> to see your position.</div>
       </div>
       <div v-if="error" class="n-empty fp-block">{{ error }}</div>
       <div v-else-if="!board" class="fp-block">
@@ -81,6 +73,8 @@ onMounted(async () => {
 .fp-you-v { font-size: 20px; font-weight: 600; margin-top: 2px; }
 .fp-you-v.sm { font-size: 16px; color: var(--n-text-2); }
 .fp-you-note { color: var(--n-text-3); font-size: 13px; }
+.fp-connect { color: var(--n-pink); font-weight: 500; }
+.fp-connect:hover { text-decoration: underline; }
 .fp-you-note b { color: var(--n-text-2); font-weight: 500; }
 .fp-table { border: 1px solid var(--n-line); border-radius: 4px; max-height: 46vh; overflow-y: auto; }
 .fp-block { border: 1px solid var(--n-line); border-radius: 4px; padding: 16px; }

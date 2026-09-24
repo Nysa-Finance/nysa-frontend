@@ -2,6 +2,7 @@
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { KAMINO_API, SOLANA_RPC, LIVE, TOKENS, tok, tokensOf } from './config.js'
+import { parsePoints } from './logic.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
 const WALLET_KEY = 'connectedWallet'
@@ -25,6 +26,7 @@ export const state = reactive({
   walletName: null,
   wallets: [], // detected Wallet Standard wallets
   connectOpen: false,
+  points: { board: null, error: null }, // Farm Points leaderboard
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
@@ -183,6 +185,20 @@ export async function sendKaminoAction(kind, { market, token, amount, all }) {
   const { execute } = await kamino()
   return execute(kind, { wallet, account, market, token, amount, all })
 }
+
+// Farm Points leaderboard (shared by the modal, Portfolio and Analytics). Loaded once per page view.
+let pointsReq = null
+export function loadPoints() {
+  pointsReq ??= fetch('/api/points', { headers: { accept: 'text/csv' } })
+    .then((res) => { if (!res.ok) throw new Error(`Points source responded ${res.status}`); return res.text() })
+    .then((csv) => { state.points.board = parsePoints(csv); state.points.error = null })
+    .catch((e) => { state.points.error = e.message || 'Could not load Farm Points.'; pointsReq = null })
+  return pointsReq
+}
+export const myPoints = () => state.points.board?.rows.find((r) => r.address === state.address) ?? null
+
+// Lazy Analytics data (klend-sdk).
+export const loadAnalytics = async (m, tokens) => (await kamino()).loadAnalytics(m, tokens)
 
 let started = false
 export function start() {

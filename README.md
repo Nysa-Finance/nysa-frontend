@@ -11,7 +11,8 @@ npm test        # formatter and lending-math checks
 Put `VITE_SOLANA_RPC=<keyed RPC url>` in `.env` (gitignored; also set it in the Vercel project env). The public RPC often returns 403 to browsers.
 
 ## Pages
-`/` Markets · `/lend` · `/borrow` · `/portfolio` · `/market/:id?mode=lend|borrow&tab=&asset=` · 404.
+`/` Markets · `/lend` · `/borrow` · `/portfolio` · `/market/:id?mode=lend|borrow&tab=&asset=` · `/analytics` · 404.
+Market-detail and Analytics sections are collapsible cards (`src/components/Section.vue`, native `<details>`).
 The app also has a Terms of Service gate (stored in localStorage), a wallet connect modal, and a Farm Points leaderboard.
 
 ## Data sources
@@ -19,7 +20,8 @@ The app also has a Terms of Service gate (stored in localStorage), a wallet conn
 - Wallet balances come from Solana RPC `getTokenAccountsByOwner`.
 - Positions (supplied, borrowed, max withdraw) come from klend-sdk (`getObligationByWallet`), loaded lazily in `src/kamino.js`.
 - Wallets are discovered via Wallet Standard (Phantom first, then Solflare/Backpack/etc.).
-- Farm Points come from `/api/points`, proxied to the original deployment (see `vite.config.js` and `vercel.json`).
+- Farm Points come from `/api/points` (see below).
+- Analytics (oracle freshness, caps, APYs, open positions with health factor) is read live with klend-sdk in the browser, only on that page.
 - The IRM curve, risk parameters, addresses and due diligence are static, in `src/config.js`.
 
 ## Transactions
@@ -27,6 +29,19 @@ The app also has a Terms of Service gate (stored in localStorage), a wallet conn
 A first deposit also creates the user's obligation: that setup goes in its own transaction first (two wallet prompts), the same way the original app does it.
 `@orca-so/whirlpools-core` (WASM, only used by Kamino liquidity strategies) is aliased to `src/orca-stub.cjs`.
 
+## Farm Points
+Points accrue as **supplied USD × days**: each daily snapshot adds `last_supplied_usd × days since last snapshot` to every wallet's total,
+then records its current deposits (USDC lent + USDY collateral) in the Nysa Kamino market. Logic: `snapshotPoints` in `src/logic.js` (tested).
+- `api/points-snapshot.js` — Vercel Cron, daily at 00:00 UTC (`vercel.json`). Requires `Authorization: Bearer $CRON_SECRET`.
+  The first run carries over the old leaderboard from `POINTS_SEED_URL` (default `https://app.nysa.finance/api/points`) without back-filling unobserved time.
+- `api/points.js` — serves the leaderboard CSV from a private Vercel Blob; until the first snapshot it serves the seed leaderboard.
+
+Vercel setup: create a **Blob** store and connect it to the project (adds `BLOB_READ_WRITE_TOKEN`), add `CRON_SECRET`, deploy, then run the first snapshot:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://<your-domain>/api/points-snapshot
+```
+
 ## Not done yet
-- **Analytics / Liquidations.** On the original these read a hidden Euler/Sepolia cluster and a liquidation indexer that is offline, so they were not rebuilt.
+- **Liquidations page.** The original reads a liquidation indexer that is offline; open positions and health factors are shown in Analytics instead.
 - **Geo-block and sanctions screening.** These need a backend (`/api/geo` on the original).

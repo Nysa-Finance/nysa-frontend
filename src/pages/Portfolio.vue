@@ -1,10 +1,11 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { state, rowOf, priceOf } from '../store.js'
+import { state, rowOf, priceOf, loadPoints, myPoints } from '../store.js'
 import { LIVE, tok, tokensOf } from '../config.js'
-import { usd, pct, amt, healthFactor } from '../logic.js'
+import { usd, pct, amt, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
+import FarmPointsModal from '../components/FarmPointsModal.vue'
 
 const router = useRouter()
 const view = ref('deposits')
@@ -35,8 +36,11 @@ const netApy = computed(() => {
   return earn / supplied.value
 })
 const hf = computed(() => (loans.value.length ? Math.min(...loans.value.map((l) => l.hf)) : Infinity))
-const hfText = (v) => (!on.value ? '—' : !Number.isFinite(v) || v > 999 ? '∞' : v.toFixed(2))
-const hfColor = (v) => (!on.value ? 'var(--n-text-3)' : v >= 1.8 ? 'var(--n-green)' : v >= 1.3 ? 'var(--n-amber)' : 'var(--n-red)')
+const hfText = (v) => (on.value ? hfFmt(v) : '—')
+const hfColor = (v) => (on.value ? hfTone(v) : 'var(--n-text-3)')
+const pointsOpen = ref(false)
+const points = computed(myPoints)
+onMounted(loadPoints)
 const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params: { id: m.id }, query: { mode, tab, asset } })
 </script>
 
@@ -52,6 +56,12 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
     <div class="n-stat"><div class="k">Total Borrowed</div><div class="v">{{ on ? usd(borrowed) : '—' }}</div></div>
     <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ on ? pct(netApy) : '—' }}</div></div>
     <div class="n-stat"><div class="k">Health Factor</div><div class="v" :style="{ color: hfColor(hf) }">{{ hfText(hf) }}</div></div>
+  </div>
+
+  <div v-if="on" class="n-banner fp-banner">
+    <span v-if="points">Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span>
+    <span v-else>Supply to the USDY Ondo Market to start earning Farm Points. Points accrue as supplied balance × time, snapshotted daily.</span>
+    <button class="n-btn-sm ghost" @click="pointsOpen = true">View leaderboard</button>
   </div>
 
   <div class="n-seg toggle">
@@ -89,8 +99,11 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
       </div>
     </div></template>
   </div>
+  <FarmPointsModal v-if="pointsOpen" @close="pointsOpen = false" />
 </template>
 
 <style scoped>
 .mk { font-weight: 600; }
+.fp-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.fp-banner b { color: #fff; font-weight: 600; }
 </style>
