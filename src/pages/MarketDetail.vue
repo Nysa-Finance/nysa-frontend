@@ -59,7 +59,7 @@ function openDd() {
           </div>
         </div>
 
-        <Section title="Asset data" open>
+        <Section title="Asset data">
           <div class="n-table">
             <div class="n-thead ad-grid"><div>Asset</div><div>Deposits</div><div>Borrowed</div><div>Utilization</div><div>Supply APY</div><div>Borrow APY</div></div>
             <div v-for="t in tokens" :key="t.token_id" class="n-tr sm ad-grid">
