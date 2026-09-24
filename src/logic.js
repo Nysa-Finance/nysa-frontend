@@ -111,3 +111,9 @@ export function dur(sec) {
   const s = Math.max(Math.round(sec), 0)
   return s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`
 }
+
+// Round a token amount to its decimals without ever exceeding (floor) or undershooting (ceil) the true value.
+export const floorTo = (v, d) => (v > 0 ? Math.floor(v * 10 ** d + 1e-9) / 10 ** d : 0)
+export const ceilTo = (v, d) => (v > 0 ? Math.ceil(v * 10 ** d - 1e-9) / 10 ** d : 0)
+// True when paying `amount` would leave less than one smallest unit of `total` behind (i.e. it means "all of it").
+export const coversAll = (amount, total, d) => total > 0 && amount >= total - 10 ** -d

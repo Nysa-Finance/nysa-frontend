@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, usdFull, num } from '../logic.js'
+import { pct, amt, usdFull, num, floorTo, coversAll } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({ market: Object, tokens: Array, allTokens: Array, initialTab: String, initialAsset: String })
@@ -37,16 +37,19 @@ const warning = computed(() => {
 const canSubmit = computed(() => on.value && num(amount.value) > 0 && !warning.value && tx.status !== 'running')
 
 const quick = (p) => {
-  const v = (available.value * p) / 100
-  amount.value = v > 0 ? String(Number(v.toFixed(token.value.decimals))) : ''
+  const v = floorTo((available.value * p) / 100, token.value.decimals)
+  amount.value = v > 0 ? String(v) : ''
 }
+// Withdrawing (within one unit) everything supplied, with nothing holding it back, closes the deposit exactly on-chain.
+const withdrawAll = computed(() =>
+  tab.value === 'withdraw' && coversAll(num(amount.value), supplied.value, token.value.decimals) && coversAll(available.value, supplied.value, token.value.decimals))
 watch([tab, assetId], () => { amount.value = ''; reset() })
 watch(options, (o) => { if (!o.some((t) => t.token_id === assetId.value)) assetId.value = o[0]?.token_id })
 
 async function submit() {
   const t = token.value, a = num(amount.value)
   const [label, kind] = tab.value === 'lend' ? ['Supply', 'deposit'] : ['Withdraw', 'withdraw']
-  if (await run([{ label: `${label} ${t.name}`, run: () => sendKaminoAction(kind, { market: props.market, token: t, amount: a }) }])) amount.value = ''
+  if (await run([{ label: `${label} ${t.name}`, run: () => sendKaminoAction(kind, { market: props.market, token: t, amount: a, all: withdrawAll.value }) }])) amount.value = ''
 }
 </script>
 
@@ -72,6 +75,7 @@ async function submit() {
       <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
     </div>
     <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(value) }}</span></div>
+    <p v-if="withdrawAll && !warning" class="n-note" style="margin-bottom: 16px">Withdrawing in full. The exact balance is settled on-chain so no dust is left behind.</p>
     <p v-if="warning" class="n-warn" style="margin-bottom: 16px">{{ warning }}</p>
     <button class="n-btn-block" :disabled="!canSubmit" @click="submit">{{ tab === 'withdraw' ? 'Withdraw' : 'Lend' }} {{ token.name }}</button>
     <TxProgress :tx="tx" @dismiss="reset" />

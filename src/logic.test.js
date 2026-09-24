@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -37,5 +37,13 @@ assert.deepEqual(parsePoints(pointsCsv(snap)).rows.map((r) => [r.address, r.poin
 assert.equal(hfText(Infinity), '∞')
 assert.equal(hfText(1.234), '1.23')
 assert.deepEqual([dur(45), dur(180), dur(7200), dur(3 * 86400)], ['45s', '3m', '2h', '3d'])
+
+// Repay/withdraw dust: debt 0.7831105 USDC (interest in sub-units) → MAX sends 0.783111, and 0.78311 already counts as "all".
+assert.equal(floorTo(0.7831105, 6), 0.78311)
+assert.equal(ceilTo(0.7831105, 6), 0.783111)
+assert.equal(ceilTo(0.78311, 6), 0.78311) // exact values stay put despite float noise
+assert.equal(coversAll(0.78311, 0.7831105, 6), true)
+assert.equal(coversAll(0.78, 0.7831105, 6), false)
+assert.equal(coversAll(1, 0, 6), false)
 
 console.log('logic ok')

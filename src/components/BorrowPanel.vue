@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, usdFull, num, borrowCapacity, weightedLtv } from '../logic.js'
+import { pct, amt, usdFull, num, borrowCapacity, weightedLtv, floorTo, ceilTo, coversAll } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({ market: Object, collateralTokens: Array, loanTokens: Array, initialTab: String, initialAsset: String })
@@ -40,11 +40,11 @@ const capacity = computed(() => borrowCapacity(collateral.value, debtUsd.value, 
 const borrowUsd = computed(() => num(borrowAmt.value) * loanPrice.value)
 const ltv = computed(() => (collUsd.value > 0 ? ((debtUsd.value + borrowUsd.value) / collUsd.value) * 100 : 0))
 
-const fixed = (v, t) => (v > 0 ? String(Number(v.toFixed(t.decimals))) : '')
 function setLtv(target) {
   if (collUsd.value <= 0 || loanPrice.value <= 0) return
   const units = Math.max((collUsd.value * target) / 100 - debtUsd.value, 0) / loanPrice.value
-  borrowAmt.value = fixed(Math.min(units, liquidity.value), loan.value)
+  const v = floorTo(Math.min(units, liquidity.value), loan.value.decimals)
+  borrowAmt.value = v > 0 ? String(v) : ''
 }
 
 const noData = 'Protocol data could not be read — actions are disabled until it recovers.'
@@ -64,13 +64,24 @@ const repayWarning = computed(() => {
   if (!loanRow.value) return noData
   if (debt.value <= 0) return `You have no ${loan.value.name} debt to repay.`
   const a = num(repayAmt.value)
-  if (a && a > (loanRow.value?.walletBalance ?? 0)) return `You only hold ${amt(loanRow.value?.walletBalance ?? 0)} ${loan.value.name}.`
+  const wallet = loanRow.value?.walletBalance ?? 0
+  if (!a) return null
+  // A full repay settles the exact on-chain debt (incl. sub-unit interest), so the wallet must cover all of it.
+  if (repayAll.value && wallet < debt.value)
+    return `Repaying in full needs about ${amt(ceilTo(debt.value, loan.value.decimals), 6)} ${loan.value.name} (interest keeps accruing); you hold ${amt(wallet, 6)}.`
+  if (a > wallet) return `You only hold ${amt(wallet)} ${loan.value.name}.`
   return null
 })
 const canBorrow = computed(() => on.value && num(borrowAmt.value) > 0 && !borrowWarning.value && tx.status !== 'running')
 const canRepay = computed(() => on.value && num(repayAmt.value) > 0 && !repayWarning.value && tx.status !== 'running')
-const repayAll = computed(() => debt.value > 0 && num(repayAmt.value) >= debt.value)
-const repayMax = () => { repayAmt.value = fixed(Math.min(debt.value, loanRow.value?.walletBalance ?? 0), loan.value) }
+// Paying within one smallest unit of the debt means "repay everything": Kamino rejects leaving sub-unit dust
+// (NetValueRemainingTooSmall), so such repays are sent as a full repay and settled exactly on-chain.
+const repayAll = computed(() => coversAll(num(repayAmt.value), debt.value, loan.value.decimals))
+const quickRepay = (p) => {
+  const d = loan.value.decimals
+  const v = p === 100 ? ceilTo(debt.value, d) : floorTo((debt.value * p) / 100, d)
+  repayAmt.value = v > 0 ? String(v) : ''
+}
 
 watch([tab, loanId, collId], () => { deposit.value = ''; borrowAmt.value = ''; repayAmt.value = ''; reset() })
 
@@ -135,7 +146,10 @@ async function submitRepay() {
       <div class="n-kv" style="margin-bottom: 20px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(loanRow?.walletBalance ?? 0)} ${loan.name}` : '—' }}</span></div>
       <div class="n-label">Amount</div>
       <input v-model="repayAmt" class="n-input" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
-      <div class="n-quick" style="margin-bottom: 18px"><button :disabled="!on || debt <= 0" @click="repayMax">Repay max</button></div>
+      <div class="n-quick" style="margin-bottom: 18px">
+        <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on || debt <= 0" @click="quickRepay(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
+      </div>
+      <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(num(repayAmt) * loanPrice) }}</span></div>
       <p v-if="repayAll && canRepay" class="n-note" style="margin-bottom: 16px">Repaying in full. The exact debt is settled on-chain so no dust is left behind.</p>
       <p v-if="repayWarning" class="n-warn" style="margin-bottom: 16px">{{ repayWarning }}</p>
       <button class="n-btn-block" :disabled="!canRepay" @click="submitRepay">Repay {{ loan.name }}</button>
