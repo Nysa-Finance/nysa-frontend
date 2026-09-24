@@ -5,7 +5,8 @@ import './style.css'
 
 const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior: () => ({ top: 0 }),
+  // New page → top; same page with different query (e.g. switching Lend/Borrow panel) → keep position.
+  scrollBehavior: (to, from) => (to.path === from.path ? false : { top: 0 }),
   routes: [
     { path: '/', name: 'markets', component: () => import('./pages/Markets.vue') },
     { path: '/lend', name: 'lend', component: () => import('./pages/Lend.vue') },

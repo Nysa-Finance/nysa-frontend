@@ -84,6 +84,8 @@ const shortfall = computed(() => Math.max(ceilTo(debt.value, loan.value.decimals
 // Largest partial repay that still leaves a couple of units of debt, safely above Kamino's dust minimum.
 const maxPartial = computed(() => floorTo(Math.min(repayWallet.value, debt.value - 2 * 10 ** -loan.value.decimals), loan.value.decimals))
 const atMaxPartial = computed(() => !canCloseAll.value && debt.value > 0 && num(repayAmt.value) > 0 && num(repayAmt.value) === maxPartial.value)
+// Collateral to preselect when jumping to Withdraw: the first one actually deposited, else the first listed.
+const withdrawAsset = computed(() => (props.collateralTokens.find((t) => (rowOf(t.token_id)?.supplied ?? 0) > 0) ?? props.collateralTokens[0])?.token_id)
 // MAX closes the loan when the wallet covers it, otherwise repays as much as Kamino allows.
 const quickRepay = (p) => {
   const d = loan.value.decimals
@@ -165,6 +167,10 @@ async function submitRepay() {
       </p>
       <p v-if="repayWarning" class="n-warn" style="margin-bottom: 16px">{{ repayWarning }}</p>
       <button class="n-btn-block" :disabled="!canRepay" @click="submitRepay">Repay {{ loan.name }}</button>
+      <div class="n-rule to-withdraw">
+        <span>Looking to withdraw your collateral?</span>
+        <RouterLink :to="{ name: 'market-detail', params: { id: market.id }, query: { mode: 'lend', tab: 'withdraw', asset: withdrawAsset } }">Go to withdrawal section →</RouterLink>
+      </div>
     </template>
 
     <TxProgress :tx="tx" @dismiss="reset" />
@@ -174,5 +180,8 @@ async function submitRepay() {
 <style scoped>
 .slider { width: 100%; accent-color: var(--n-pink); }
 .slider:disabled { opacity: .4; }
+.to-withdraw { margin-top: 20px; padding-top: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--n-text-3); }
+.to-withdraw a { color: var(--n-pink); font-weight: 500; width: fit-content; }
+.to-withdraw a:hover { text-decoration: underline; }
 .scale { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11px; margin-top: 4px; }
 </style>
