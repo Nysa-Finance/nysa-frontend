@@ -2,13 +2,15 @@
 // where "supplied" = total deposits (USDC lent + USDY collateral) in the Nysa Kamino market(s).
 // Protected by CRON_SECRET: Vercel Cron sends it as a Bearer token; manual runs must send it too.
 import { put } from '@vercel/blob'
-import { KaminoMarket, getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS } from '@kamino-finance/klend-sdk'
-import { createSolanaRpc, address } from '@solana/kit'
 import { LIVE } from '../src/config.js'
 import { parsePoints, snapshotPoints, pointsCsv } from '../src/logic.js'
 import { POINTS_BLOB, SEED_URL, readPoints } from './points.js'
 
-async function suppliedByOwner(rpc) {
+// klend-sdk is imported lazily so auth is checked (and a clean 401 returned) before loading it.
+async function suppliedByOwner(rpcUrl) {
+  const { KaminoMarket, getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS } = await import('@kamino-finance/klend-sdk')
+  const { createSolanaRpc, address } = await import('@solana/kit')
+  const rpc = createSolanaRpc(rpcUrl)
   const out = new Map()
   const now = await getCurrentLedgerInstant(rpc)
   for (const m of LIVE) {
@@ -30,7 +32,7 @@ export default async function handler(req, res) {
   try {
     const rpcUrl = process.env.SOLANA_RPC || process.env.VITE_SOLANA_RPC
     if (!rpcUrl) throw new Error('SOLANA_RPC (or VITE_SOLANA_RPC) is not set')
-    const balances = await suppliedByOwner(createSolanaRpc(rpcUrl))
+    const balances = await suppliedByOwner(rpcUrl)
     const existing = await readPoints()
     // First run: carry over cumulative points from the previous leaderboard (re-baselined, not back-filled).
     const prevCsv = existing ?? (await fetch(SEED_URL).then((r) => (r.ok ? r.text() : '')).catch(() => ''))

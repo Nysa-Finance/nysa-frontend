@@ -14,12 +14,14 @@ export async function readPoints() {
 
 export default async function handler(req, res) {
   try {
-    const own = await readPoints().catch((e) => (console.warn('[points] no blob state yet:', e.message), null))
+    let why = 'blob empty'
+    const own = await readPoints().catch((e) => ((why = e.message), console.warn('[points] no blob state:', e.message), null))
     // Never proxy to ourselves (if this app is the one deployed at the seed URL).
     const seed = !own && new URL(SEED_URL).host !== req.headers.host
       ? await fetch(SEED_URL).then((r) => (r.ok ? r.text() : null)).catch(() => null)
       : null
     const csv = own ?? seed ?? EMPTY
+    res.setHeader('x-points-source', own ? 'blob' : `${seed ? 'seed' : 'empty'} (${why})`.slice(0, 200).replace(/[^\x20-\x7e]/g, ''))
     res.setHeader('content-type', 'text/csv; charset=utf-8')
     res.setHeader('cache-control', 'public, s-maxage=300, stale-while-revalidate=600')
     res.end(csv)
