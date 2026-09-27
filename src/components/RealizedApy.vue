@@ -73,9 +73,9 @@ function onMove(e) {
         <g font-size="11" fill="#8a8a8a" font-weight="300">
           <template v-for="t in yAxis.ticks" :key="'y' + t">
             <line :x1="L" :x2="W - R" :y1="y(t)" :y2="y(t)" stroke="#141414" />
-            <text :x="L - 8" :y="y(t) + 4" text-anchor="end">{{ pct(t, t < 10 ? 1 : 0) }}</text>
+            <text :x="L - 8" :y="y(t) + 4" text-anchor="end">{{ +t.toFixed(2) }}%</text>
           </template>
-          <text v-for="p in xTicks" :key="'x' + p.ts" :x="x(p.ts)" :y="H - B + 16" text-anchor="middle">{{ date(p.ts) }}</text>
+          <text v-for="p in xTicks" :key="'x' + p.ts" :x="x(p.ts)" :y="H - B + 16" :text-anchor="x(p.ts) > W - R - 30 ? 'end' : x(p.ts) < L + 30 ? 'start' : 'middle'">{{ date(p.ts) }}</text>
         </g>
         <line :x1="L" :x2="W - R" :y1="H - B" :y2="H - B" stroke="#1a1a1a" />
         <path :d="path" fill="none" :stroke="COLOR" stroke-width="2" stroke-linejoin="round" />
