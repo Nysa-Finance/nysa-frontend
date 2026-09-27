@@ -117,3 +117,33 @@ export const floorTo = (v, d) => (v > 0 ? Math.floor(v * 10 ** d + 1e-9) / 10 **
 export const ceilTo = (v, d) => (v > 0 ? Math.ceil(v * 10 ** d - 1e-9) / 10 ** d : 0)
 // True when paying `amount` would leave less than one smallest unit of `total` behind (i.e. it means "all of it").
 export const coversAll = (amount, total, d) => total > 0 && amount >= total - 10 ** -d
+
+// ---- Realized APY (from the growth of one deposit share's value, i.e. liquidity per Kamino cToken) ----
+// points: [{ ts (unix sec), rate (liquidity per cToken) }], oldest first.
+export const realizedApy = (from, to, days) => (days > 0 && from > 0 ? ((to / from) ** (365 / days) - 1) * 100 : null)
+
+// Realized APY over the last `days`, ending at the latest point. With shorter history it uses the oldest point
+// and says so (full=false), e.g. a 19-day-old reserve reports its "30D" as since-launch.
+export function windowApy(points, days) {
+  if (points.length < 2) return null
+  const end = points.at(-1)
+  const target = end.ts - days * 86400
+  const start = [...points].reverse().find((p) => p.ts <= target) ?? points[0]
+  const spanDays = (end.ts - start.ts) / 86400
+  return spanDays > 0 ? { apy: realizedApy(start.rate, end.rate, spanDays), spanDays, full: start.ts <= target, from: start.ts } : null
+}
+
+// Realized APY for each day: last point of each UTC day vs the previous day's.
+export function dailyApySeries(points) {
+  const byDay = [...new Map(points.map((p) => [Math.floor(p.ts / 86400), p])).values()].sort((a, b) => a.ts - b.ts)
+  return byDay.slice(1).map((p, i) => ({ ts: p.ts, apy: realizedApy(byDay[i].rate, p.rate, (p.ts - byDay[i].ts) / 86400) }))
+}
+
+// Chart.js-like "nice" axis: ~5 steps of 1/2/2.5/5 × 10^n up to at least `max`.
+export function niceTicks(max) {
+  const m = Math.max(max, 1e-9)
+  const mag = 10 ** Math.floor(Math.log10(m / 5))
+  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((s) => m / s <= 6)
+  const top = Math.ceil(m / step - 1e-9) * step
+  return { top, ticks: Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step) }
+}

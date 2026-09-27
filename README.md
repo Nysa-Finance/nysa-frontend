@@ -21,6 +21,7 @@ The app also has a Terms of Service gate (stored in localStorage), a wallet conn
 - Positions (supplied, borrowed, max withdraw) come from klend-sdk (`getObligationByWallet`), loaded lazily in `src/kamino.js`.
 - Wallets are discovered via Wallet Standard (Phantom first, then Solflare/Backpack/etc.).
 - Farm Points come from `/api/points` (see below).
+- Realized APY history comes from `/api/apy-history` (see Farm Points: recorded by the same daily snapshot).
 - Analytics (oracle freshness, caps, APYs, open positions with health factor) is read live with klend-sdk in the browser, only on that page.
 - The IRM curve, risk parameters, addresses and due diligence are static, in `src/config.js`.
 
@@ -41,6 +42,13 @@ Vercel setup: create a **Blob** store and connect it to the project (adds `BLOB_
 ```bash
 curl -H "Authorization: Bearer $CRON_SECRET" https://<your-domain>/api/points-snapshot
 ```
+
+## Realized APY
+The daily snapshot also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
+utilization to `market-history/history.json` (private Blob), plus the reserve's creation time (share value is exactly 1 then).
+The market page shows 30D / 7D realized APY (share-value growth over the window, annualised) next to the live APY, and a daily chart.
+Kamino's API has no history for this market, so history starts at the first snapshot: "30D" is exact since launch while the reserve
+is younger than 30 days, "7D" fills in after 7 days of snapshots. Math: `realizedApy` / `windowApy` / `dailyApySeries` in `src/logic.js` (tested).
 
 ## Not done yet
 - **Liquidations page.** The original reads a liquidation indexer that is offline; open positions and health factors are shown in Analytics instead.

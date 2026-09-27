@@ -203,6 +203,15 @@ export function loadPoints() {
 }
 export const myPoints = () => state.points.board?.rows.find((r) => r.address === state.address) ?? null
 
+// Daily reserve history for Realized APY (recorded by the daily snapshot). Loaded once per page view.
+let historyReq = null
+export function loadApyHistory() {
+  historyReq ??= fetch('/api/apy-history')
+    .then((r) => { if (!r.ok) throw new Error(`History responded ${r.status}`); return r.json() })
+    .catch((e) => { historyReq = null; throw e })
+  return historyReq
+}
+
 // Lazy Analytics data (klend-sdk).
 export const loadAnalytics = async (m, tokens) => (await kamino()).loadAnalytics(m, tokens)
 

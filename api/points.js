@@ -5,10 +5,12 @@ import { get } from '@vercel/blob'
 export const POINTS_BLOB = 'farm-points/points_state.csv'
 const EMPTY = 'address,cumulative_points,last_supplied_usd,last_snapshot_ts\n'
 
-export async function readPoints() {
-  const blob = await get(POINTS_BLOB, { access: 'private', useCache: false })
+// Text content of a private blob, or null if it does not exist yet.
+export async function readBlob(path) {
+  const blob = await get(path, { access: 'private', useCache: false })
   return blob ? new Response(blob.stream).text() : null
 }
+export const readPoints = () => readBlob(POINTS_BLOB)
 
 export default async function handler(req, res) {
   try {

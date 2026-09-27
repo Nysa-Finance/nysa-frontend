@@ -1,7 +1,7 @@
 <script setup>
 // Interest-rate curve (borrow + supply vs utilization) with hover tooltip, matching the original Chart.js chart.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { borrowRateAt, supplyRateAt, pct } from '../logic.js'
+import { borrowRateAt, supplyRateAt, pct, niceTicks } from '../logic.js'
 
 const props = defineProps({ irm: Object, utilization: Number })
 const BORROW = '#EC008C', SUPPLY = '#3ddc84'
@@ -16,14 +16,7 @@ onMounted(() => {
 })
 onUnmounted(() => ro?.disconnect())
 
-// "Nice" y-axis like Chart.js: ~5 steps of 1/2/2.5/5 × 10^n.
-const yAxis = computed(() => {
-  const max = Math.max(...props.irm.points.map((p) => p[1]), 0.1)
-  const mag = 10 ** Math.floor(Math.log10(max / 5))
-  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((s) => max / s <= 6)
-  const top = Math.ceil(max / step) * step
-  return { top, ticks: Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step) }
-})
+const yAxis = computed(() => niceTicks(Math.max(...props.irm.points.map((p) => p[1]), 0.1)))
 const x = (u) => L + (u / 100) * (W.value - L - R)
 const y = (r) => T + (1 - r / yAxis.value.top) * (H - T - B)
 const borrow = (u) => borrowRateAt(props.irm.points, u)

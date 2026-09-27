@@ -1,7 +1,7 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { state, rowOf } from '../store.js'
+import { state, rowOf, loadApyHistory } from '../store.js'
 import { marketById, tok, tokensOf, explorer } from '../config.js'
 import { usd, pct, compact, short } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -11,6 +11,7 @@ import BorrowPanel from '../components/BorrowPanel.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 import NotFound from './NotFound.vue'
 import Section from '../components/Section.vue'
+import RealizedApy from '../components/RealizedApy.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -22,6 +23,8 @@ const loans = computed(() => m.value.loans.map(tok))
 const r = (id) => rowOf(id)?.reserve
 const sum = (ids, k) => ids.reduce((s, id) => s + (r(id)?.[k] ?? 0), 0)
 const pointsOpen = ref(false)
+const apyHistory = ref(null)
+onMounted(() => loadApyHistory().then((h) => (apyHistory.value = h)).catch((e) => console.error('[apy-history]', e)))
 const back = () => (history.state?.back ? router.back() : router.push('/'))
 
 function openDd() {
@@ -71,6 +74,11 @@ function openDd() {
               <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r(t.token_id)?.borrowAPR) }}</div>
             </div>
           </div>
+        </Section>
+
+        <Section v-for="t in loans" :key="'ra' + t.token_id" :title="loans.length > 1 ? `Realized APY · ${t.name}` : 'Realized APY'">
+          <template #meta>Current {{ pct(r(t.token_id)?.supplyAPR) }}</template>
+          <RealizedApy :token="t" :history="apyHistory?.tokens?.[t.token_id]" :current-apy="r(t.token_id)?.supplyAPR" />
         </Section>
 
         <Section title="Interest rate model">
