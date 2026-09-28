@@ -26,10 +26,21 @@ const ADMIN = {
   socializeLoss: 'Bad debt socialized',
   socializeLossV2: 'Bad debt socialized',
 }
-const IXS = Object.fromEntries(Object.keys(ADMIN).map((name) => {
-  const m = require(`@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/${name}.js`)
-  return [Buffer.from(m.DISCRIMINATOR).toString('hex'), { name, layout: m.layout }]
-}))
+// Static require paths on purpose: Vercel's file tracer can't follow template-string requires.
+const IX_MODULES = {
+  initLendingMarket: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initLendingMarket.js'),
+  updateLendingMarket: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/updateLendingMarket.js'),
+  updateLendingMarketOwner: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/updateLendingMarketOwner.js'),
+  initReserve: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initReserve.js'),
+  seedDepositOnInitReserve: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/seedDepositOnInitReserve.js'),
+  updateReserveConfig: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/updateReserveConfig.js'),
+  cloneReserveConfig: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/cloneReserveConfig.js'),
+  initFarmsForReserve: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initFarmsForReserve.js'),
+  withdrawProtocolFee: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/withdrawProtocolFee.js'),
+  socializeLoss: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/socializeLoss.js'),
+  socializeLossV2: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/socializeLossV2.js'),
+}
+const IXS = Object.fromEntries(Object.entries(IX_MODULES).map(([name, m]) => [Buffer.from(m.DISCRIMINATOR).toString('hex'), { name, layout: m.layout }]))
 const MARKET_MODES = Object.fromEntries(Object.values(require('@kamino-finance/klend-sdk/dist/@codegen/klend/types/UpdateLendingMarketMode.js'))
   .filter((c) => typeof c === 'function' && 'discriminator' in c).map((c) => [c.discriminator, c.kind]))
 
