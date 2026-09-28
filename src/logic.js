@@ -109,7 +109,7 @@ export const hfColor = (v) => (!Number.isFinite(v) || v >= 1.8 ? 'var(--n-green)
 export function dur(sec) {
   if (!Number.isFinite(sec)) return '—'
   const s = Math.max(Math.round(sec), 0)
-  return s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`
+  return s < 90 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`
 }
 
 // Round a token amount to its decimals without ever exceeding (floor) or undershooting (ceil) the true value.

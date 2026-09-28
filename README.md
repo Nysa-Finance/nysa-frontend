@@ -50,6 +50,13 @@ The market page shows 30D / 7D realized APY (share-value growth over the window,
 Kamino's API has no history for this market, so history starts at the first snapshot: "30D" is exact since launch while the reserve
 is younger than 30 days, "7D" fills in after 7 days of snapshots. Math: `realizedApy` / `windowApy` / `dailyApySeries` in `src/logic.js` (tested).
 
+## Market Updates
+`/api/market-updates` lists admin changes to the market and its reserves (LTVs, rate curve, oracles, caps, status, market settings…),
+decoded from Kamino Lend instructions (`updateReserveConfig`, `updateLendingMarket`, `initReserve`, … incl. CPI/multisig calls) using
+klend-sdk's generated layouts. It indexes incrementally into `market-history/updates.json` (private Blob): each call fetches only
+transactions newer than the last one seen. Values are formatted at index time; after changing a formatter, delete that blob to re-index.
+Decoding is covered by `api/_market-updates.test.js` (underscore: not deployed as a function).
+
 ## Not done yet
 - **Liquidations page.** The original reads a liquidation indexer that is offline; open positions and health factors are shown in Analytics instead.
 - **Geo-block and sanctions screening.** These need a backend (`/api/geo` on the original).

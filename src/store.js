@@ -212,6 +212,15 @@ export function loadApyHistory() {
   return historyReq
 }
 
+// Admin changes to the market and its reserves (decoded on-chain by /api/market-updates). Loaded once per page view.
+let updatesReq = null
+export function loadMarketUpdates() {
+  updatesReq ??= fetch('/api/market-updates')
+    .then((r) => { if (!r.ok) throw new Error(`Updates responded ${r.status}`); return r.json() })
+    .catch((e) => { updatesReq = null; throw e })
+  return updatesReq
+}
+
 // Lazy Analytics data (klend-sdk).
 export const loadAnalytics = async (m, tokens) => (await kamino()).loadAnalytics(m, tokens)
 

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { state, rowOf, loadApyHistory } from '../store.js'
+import { state, rowOf, loadApyHistory, loadMarketUpdates } from '../store.js'
 import { marketById, tok, tokensOf, explorer } from '../config.js'
 import { usd, pct, compact, short } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -12,6 +12,7 @@ import FarmPointsModal from '../components/FarmPointsModal.vue'
 import NotFound from './NotFound.vue'
 import Section from '../components/Section.vue'
 import RealizedApy from '../components/RealizedApy.vue'
+import MarketUpdates from '../components/MarketUpdates.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -25,6 +26,9 @@ const sum = (ids, k) => ids.reduce((s, id) => s + (r(id)?.[k] ?? 0), 0)
 const pointsOpen = ref(false)
 const apyHistory = ref(null)
 onMounted(() => loadApyHistory().then((h) => (apyHistory.value = h)).catch((e) => console.error('[apy-history]', e)))
+const updates = ref(null)
+const updatesError = ref(null)
+onMounted(() => loadMarketUpdates().then((d) => (updates.value = d.updates)).catch((e) => (updatesError.value = e.message)))
 const back = () => (history.state?.back ? router.back() : router.push('/'))
 
 function openDd() {
@@ -118,6 +122,11 @@ function openDd() {
             </div>
           </div>
           <p class="hint">An LTV belongs to a (collateral, liability) pair, not to an asset on its own — the same collateral can carry a different limit against a different loan.</p>
+        </Section>
+
+        <Section title="Market Updates">
+          <template #meta>{{ updates ? `${updates.length} changes` : '' }}</template>
+          <MarketUpdates :updates="updates" :error="updatesError" />
         </Section>
 
         <Section title="Addresses">

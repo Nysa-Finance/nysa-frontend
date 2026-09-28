@@ -1,5 +1,22 @@
 {
-  "crons": [{ "path": "/api/points-snapshot", "schedule": "0 0 * * *" }],
-  "functions": { "api/points-snapshot.js": { "maxDuration": 60 } },
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
+  "crons": [
+    {
+      "path": "/api/points-snapshot",
+      "schedule": "0 0 * * *"
+    }
+  ],
+  "functions": {
+    "api/points-snapshot.js": {
+      "maxDuration": 60
+    },
+    "api/market-updates.js": {
+      "maxDuration": 60
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ]
 }
