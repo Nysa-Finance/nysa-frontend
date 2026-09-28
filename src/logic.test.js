@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -63,5 +63,23 @@ assert.equal(windowApy([{ ts: 0, rate: 1 }], 7), null)
 const series = dailyApySeries([{ ts: 0, rate: 1 }, { ts: D + 10, rate: 1.0001 }, { ts: D + 20, rate: 1.0001 }, { ts: 2 * D + 20, rate: 1.0002 }])
 assert.equal(series.length, 2)
 assert.deepEqual(niceTicks(11.33), { top: 12, ticks: [0, 2, 4, 6, 8, 10, 12] })
+
+// Repay decisions (6-decimal token).
+// Full repay with enough in the wallet goes through: this is the case that used to be wrongly blocked.
+assert.deepEqual(repayPlan(1.044222, 1.044221238, 3.5, 6), { all: true, maxPartial: 1.044219, issue: null })
+// Tiny leftover debt (2.742 micro-units): MAX sends 0.000003 as a full repay.
+assert.deepEqual(repayPlan(0.000003, 0.000002742, 3.5, 6), { all: true, maxPartial: 0, issue: null })
+// Wallet short of the full debt by a fraction of a unit → 'short'; the largest safe partial is offered instead.
+assert.deepEqual(repayPlan(1.044221, 1.044221238, 1.044221, 6), { all: true, maxPartial: 1.044219, issue: 'short' })
+assert.equal(repayPlan(1.044219, 1.044221238, 1.044221, 6).issue, null)
+// Partial leaving 1 unit of dust → 'dust'; more than the wallet → 'wallet'; ordinary partial → ok.
+assert.equal(repayPlan(1.04422, 1.044221238, 3.5, 6).issue, 'dust')
+assert.equal(repayPlan(0.5, 1.044221238, 0.4, 6).issue, 'wallet')
+assert.equal(repayPlan(0.5, 1.044221238, 3.5, 6).issue, null)
+assert.equal(repayPlan(0, 1, 1, 6).issue, null)
+// Dust display.
+assert.equal(amtDust(0.000002742), '< 0.0001')
+assert.equal(amtDust(0), '0')
+assert.equal(amtDust(1.04422), '1.0442')
 
 console.log('logic ok')

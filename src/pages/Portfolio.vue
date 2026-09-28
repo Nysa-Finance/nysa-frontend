@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, rowOf, priceOf, loadPoints, myPoints } from '../store.js'
 import { LIVE, tok, tokensOf } from '../config.js'
-import { usd, pct, amt, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
+import { usd, pct, amt, amtDust, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 
@@ -75,7 +75,7 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
     <div v-else-if="!deposits.length" class="n-empty">No active deposits.</div>
     <template v-else><div v-for="d in deposits" :key="d.m.id + d.t.token_id" class="n-tr dp-grid">
       <div class="n-cell" data-label="Market"><span class="mk">{{ d.m.name }}</span> <span class="n-chip mainnet">Solana</span></div>
-      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.units) }} {{ d.t.name }}</span></div>
+      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amtDust(d.units) }} {{ d.t.name }}</span></div>
       <div class="n-cell n-muted n-num" data-label="$ Value">{{ usd(d.usd) }}</div>
       <div class="n-cell n-actions">
         <button class="n-btn-sm ghost" @click="go(d.m, 'lend', 'withdraw', d.t.token_id)">Withdraw</button>
@@ -88,7 +88,7 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
     <div v-if="!on" class="n-empty">Connect a wallet to see your loans.</div>
     <div v-else-if="!loans.length" class="n-empty">No active loans.</div>
     <template v-else><div v-for="l in loans" :key="l.m.id + l.t.token_id" class="n-tr pl-grid">
-      <div class="n-cell n-asset" data-label="Loan"><TokenIcon :token="l.t" size="sm" /><span class="n-num">{{ amt(l.units) }} {{ l.t.name }}</span></div>
+      <div class="n-cell n-asset" data-label="Loan"><TokenIcon :token="l.t" size="sm" /><span class="n-num">{{ amtDust(l.units) }} {{ l.t.name }}</span></div>
       <div class="n-cell n-muted n-num" data-label="Loan $ Value">{{ usd(l.usd) }}</div>
       <div class="n-cell" data-label="Collateral"><div class="n-tok-group"><TokenIcon v-for="c in l.coll" :key="c.t.token_id" :token="c.t" size="sm" /></div></div>
       <div class="n-cell n-muted n-num" data-label="Collateral $ Value">{{ usd(l.collUsd) }}</div>

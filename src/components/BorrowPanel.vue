@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, usdFull, num, borrowCapacity, weightedLtv, floorTo, ceilTo, coversAll } from '../logic.js'
+import { pct, amt, amtDust, usdFull, num, borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({ market: Object, collateralTokens: Array, loanTokens: Array, initialTab: String, initialAsset: String })
@@ -63,33 +63,29 @@ const repayWarning = computed(() => {
   if (!on.value) return 'Connect a Solana wallet to continue.'
   if (!loanRow.value) return noData
   if (debt.value <= 0) return `You have no ${loan.value.name} debt to repay.`
-  const a = num(repayAmt.value)
   const name = loan.value.name
-  if (!a) return null
-  // A full repay settles the exact on-chain debt (incl. sub-unit interest), so the wallet must cover all of it.
-  if (repayAll.value && !canCloseAll.value)
-    return `Your wallet is ${amt(shortfall.value, 6)} ${name} short of the full debt. Add a little ${name} to close the loan, or repay up to ${amt(maxPartial.value, 6)} ${name} now.`
-  if (a > repayWallet.value) return `You only hold ${amt(repayWallet.value)} ${name}.`
-  if (!repayAll.value && a > maxPartial.value) return `That would leave less than Kamino's minimum balance behind. Repay at most ${amt(maxPartial.value, 6)} ${name}, or the full debt.`
-  return null
+  const max = amt(plan.value.maxPartial, 6)
+  return {
+    short: `Your wallet is ${amt(shortfall.value, 6)} ${name} short of the full debt. Add a little ${name} to close the loan, or repay up to ${max} ${name} now.`,
+    wallet: `You only hold ${amt(repayWallet.value)} ${name}.`,
+    dust: `That would leave less than Kamino's minimum balance behind. Repay at most ${max} ${name}, or the full debt.`,
+  }[plan.value.issue] ?? null
 })
 const canBorrow = computed(() => on.value && num(borrowAmt.value) > 0 && !borrowWarning.value && tx.status !== 'running')
 const canRepay = computed(() => on.value && num(repayAmt.value) > 0 && !repayWarning.value && tx.status !== 'running')
-// Paying within one smallest unit of the debt means "repay everything": Kamino rejects leaving sub-unit dust
-// (NetValueRemainingTooSmall), so such repays are sent as a full repay and settled exactly on-chain.
-const repayAll = computed(() => coversAll(num(repayAmt.value), debt.value, loan.value.decimals))
+// Full vs partial repay and what (if anything) blocks it: see repayPlan in logic.js (tested).
 const repayWallet = computed(() => loanRow.value?.walletBalance ?? 0)
+const plan = computed(() => repayPlan(num(repayAmt.value), debt.value, repayWallet.value, loan.value.decimals))
+const repayAll = computed(() => plan.value.all)
 const canCloseAll = computed(() => repayWallet.value >= ceilTo(debt.value, loan.value.decimals))
 const shortfall = computed(() => Math.max(ceilTo(debt.value, loan.value.decimals) - repayWallet.value, 0))
-// Largest partial repay that still leaves a couple of units of debt, safely above Kamino's dust minimum.
-const maxPartial = computed(() => floorTo(Math.min(repayWallet.value, debt.value - 2 * 10 ** -loan.value.decimals), loan.value.decimals))
-const atMaxPartial = computed(() => !canCloseAll.value && debt.value > 0 && num(repayAmt.value) > 0 && num(repayAmt.value) === maxPartial.value)
+const atMaxPartial = computed(() => !canCloseAll.value && debt.value > 0 && num(repayAmt.value) > 0 && num(repayAmt.value) === plan.value.maxPartial)
 // Collateral to preselect when jumping to Withdraw: the first one actually deposited, else the first listed.
 const withdrawAsset = computed(() => (props.collateralTokens.find((t) => (rowOf(t.token_id)?.supplied ?? 0) > 0) ?? props.collateralTokens[0])?.token_id)
 // MAX closes the loan when the wallet covers it, otherwise repays as much as Kamino allows.
 const quickRepay = (p) => {
   const d = loan.value.decimals
-  const v = p < 100 ? floorTo((debt.value * p) / 100, d) : canCloseAll.value ? ceilTo(debt.value, d) : maxPartial.value
+  const v = p < 100 ? floorTo((debt.value * p) / 100, d) : canCloseAll.value ? ceilTo(debt.value, d) : repayPlan(0, debt.value, repayWallet.value, d).maxPartial
   repayAmt.value = v > 0 ? String(v) : ''
 }
 
@@ -152,7 +148,7 @@ async function submitRepay() {
         <option v-for="t in loanTokens" :key="t.token_id" :value="t.token_id">{{ t.name }}</option>
       </select>
       <div class="n-kv" style="margin-bottom: 10px"><span class="k">Borrow APY (current)</span><span class="v accent">{{ pct(loanRow?.reserve.borrowAPR) }}</span></div>
-      <div class="n-kv" style="margin-bottom: 10px"><span class="k">Outstanding debt</span><span class="v">{{ on ? `${amt(debt)} ${loan.name}` : '—' }}</span></div>
+      <div class="n-kv" style="margin-bottom: 10px"><span class="k">Outstanding debt</span><span class="v">{{ on ? `${amtDust(debt)} ${loan.name}` : '—' }}</span></div>
       <div class="n-kv" style="margin-bottom: 20px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(loanRow?.walletBalance ?? 0)} ${loan.name}` : '—' }}</span></div>
       <div class="n-label">Amount</div>
       <input v-model="repayAmt" class="n-input" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />

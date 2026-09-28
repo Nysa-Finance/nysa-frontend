@@ -118,6 +118,24 @@ export const ceilTo = (v, d) => (v > 0 ? Math.ceil(v * 10 ** d - 1e-9) / 10 ** d
 // True when paying `amount` would leave less than one smallest unit of `total` behind (i.e. it means "all of it").
 export const coversAll = (amount, total, d) => total > 0 && amount >= total - 10 ** -d
 
+// Repay decision. Kamino rejects repays leaving sub-unit dust (NetValueRemainingTooSmall), so:
+// - within one unit of the debt → full repay (U64_MAX on-chain), which needs the wallet to cover the whole debt;
+// - otherwise → partial, which must leave at least 2 units behind.
+// Returns { all, maxPartial, issue: null | 'short' | 'wallet' | 'dust' }.
+export function repayPlan(amount, debt, wallet, decimals) {
+  const all = coversAll(amount, debt, decimals)
+  const maxPartial = floorTo(Math.min(wallet, debt - 2 * 10 ** -decimals), decimals)
+  const issue = !amount ? null
+    : all ? (wallet < ceilTo(debt, decimals) ? 'short' : null)
+    : amount > wallet ? 'wallet'
+    : amount > maxPartial ? 'dust'
+    : null
+  return { all, maxPartial, issue }
+}
+
+// Display a token amount like Aave does: tiny non-zero values show as "< 0.0001" instead of a misleading "0".
+export const amtDust = (v, d = 4) => (v > 0 && v < 10 ** -d ? `< ${(10 ** -d).toFixed(d)}` : amt(v, d))
+
 // ---- Realized APY (from the growth of one deposit share's value, i.e. liquidity per Kamino cToken) ----
 // points: [{ ts (unix sec), rate (liquidity per cToken) }], oldest first.
 export const realizedApy = (from, to, days) => (days > 0 && from > 0 ? ((to / from) ** (365 / days) - 1) * 100 : null)
