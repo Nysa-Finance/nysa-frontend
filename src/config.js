@@ -29,6 +29,7 @@ const dueDiligence = {
   subject: 'USDY (Ondo)',
   safetyScore: 10,
   rows: [
+    { label: 'Rated by', value: 'RWAting', href: 'https://www.rwating.com/ratings/ondo-usdy' },
     { label: 'Entity Name', value: 'Ondo Global Markets (BVI) Limited' },
     { label: 'Jurisdiction', value: 'British Virgin Islands' },
     { label: 'Legal Form', value: 'BVI Business Company' },
