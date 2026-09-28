@@ -70,7 +70,7 @@ const repayWarning = computed(() => {
   if (repayAll.value && !canCloseAll.value)
     return `Your wallet is ${amt(shortfall.value, 6)} ${name} short of the full debt. Add a little ${name} to close the loan, or repay up to ${amt(maxPartial.value, 6)} ${name} now.`
   if (a > repayWallet.value) return `You only hold ${amt(repayWallet.value)} ${name}.`
-  if (a > maxPartial.value) return `That would leave less than Kamino's minimum balance behind. Repay at most ${amt(maxPartial.value, 6)} ${name}, or the full debt.`
+  if (!repayAll.value && a > maxPartial.value) return `That would leave less than Kamino's minimum balance behind. Repay at most ${amt(maxPartial.value, 6)} ${name}, or the full debt.`
   return null
 })
 const canBorrow = computed(() => on.value && num(borrowAmt.value) > 0 && !borrowWarning.value && tx.status !== 'running')
