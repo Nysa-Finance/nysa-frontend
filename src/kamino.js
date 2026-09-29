@@ -7,7 +7,7 @@ import {
   getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS,
 } from '@kamino-finance/klend-sdk'
 import {
-  createSolanaRpc, address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
+  createDefaultRpcTransport, createSolanaRpcFromTransport, address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables, compileTransaction, getTransactionEncoder,
   getBase64EncodedWireTransaction, getBase58Decoder,
@@ -22,7 +22,17 @@ const CONFIRM_TIMEOUT_MS = 90_000
 const SEPARABLE = /^(CreateUserAta(?!SOL)|CreateLiquidityUserAta|CreateCollateralUserAta|CreateAdditionalUserTokenAta|CreateAta|createAtasIxs|createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 const BOOTSTRAP = /^(createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 
-const rpc = createSolanaRpc(SOLANA_RPC)
+// Keyed RPC plans are rate-limited (e.g. QuickNode free: 15 req/s) and klend-sdk sends bursts of requests:
+// retry HTTP 429 with exponential backoff instead of failing the whole read.
+const transport = createDefaultRpcTransport({ url: SOLANA_RPC })
+const rpc = createSolanaRpcFromTransport(async (req) => {
+  for (let i = 0; ; i++) {
+    try { return await transport(req) } catch (e) {
+      if (i >= 4 || e?.context?.statusCode !== 429) throw e
+      await new Promise((r) => setTimeout(r, 500 * 2 ** i))
+    }
+  }
+})
 const obligationType = () => new VanillaObligation(PROGRAM_ID)
 const loadMarket = (m) => KaminoMarket.load(rpc, address(m.kaminoMarket), DEFAULT_RECENT_SLOT_DURATION_MS)
 const num = (v) => (v == null ? 0 : typeof v === 'number' ? v : v.toNumber())

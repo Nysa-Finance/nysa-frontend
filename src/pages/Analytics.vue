@@ -19,7 +19,7 @@ async function load() {
     error.value = null
   } catch (e) {
     console.error('[analytics]', e)
-    error.value = e.message
+    error.value = e?.context?.statusCode === 429 ? 'the RPC is rate-limiting requests (try a higher-tier plan)' : e.message
   }
   nowSec.value = Date.now() / 1000
 }

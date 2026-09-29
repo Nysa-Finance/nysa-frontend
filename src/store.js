@@ -87,11 +87,17 @@ async function loadReserves() {
 }
 
 async function rpc(method, params) {
-  const res = await fetch(SOLANA_RPC, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-  })
+  let res
+  for (let i = 0; ; i++) { // retry HTTP 429 (rate-limited RPC plan) with backoff
+    res = await fetch(SOLANA_RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    })
+    if (res.status !== 429 || i >= 4) break
+    await new Promise((r) => setTimeout(r, 500 * 2 ** i))
+  }
+  if (res.status === 429) throw new Error('the RPC is rate-limiting requests')
   const j = await res.json()
   if (j.error) throw new Error(j.error.message)
   return j.result
