@@ -228,7 +228,10 @@ export function loadMarketUpdates() {
 }
 
 // Lazy Analytics data (klend-sdk).
-export const loadAnalytics = async (m, tokens) => (await kamino()).loadAnalytics(m, tokens)
+export async function loadAnalytics(m, tokens) {
+  const index = await loadMarketUpdates().catch(() => null) // position addresses come with the market index
+  return (await kamino()).loadAnalytics(m, tokens, index?.obligations?.[m.kaminoMarket] ?? null)
+}
 
 let started = false
 export function start() {

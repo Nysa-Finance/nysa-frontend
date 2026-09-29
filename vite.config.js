@@ -10,5 +10,5 @@ export default defineConfig({
   resolve: { alias: { '@orca-so/whirlpools-core': fileURLToPath(new URL('./src/orca-stub.cjs', import.meta.url)) } },
   build: { target: 'es2022' },
   optimizeDeps: { esbuildOptions: { target: 'es2022' } },
-  server: { proxy: { '/api': { target: 'https://test.nysa.finance', changeOrigin: true } } },
+  server: { proxy: { '/api': { target: 'https://app.nysa.finance', changeOrigin: true } } },
 })

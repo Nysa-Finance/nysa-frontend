@@ -148,7 +148,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
       <template #meta>{{ data?.positions ? `${data.positions.length} open · sorted by risk` : '' }}</template>
       <div class="n-table">
         <div class="n-thead po-grid"><div>Wallet</div><div>Deposits</div><div>Debt</div><div>LTV</div><div>Liq. LTV</div><div>Health factor</div></div>
-        <div v-if="data && !data.positions" class="n-empty">Open positions can't be listed with the current RPC plan (it doesn't allow getProgramAccounts).</div>
+        <div v-if="data && !data.positions" class="n-empty">Open positions are temporarily unavailable.</div>
         <div v-else-if="data && !data.positions.length" class="n-empty">No open positions in this market yet.</div>
         <div v-for="p in data?.positions ?? []" :key="p.owner" class="n-tr sm po-grid">
           <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗</a></div>

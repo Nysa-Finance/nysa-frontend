@@ -6,13 +6,13 @@ import {
   KaminoAction, VanillaObligation, PROGRAM_ID, U64_MAX, getCurrentLedgerInstant,
 } from '@kamino-finance/klend-sdk'
 import {
-  createDefaultRpcTransport, createSolanaRpcFromTransport, address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
+  address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables, compileTransaction, getTransactionEncoder,
   getBase64EncodedWireTransaction, getBase58Decoder,
 } from '@solana/kit'
 import { SOLANA_RPC } from './config.js'
-import { loadMarket as loadMarketDirect } from './loadMarket.js'
+import { loadMarket as loadMarketDirect, createRpc } from './loadMarket.js'
 
 const CHAIN = 'solana:mainnet'
 const MAX_TX_BYTES = 1232
@@ -22,17 +22,7 @@ const CONFIRM_TIMEOUT_MS = 90_000
 const SEPARABLE = /^(CreateUserAta(?!SOL)|CreateLiquidityUserAta|CreateCollateralUserAta|CreateAdditionalUserTokenAta|CreateAta|createAtasIxs|createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 const BOOTSTRAP = /^(createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 
-// Keyed RPC plans are rate-limited (e.g. QuickNode free: 15 req/s) and klend-sdk sends bursts of requests:
-// retry HTTP 429 with exponential backoff instead of failing the whole read.
-const transport = createDefaultRpcTransport({ url: SOLANA_RPC })
-const rpc = createSolanaRpcFromTransport(async (req) => {
-  for (let i = 0; ; i++) {
-    try { return await transport(req) } catch (e) {
-      if (i >= 4 || e?.context?.statusCode !== 429) throw e
-      await new Promise((r) => setTimeout(r, 500 * 2 ** i))
-    }
-  }
-})
+const rpc = createRpc(SOLANA_RPC)
 const obligationType = () => new VanillaObligation(PROGRAM_ID)
 const loadMarket = (m) => loadMarketDirect(rpc, m) // reserves by address, no getProgramAccounts
 const num = (v) => (v == null ? 0 : typeof v === 'number' ? v : v.toNumber())
@@ -192,7 +182,7 @@ export async function execute(kind, { wallet, account, market: m, token, amount,
 }
 
 // Everything the Analytics page shows, read live from chain: reserves (incl. Scope oracle freshness) and positions.
-export async function loadAnalytics(m, tokens) {
+export async function loadAnalytics(m, tokens, obligationAddrs) {
   const now = await getCurrentLedgerInstant(rpc)
   const market = await loadMarket(m)
   const reserves = tokens.map((t) => {
@@ -214,9 +204,11 @@ export async function loadAnalytics(m, tokens) {
       maxAge: Number(r.state.config.tokenInfo.maxAgePriceSeconds),
     }
   })
-  // Listing every position needs getProgramAccounts, which some RPC plans refuse (Alchemy free): degrade to null.
+  // Positions come from the server's transaction index (no getProgramAccounts, which Alchemy free refuses).
   let obligations = null
-  try { obligations = await market.getAllObligationsForMarket(now) } catch (e) { console.warn('[analytics] positions unavailable', e) }
+  if (obligationAddrs) {
+    try { obligations = (obligationAddrs.length ? await market.getMultipleObligationsByAddress(obligationAddrs.map(address), now) : []).filter(Boolean) } catch (e) { console.warn('[analytics] positions unavailable', e) }
+  }
   const positions = obligations?.map((ob) => {
     const s = ob.refreshedStats
     const debt = num(s.userTotalBorrow)
@@ -228,6 +220,6 @@ export async function loadAnalytics(m, tokens) {
       liqLtv: num(s.liquidationLtv) * 100,
       hf: debt > 0 ? num(s.borrowLiquidationLimit) / debt : Infinity,
     }
-  }).sort((a, b) => a.hf - b.hf || b.deposits - a.deposits) ?? null
+  }).filter((p) => p.deposits > 0 || p.debt > 0).sort((a, b) => a.hf - b.hf || b.deposits - a.deposits) ?? null
   return { reserves, positions, blockTime: Number(now.blockTime) }
 }
