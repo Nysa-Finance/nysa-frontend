@@ -23,14 +23,16 @@ async function firstTxTime(rpc, addr) {
 
 // klend-sdk is imported lazily so auth is checked (and a clean 401 returned) before loading it.
 async function readMarkets(rpcUrl, history) {
-  const { KaminoMarket, getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS } = await import('@kamino-finance/klend-sdk')
+  const { getCurrentLedgerInstant } = await import('@kamino-finance/klend-sdk')
+  const { loadMarket } = await import('../src/loadMarket.js')
   const { createSolanaRpc, address } = await import('@solana/kit')
   const rpc = createSolanaRpc(rpcUrl)
   const balances = new Map()
   const now = await getCurrentLedgerInstant(rpc)
   const ts = Number(now.blockTime)
   for (const m of LIVE) {
-    const market = await KaminoMarket.load(rpc, address(m.kaminoMarket), DEFAULT_RECENT_SLOT_DURATION_MS)
+    const market = await loadMarket(rpc, m)
+    // Needs getProgramAccounts: point SOLANA_RPC at a plan that allows it (Alchemy free does not).
     for (const ob of await market.getAllObligationsForMarket(now)) {
       const owner = String(ob.state.owner)
       balances.set(owner, (balances.get(owner) ?? 0) + ob.refreshedStats.userTotalDeposit.toNumber())

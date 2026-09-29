@@ -3,8 +3,7 @@
 import './polyfills.js'
 import Decimal from 'decimal.js'
 import {
-  KaminoMarket, KaminoAction, VanillaObligation, PROGRAM_ID, U64_MAX,
-  getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS,
+  KaminoAction, VanillaObligation, PROGRAM_ID, U64_MAX, getCurrentLedgerInstant,
 } from '@kamino-finance/klend-sdk'
 import {
   createDefaultRpcTransport, createSolanaRpcFromTransport, address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
@@ -13,6 +12,7 @@ import {
   getBase64EncodedWireTransaction, getBase58Decoder,
 } from '@solana/kit'
 import { SOLANA_RPC } from './config.js'
+import { loadMarket as loadMarketDirect } from './loadMarket.js'
 
 const CHAIN = 'solana:mainnet'
 const MAX_TX_BYTES = 1232
@@ -34,7 +34,7 @@ const rpc = createSolanaRpcFromTransport(async (req) => {
   }
 })
 const obligationType = () => new VanillaObligation(PROGRAM_ID)
-const loadMarket = (m) => KaminoMarket.load(rpc, address(m.kaminoMarket), DEFAULT_RECENT_SLOT_DURATION_MS)
+const loadMarket = (m) => loadMarketDirect(rpc, m) // reserves by address, no getProgramAccounts
 const num = (v) => (v == null ? 0 : typeof v === 'number' ? v : v.toNumber())
 
 function reserveOf(market, token) {
@@ -214,7 +214,10 @@ export async function loadAnalytics(m, tokens) {
       maxAge: Number(r.state.config.tokenInfo.maxAgePriceSeconds),
     }
   })
-  const positions = (await market.getAllObligationsForMarket(now)).map((ob) => {
+  // Listing every position needs getProgramAccounts, which some RPC plans refuse (Alchemy free): degrade to null.
+  let obligations = null
+  try { obligations = await market.getAllObligationsForMarket(now) } catch (e) { console.warn('[analytics] positions unavailable', e) }
+  const positions = obligations?.map((ob) => {
     const s = ob.refreshedStats
     const debt = num(s.userTotalBorrow)
     return {
@@ -225,6 +228,6 @@ export async function loadAnalytics(m, tokens) {
       liqLtv: num(s.liquidationLtv) * 100,
       hf: debt > 0 ? num(s.borrowLiquidationLimit) / debt : Infinity,
     }
-  }).sort((a, b) => a.hf - b.hf || b.deposits - a.deposits)
+  }).sort((a, b) => a.hf - b.hf || b.deposits - a.deposits) ?? null
   return { reserves, positions, blockTime: Number(now.blockTime) }
 }
