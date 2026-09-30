@@ -4,3 +4,7 @@ dist
 .DS_Store
 .claude
 .vercel
+
+# VPS deploy
+data-export
+.env.local

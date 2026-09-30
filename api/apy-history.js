@@ -1,6 +1,6 @@
 // GET /api/apy-history — per-token daily reserve history recorded by /api/points-snapshot:
 // { tokens: { [token_id]: { inception, points: [{ ts, rate, supplyApy, borrowApy, utilization }] } } }
-import { readBlob } from './points.js'
+import { readBlob } from './_storage.js'
 
 export const HISTORY_BLOB = 'market-history/history.json'
 

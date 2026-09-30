@@ -2,10 +2,10 @@
 // 1. Farm Points: accrue supplied USD × days per wallet ("supplied" = USDC lent + USDY collateral).
 // 2. Reserve history for Realized APY: value of one deposit share (liquidity per cToken), APYs, utilization.
 // Protected by CRON_SECRET: Vercel Cron sends it as a Bearer token; manual runs must send it too.
-import { put } from '@vercel/blob'
 import { LIVE, tokensOf } from '../src/config.js'
 import { parsePoints, snapshotPoints, pointsCsv } from '../src/logic.js'
-import { POINTS_BLOB, readPoints, readBlob } from './points.js'
+import { POINTS_BLOB, readPoints } from './points.js'
+import { readBlob, writeBlob } from './_storage.js'
 import { HISTORY_BLOB } from './apy-history.js'
 
 // Unix time of an account's first transaction (a reserve's creation). Only needed once per reserve.
@@ -71,9 +71,8 @@ export default async function handler(req, res) {
     const history = JSON.parse((await readBlob(HISTORY_BLOB)) ?? '{"tokens":{}}')
     const balances = await readMarkets(rpcUrl, history)
     const rows = snapshotPoints(parsePoints((await readPoints()) ?? '').rows, balances, Math.floor(Date.now() / 1000))
-    const opts = { access: 'private', addRandomSuffix: false, allowOverwrite: true }
-    await put(POINTS_BLOB, pointsCsv(rows), { ...opts, contentType: 'text/csv' })
-    await put(HISTORY_BLOB, JSON.stringify(history), { ...opts, contentType: 'application/json' })
+    await writeBlob(POINTS_BLOB, pointsCsv(rows), 'text/csv')
+    await writeBlob(HISTORY_BLOB, JSON.stringify(history), 'application/json')
     res.setHeader('content-type', 'application/json')
     res.end(JSON.stringify({ ok: true, wallets: rows.length, suppliers: balances.size }))
   } catch (e) {

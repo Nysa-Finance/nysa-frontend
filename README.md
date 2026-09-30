@@ -57,6 +57,17 @@ klend-sdk's generated layouts. It indexes incrementally into `market-history/upd
 transactions newer than the last one seen. Values are formatted at index time; after changing a formatter, delete that blob to re-index.
 Decoding is covered by `api/_market-updates.test.js` (underscore: not deployed as a function).
 
+## VPS deploy (Docker)
+Same app, without Vercel: `server.js` serves `dist/` and the `/api` handlers and runs the daily snapshot at 00:00 UTC;
+state is written as files in `DATA_DIR` (a Docker volume) instead of Vercel Blob (`api/_storage.js` picks one or the other).
+- `docker-compose.yml`: `app` (Node 24) + `caddy` (automatic HTTPS, CSP and security headers from `Caddyfile`).
+- `.env` next to the compose file (never committed): `VITE_SOLANA_RPC`, `CRON_SECRET`, `DOMAIN`, `RPC_ORIGIN` (see `.env.example`).
+- Auto-deploy: `.github/workflows/deploy.yml` SSHes to the `deploy` user, whose key may only run `scripts/deploy.sh`
+  (git reset to `origin/main` + `docker compose up -d --build`; a failing build/test leaves the running version up).
+  Secrets: `VPS_SSH_KEY`, `VPS_HOST`, `VPS_KNOWN_HOSTS`. Until they exist the workflow skips.
+- Migrating state from Vercel Blob: `BLOB_READ_WRITE_TOKEN=… node scripts/export-blob.mjs`, then
+  `docker compose cp data-export/. app:/data/` and `docker compose exec -u root app chown -R node:node /data`.
+
 ## Not done yet
 - **Liquidations page.** The original reads a liquidation indexer that is offline; open positions and health factors are shown in Analytics instead.
 - **Geo-block and sanctions screening.** These need a backend (`/api/geo` on the original).

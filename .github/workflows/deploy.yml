@@ -1,0 +1,24 @@
+# On every push to main, ask the VPS to deploy. The SSH key is restricted on the VPS to running scripts/deploy.sh only.
+name: Deploy to VPS
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          HOST: ${{ secrets.VPS_HOST }}
+        run: |
+          if [ -z "$HOST" ]; then echo "VPS secrets not configured yet: skipping deploy."; exit 0; fi
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy && chmod 600 ~/.ssh/deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/deploy "deploy@$HOST"

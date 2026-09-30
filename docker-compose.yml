@@ -1,0 +1,29 @@
+# VPS stack: app (site + /api + daily snapshot) behind Caddy (HTTPS). Settings come from .env next to this file.
+services:
+  app:
+    build:
+      context: .
+      args:
+        VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:?set VITE_SOLANA_RPC in .env}
+    env_file: .env
+    volumes:
+      - data:/data # Farm Points, APY history, market index
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports: ["80:80", "443:443", "443:443/udp"]
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      RPC_ORIGIN: ${RPC_ORIGIN:?set RPC_ORIGIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data # TLS certificates
+      - caddy_config:/config
+    depends_on: [app]
+    restart: unless-stopped
+
+volumes:
+  data:
+  caddy_data:
+  caddy_config:

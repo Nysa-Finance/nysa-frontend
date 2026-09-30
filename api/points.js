@@ -1,15 +1,10 @@
 // GET /api/points — Farm Points leaderboard as CSV (address,cumulative_points,last_supplied_usd,last_snapshot_ts).
-// State lives in a private Vercel Blob written by /api/points-snapshot.
-import { get } from '@vercel/blob'
+// State is written by /api/points-snapshot (storage: see _storage.js).
+import { readBlob } from './_storage.js'
 
 export const POINTS_BLOB = 'farm-points/points_state.csv'
 const EMPTY = 'address,cumulative_points,last_supplied_usd,last_snapshot_ts\n'
 
-// Text content of a private blob, or null if it does not exist yet.
-export async function readBlob(path) {
-  const blob = await get(path, { access: 'private', useCache: false })
-  return blob ? new Response(blob.stream).text() : null
-}
 export const readPoints = () => readBlob(POINTS_BLOB)
 
 export default async function handler(req, res) {

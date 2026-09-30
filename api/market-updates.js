@@ -3,12 +3,11 @@
 // Indexed incrementally into a private Blob: each call only fetches transactions newer than the last one seen.
 // The position list replaces getProgramAccounts, which rate-limited RPC plans refuse (Alchemy free).
 import { createRequire } from 'node:module'
-import { put } from '@vercel/blob'
 import { address, getBase58Decoder, getBase58Encoder } from '@solana/kit'
 import { createRpc } from '../src/loadMarket.js'
 import { LIVE, TOKENS } from '../src/config.js'
 import { compact, usd, dur, short } from '../src/logic.js'
-import { readBlob } from './points.js'
+import { readBlob, writeBlob } from './_storage.js'
 
 const require = createRequire(import.meta.url)
 const BLOB = 'market-history/index-v2.json' // v2 adds obligations (v1 had updates only)
@@ -201,7 +200,7 @@ export async function refreshIndex(rpc) {
   const state = { lastSig: {}, updates: [], obligations: {}, ...JSON.parse((await readBlob(BLOB)) ?? '{}') }
   let changed = false
   for (const m of LIVE) changed = (await indexNew(rpc, m.kaminoMarket, state)) || changed
-  if (changed) await put(BLOB, JSON.stringify(state), { access: 'private', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json' })
+  if (changed) await writeBlob(BLOB, JSON.stringify(state), 'application/json')
   return state
 }
 
