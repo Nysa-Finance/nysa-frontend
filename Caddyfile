@@ -1,8 +1,9 @@
-# HTTPS (automatic Let's Encrypt) + security headers in front of the Node app.
+# Security headers in front of the Node app. HTTPS is done by Cloudflare: requests arrive over the tunnel as plain HTTP,
+# and this port is not published, so nothing else can reach it.
 # CSP: the page may only load code from itself and talk to itself, Kamino (api + cdn) and the Solana RPC (RPC_ORIGIN).
 # klend-sdk also loads a small WebAssembly decoder from a data: URL, hence data: in connect-src and 'wasm-unsafe-eval'.
 # If you change RPC provider, update RPC_ORIGIN in .env.
-{$DOMAIN} {
+http://{$DOMAIN} {
 	encode zstd gzip
 	# The daily snapshot runs inside the app (server.js); its HTTP route is only for Vercel Cron, so it is not exposed here.
 	respond /api/points-snapshot 404

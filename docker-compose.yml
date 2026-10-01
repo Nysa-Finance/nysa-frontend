@@ -1,4 +1,5 @@
-# VPS stack: app (site + /api + daily snapshot) behind Caddy (HTTPS). Settings come from .env next to this file.
+# VPS stack: Cloudflare Tunnel -> Caddy (security headers) -> app (site + /api + daily snapshot). Settings come from .env.
+# No port is published: the tunnel connects out to Cloudflare, which does HTTPS, geoblocking and WAF in front.
 services:
   app:
     build:
@@ -20,18 +21,30 @@ services:
 
   caddy:
     image: caddy:2
-    ports: ["80:80", "443:443", "443:443/udp"]
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
       RPC_ORIGIN: ${RPC_ORIGIN:?set RPC_ORIGIN in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data # TLS certificates
+      - caddy_data:/data
       - caddy_config:/config
     depends_on: [app]
     restart: unless-stopped
     cap_drop: [ALL]
-    cap_add: [NET_BIND_SERVICE] # only to listen on 80/443
+    cap_add: [NET_BIND_SERVICE] # only to listen on :80 (reachable only through the tunnel)
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    logging: *logs
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run # public hostname -> http://caddy:80 is set in the Cloudflare dashboard
+    environment:
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
+    depends_on: [caddy]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     mem_limit: 256m
     logging: *logs
