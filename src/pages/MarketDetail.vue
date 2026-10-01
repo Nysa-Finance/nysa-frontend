@@ -1,4 +1,5 @@
 <script setup>
+import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { state, rowOf, loadApyHistory, loadMarketUpdates } from '../store.js'
@@ -58,7 +59,7 @@ function openDd() {
               <div class="farm-cta-t">This market is eligible for farming Nysa Points.</div>
               <div class="farm-cta-s">Lend out tokens and earn points.</div>
             </div>
-            <button class="n-btn-sm ghost" @click="pointsOpen = true">Check your points →</button>
+            <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'market' })">Check your points →</button>
           </div>
           <div class="n-stats stat-2 head-stats">
             <div class="n-stat"><div class="k">Collateral deposited</div><div class="v"><span v-if="state.loaded">{{ usd(sum(m.collateral, 'supplyUsd')) }}</span><span v-else class="n-skel" /></div></div>

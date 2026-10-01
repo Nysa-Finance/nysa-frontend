@@ -3,6 +3,7 @@ import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { KAMINO_API, SOLANA_RPC, LIVE, TOKENS, tok, tokensOf } from './config.js'
 import { parsePoints } from './logic.js'
+import { event } from './analytics.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
 const WALLET_KEY = 'connectedWallet'
@@ -173,6 +174,7 @@ async function connectWith(w, silent) {
 
 export async function connectWallet(w) {
   await connectWith(w, false)
+  event('Wallet connected', { wallet: w.name })
   state.connectOpen = false
   refresh()
 }
@@ -195,7 +197,14 @@ async function eagerConnect() {
 export async function sendKaminoAction(kind, { market, token, amount, all }) {
   if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
   const { execute } = await kamino()
-  return execute(kind, { wallet, account, market, token, amount, all })
+  try {
+    const sig = await execute(kind, { wallet, account, market, token, amount, all })
+    event(kind[0].toUpperCase() + kind.slice(1), { token: token.name }) // Deposit | Withdraw | Borrow | Repay
+    return sig
+  } catch (e) {
+    event('Transaction failed', { action: kind, reason: /reject/i.test(e?.message) ? 'rejected' : 'error' })
+    throw e
+  }
 }
 
 // Farm Points leaderboard (shared by the modal, Portfolio and Analytics). Loaded once per page view.

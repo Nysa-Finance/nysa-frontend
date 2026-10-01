@@ -1,4 +1,5 @@
 <script setup>
+import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, rowOf, priceOf, loadPoints, myPoints } from '../store.js'
@@ -61,7 +62,7 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
   <div v-if="on" class="n-banner fp-banner">
     <span v-if="points">Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span>
     <span v-else>Supply to the USDY Ondo Market to start earning Farm Points. Points accrue as supplied balance × time, snapshotted daily.</span>
-    <button class="n-btn-sm ghost" @click="pointsOpen = true">View leaderboard</button>
+    <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'portfolio' })">View leaderboard</button>
   </div>
 
   <div class="n-seg toggle">
