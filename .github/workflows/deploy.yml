@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+permissions: {} # the job only uses SSH, never the GitHub token
 concurrency:
   group: deploy
   cancel-in-progress: false

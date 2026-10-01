@@ -204,11 +204,22 @@ export async function refreshIndex(rpc) {
   return state
 }
 
+// At most one refresh per minute, shared by concurrent requests: without a CDN in front (VPS), a burst of
+// requests would otherwise each scan the RPC (quota exhaustion) and race on writing the index.
+let cached = null, cachedAt = 0
+function freshIndex(rpcUrl) {
+  if (!cached || Date.now() - cachedAt > 60_000) {
+    cachedAt = Date.now()
+    cached = refreshIndex(createRpc(rpcUrl)).catch((e) => { cached = null; throw e })
+  }
+  return cached
+}
+
 export default async function handler(req, res) {
   try {
     const rpcUrl = process.env.SOLANA_RPC || process.env.VITE_SOLANA_RPC
     if (!rpcUrl) throw new Error('SOLANA_RPC (or VITE_SOLANA_RPC) is not set')
-    const state = await refreshIndex(createRpc(rpcUrl))
+    const state = await freshIndex(rpcUrl)
     res.setHeader('content-type', 'application/json')
     res.setHeader('cache-control', 'public, s-maxage=300, stale-while-revalidate=600')
     res.end(JSON.stringify({ updates: [...state.updates].sort((a, b) => b.ts - a.ts), obligations: state.obligations }))

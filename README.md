@@ -67,6 +67,8 @@ state is written as files in `DATA_DIR` (a Docker volume) instead of Vercel Blob
   Secrets: `VPS_SSH_KEY`, `VPS_HOST`, `VPS_KNOWN_HOSTS`. Until they exist the workflow skips.
 - Migrating state from Vercel Blob: `BLOB_READ_WRITE_TOKEN=… node scripts/export-blob.mjs`, then
   `docker compose cp data-export/. app:/data/` and `docker compose exec -u root app chown -R node:node /data`.
+- `/api/points-snapshot` is not public on the VPS (Caddy answers 404). To run a snapshot by hand:
+  `docker compose exec app node -e "fetch('http://localhost:3000/api/points-snapshot',{headers:{authorization:'Bearer '+process.env.CRON_SECRET}}).then(r=>r.text()).then(console.log)"`
 
 ## Not done yet
 - **Liquidations page.** The original reads a liquidation indexer that is offline; open positions and health factors are shown in Analytics instead.

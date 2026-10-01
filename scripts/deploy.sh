@@ -6,7 +6,7 @@ main() {
   cd "$(dirname "$0")/.."
   git fetch --quiet origin main
   git reset --hard --quiet origin/main
-  docker compose up -d --build --remove-orphans # if the build or tests fail, the running version stays up
+  docker compose up -d --build --pull always --remove-orphans # if the build or tests fail, the running version stays up
   docker image prune -f >/dev/null
   echo "deployed $(git rev-parse --short HEAD)"
 }

@@ -4,6 +4,8 @@
 # If you change RPC provider, update RPC_ORIGIN in .env.
 {$DOMAIN} {
 	encode zstd gzip
+	# The daily snapshot runs inside the app (server.js); its HTTP route is only for Vercel Cron, so it is not exposed here.
+	respond /api/points-snapshot 404
 	reverse_proxy app:3000
 	header {
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' data: https://api.kamino.finance https://cdn.kamino.finance {$RPC_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"

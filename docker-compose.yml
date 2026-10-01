@@ -9,6 +9,14 @@ services:
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
+    # Hardening: read-only filesystem (only /data and /tmp writable), no Linux capabilities, no privilege escalation.
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    pids_limit: 200
+    logging: &logs { driver: json-file, options: { max-size: 10m, max-file: "3" } }
 
   caddy:
     image: caddy:2
@@ -22,6 +30,11 @@ services:
       - caddy_config:/config
     depends_on: [app]
     restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE] # only to listen on 80/443
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    logging: *logs
 
 volumes:
   data:

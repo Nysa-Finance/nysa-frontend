@@ -1,0 +1,7 @@
+{
+  "name": "bigint-buffer",
+  "version": "1.1.5-js",
+  "description": "Pure-JS drop-in for bigint-buffer (abandoned; its native binding has GHSA-3gc7-fjrx-p6mg). Same code as its JS fallback, which is what ran anyway.",
+  "main": "index.js",
+  "license": "Apache-2.0"
+}
