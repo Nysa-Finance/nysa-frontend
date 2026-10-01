@@ -45,6 +45,8 @@ export function acceptTos() {
 }
 
 export const priceOf = (id) => state.reserves[id]?.price ?? tok(id).price
+// Max LTV is changed by governance (Market Updates), so prefer the live value from the Kamino API over config.
+export const maxLtvOf = (pair) => state.reserves[pair.collateral]?.maxLtv ?? pair.maxLtv
 
 // Everything a view needs for one token, merged.
 export function rowOf(id) {

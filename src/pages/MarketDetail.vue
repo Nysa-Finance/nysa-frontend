@@ -2,7 +2,7 @@
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { state, rowOf, loadApyHistory, loadMarketUpdates } from '../store.js'
+import { state, rowOf, maxLtvOf, loadApyHistory, loadMarketUpdates } from '../store.js'
 import { marketById, tok, tokensOf, explorer } from '../config.js'
 import { usd, pct, compact, short } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -115,7 +115,7 @@ function openDd() {
             <div v-for="p in m.pairs" :key="p.collateral + p.liability" class="n-tr sm rp-grid">
               <div class="n-cell n-asset" data-label="Collateral"><TokenIcon :token="tok(p.collateral)" size="sm" />{{ tok(p.collateral).name }}</div>
               <div class="n-cell n-asset" data-label="Liability"><TokenIcon :token="tok(p.liability)" size="sm" />{{ tok(p.liability).name }}</div>
-              <div class="n-cell n-num" data-label="Max LTV">{{ p.maxLtv }}%</div>
+              <div class="n-cell n-num" data-label="Max LTV">{{ maxLtvOf(p) }}%</div>
               <div class="n-cell n-num" data-label="Liquidation LTV">{{ p.liqLtv }}%</div>
               <div class="n-cell n-num" data-label="Max discount">{{ pct(p.maxDiscount, 1) }}</div>
               <div class="n-cell n-num" data-label="Supply cap">{{ compact(p.supplyCap, tok(p.collateral).name) }}</div>

@@ -1,6 +1,7 @@
 // Static market configuration. Live numbers (APYs, supply, borrow) come from the Kamino API;
 // everything here is on-chain config that rarely changes.
-// ponytail: IRM curve + risk params hardcoded (verified against klend-sdk on 2026-09-24); read them via kamino.js if they start changing.
+// Max LTV is read live (maxLtvOf in store.js); this value is only the fallback before the Kamino API answers.
+// ponytail: IRM curve + other risk params hardcoded (verified on-chain on 2026-10-01; the API does not expose them); read them via kamino.js if they start changing.
 
 export const KAMINO_API = 'https://api.kamino.finance'
 // The public endpoint rate-limits/403s browsers quickly — set VITE_SOLANA_RPC to a keyed RPC (Helius, Alchemy, …).
@@ -46,7 +47,7 @@ export const MARKETS = [
     kaminoMarket: 'F4uLsGZT4YnHDcemtoYDz2LBZKLmwTB1wzkwS6oqygvy',
     blurb: 'Lend against USDY, a yield-bearing token backed by short-term US Treasuries with over $2B in AUM. Borrow USDC on Solana in a market curated by Nysa.',
     collateral: ['svm-usdy'], loans: ['svm-usdc'],
-    pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc', maxLtv: 92, liqLtv: 95, maxDiscount: 5, supplyCap: 250_000, borrowCap: 250_000 }],
+    pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc', maxLtv: 90, liqLtv: 95, maxDiscount: 5, supplyCap: 250_000, borrowCap: 250_000 }],
     dueDiligence,
   },
   { id: 'equities-usdc', name: 'Tokenized Equities / USDC', infra: 'Euler', visible: false },
