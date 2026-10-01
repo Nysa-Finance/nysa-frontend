@@ -24,12 +24,16 @@ services:
     logging: &logs { driver: json-file, options: { max-size: 10m, max-file: "3" } }
 
   caddy:
-    image: caddy:2
+    # Caddyfile baked into the image (not bind-mounted), so a changed Caddyfile rebuilds and recreates Caddy on deploy.
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM caddy:2
+        COPY Caddyfile /etc/caddy/Caddyfile
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
       RPC_ORIGIN: ${RPC_ORIGIN:?set RPC_ORIGIN in .env}
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [app]
