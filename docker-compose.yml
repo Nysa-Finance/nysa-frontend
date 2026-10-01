@@ -1,4 +1,5 @@
-# VPS stack: Cloudflare Tunnel -> Caddy (security headers) -> app (site + /api + daily snapshot). Settings come from .env.
+# VPS stack: Cloudflare Tunnel -> Caddy (security headers) -> app (site + /api + daily snapshot),
+# plus self-hosted Plausible Analytics (Tunnel -> plausible, on its own network). Settings come from .env.
 # No port is published: the tunnel connects out to Cloudflare, which does HTTPS, geoblocking and WAF in front.
 services:
   app:
@@ -6,7 +7,10 @@ services:
       context: .
       args:
         VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:?set VITE_SOLANA_RPC in .env}
-    env_file: .env
+    environment: # only what the app needs (not the tunnel or Plausible secrets)
+      VITE_SOLANA_RPC: ${VITE_SOLANA_RPC}
+      SOLANA_RPC: ${SOLANA_RPC:-}
+      CRON_SECRET: ${CRON_SECRET:-}
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
@@ -42,6 +46,7 @@ services:
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
     depends_on: [caddy]
+    networks: [default, analytics] # public hostnames: DOMAIN -> http://caddy:80, analytics.nysa.finance -> http://plausible:8000
     restart: unless-stopped
     read_only: true
     cap_drop: [ALL]
@@ -49,7 +54,70 @@ services:
     mem_limit: 256m
     logging: *logs
 
+  # --- Plausible Analytics (Community Edition), from github.com/plausible/community-edition ---
+  # On the "analytics" network only: the app and Caddy cannot reach it, and it cannot reach them.
+  plausible:
+    image: ghcr.io/plausible/community-edition:v3.2.1
+    command: sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"
+    depends_on:
+      plausible_db: { condition: service_healthy }
+      plausible_events_db: { condition: service_healthy }
+    environment:
+      BASE_URL: https://analytics.nysa.finance
+      SECRET_KEY_BASE: ${PLAUSIBLE_SECRET_KEY_BASE:?set PLAUSIBLE_SECRET_KEY_BASE in .env}
+      TOTP_VAULT_KEY: ${PLAUSIBLE_TOTP_VAULT_KEY:?set PLAUSIBLE_TOTP_VAULT_KEY in .env}
+      DISABLE_REGISTRATION: invite_only # the first account can sign up, then only invited users
+      TMPDIR: /var/lib/plausible/tmp
+    volumes:
+      - plausible-data:/var/lib/plausible
+    ulimits: { nofile: { soft: 65535, hard: 65535 } }
+    networks: [analytics]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 768m
+    logging: *logs
+
+  plausible_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres # reachable only from the analytics network
+    volumes:
+      - plausible-db:/var/lib/postgresql/data
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres"], start_period: 1m }
+    networks: [analytics]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+    logging: *logs
+
+  plausible_events_db:
+    image: clickhouse/clickhouse-server:24.12-alpine
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: 1
+    volumes:
+      - plausible-events:/var/lib/clickhouse
+      - plausible-events-logs:/var/log/clickhouse-server
+      # Upstream configs: quieter logs, IPv4 only, low-memory profile (https://clickhouse.com/docs/en/operations/tips)
+      - ./plausible/clickhouse/logs.xml:/etc/clickhouse-server/config.d/logs.xml:ro
+      - ./plausible/clickhouse/ipv4-only.xml:/etc/clickhouse-server/config.d/ipv4-only.xml:ro
+      - ./plausible/clickhouse/low-resources.xml:/etc/clickhouse-server/config.d/low-resources.xml:ro
+      - ./plausible/clickhouse/default-profile-low-resources-overrides.xml:/etc/clickhouse-server/users.d/default-profile-low-resources-overrides.xml:ro
+    ulimits: { nofile: { soft: 262144, hard: 262144 } }
+    healthcheck: { test: ["CMD-SHELL", "wget --no-verbose --tries=1 -O - http://127.0.0.1:8123/ping || exit 1"], start_period: 1m }
+    networks: [analytics]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1536m
+    logging: *logs
+
+networks:
+  analytics:
+
 volumes:
   data:
   caddy_data:
   caddy_config:
+  plausible-data:
+  plausible-db:
+  plausible-events:
+  plausible-events-logs:

@@ -63,7 +63,11 @@ state is written as files in `DATA_DIR` (a Docker volume) instead of Vercel Blob
 - `docker-compose.yml`: `app` (Node 24) + `caddy` (CSP and security headers from `Caddyfile`) + `tunnel` (cloudflared).
   No port is published: Cloudflare does HTTPS/WAF/geoblocking and reaches Caddy only through the tunnel
   (public hostname `DOMAIN` -> `http://caddy:80`, set in the Cloudflare dashboard).
-- `.env` next to the compose file (never committed): `VITE_SOLANA_RPC`, `CRON_SECRET`, `DOMAIN`, `RPC_ORIGIN`, `TUNNEL_TOKEN` (see `.env.example`).
+- `.env` next to the compose file (never committed): `VITE_SOLANA_RPC`, `CRON_SECRET`, `DOMAIN`, `RPC_ORIGIN`, `TUNNEL_TOKEN`,
+  `PLAUSIBLE_SECRET_KEY_BASE`, `PLAUSIBLE_TOTP_VAULT_KEY` (see `.env.example`). The app container only receives the variables it uses.
+- Analytics: self-hosted Plausible CE (`plausible` + Postgres + ClickHouse, configs in `plausible/clickhouse/` from the upstream
+  community-edition repo) on its own Docker network, published as `analytics.nysa.finance` -> `http://plausible:8000` in the tunnel.
+  The site sends cookie-less pageviews with `@plausible-analytics/tracker` (`src/main.js`, production builds only).
 - Auto-deploy: `.github/workflows/deploy.yml` SSHes to the `deploy` user, whose key may only run `scripts/deploy.sh`
   (git reset to `origin/main` + `docker compose up -d --build`; a failing build/test leaves the running version up).
   Secrets: `VPS_SSH_KEY`, `VPS_HOST`, `VPS_KNOWN_HOSTS`. Until they exist the workflow skips.

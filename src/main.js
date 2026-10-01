@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import { createRouter, createWebHistory } from 'vue-router'
+import { init as initAnalytics } from '@plausible-analytics/tracker'
 import App from './App.vue'
 import './style.css'
 
@@ -20,3 +21,6 @@ const router = createRouter({
 })
 
 createApp(App).use(router).mount('#app')
+
+// Cookie-less pageview analytics, self-hosted on the VPS (Plausible, see docker-compose.yml). Ignores localhost.
+if (import.meta.env.PROD) initAnalytics({ domain: 'app.nysa.finance', endpoint: 'https://analytics.nysa.finance/api/event' })

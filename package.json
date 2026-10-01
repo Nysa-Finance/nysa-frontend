@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@kamino-finance/klend-sdk": "^12.0.0",
+    "@plausible-analytics/tracker": "^0.4.6",
     "@solana/kit": "^2.3.0",
     "@vercel/blob": "^2.8.0",
     "@wallet-standard/app": "^1.1.1",

@@ -1,6 +1,7 @@
 # Security headers in front of the Node app. HTTPS is done by Cloudflare: requests arrive over the tunnel as plain HTTP,
 # and this port is not published, so nothing else can reach it.
-# CSP: the page may only load code from itself and talk to itself, Kamino (api + cdn) and the Solana RPC (RPC_ORIGIN).
+# CSP: the page may only load code from itself and talk to itself, Kamino (api + cdn), the Solana RPC (RPC_ORIGIN)
+# and our Plausible (analytics.nysa.finance, pageview events only).
 # klend-sdk also loads a small WebAssembly decoder from a data: URL, hence data: in connect-src and 'wasm-unsafe-eval'.
 # If you change RPC provider, update RPC_ORIGIN in .env.
 http://{$DOMAIN} {
@@ -9,7 +10,7 @@ http://{$DOMAIN} {
 	respond /api/points-snapshot 404
 	reverse_proxy app:3000
 	header {
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' data: https://api.kamino.finance https://cdn.kamino.finance {$RPC_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' data: https://api.kamino.finance https://cdn.kamino.finance https://analytics.nysa.finance {$RPC_ORIGIN}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
