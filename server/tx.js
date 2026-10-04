@@ -8,7 +8,7 @@ import {
   address, AccountRole, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables, compileTransaction, getTransactionEncoder,
-  getBase64EncodedWireTransaction, fetchEncodedAccounts,
+  getBase64EncodedWireTransaction, fetchEncodedAccounts, getTransactionDecoder, getCompiledTransactionMessageDecoder, getPublicKeyFromAddress, verifySignature,
 } from '@solana/kit'
 import { createRequire } from 'node:module'
 import { marketById, tokensOf } from '../src/config.js'
@@ -124,8 +124,19 @@ async function testTransfer(owner) {
   return { ...(await simulated(await compile(owner, [ix], {}))), final: true }
 }
 
+// Wallets that just had a transaction built, so /api/tx/send only relays transactions it was asked for.
+const recentlyBuilt = new Map() // wallet -> timestamp
+const RELAY_WINDOW_MS = 10 * 60_000
+
 // Validated request -> { tx: base64 unsigned v0 transaction, minContextSlot, final }.
-export async function buildTx({ kind, wallet, market: marketId, token: tokenId, amount, all }) {
+export async function buildTx(req) {
+  const built = await build(req)
+  recentlyBuilt.set(req.wallet, Date.now())
+  if (recentlyBuilt.size > 10_000) for (const [w, at] of recentlyBuilt) if (Date.now() - at > RELAY_WINDOW_MS) recentlyBuilt.delete(w)
+  return built
+}
+
+async function build({ kind, wallet, market: marketId, token: tokenId, amount, all }) {
   const owner = address(wallet)
   if (kind === 'test') return testTransfer(owner)
   const m = marketById(marketId)
@@ -135,6 +146,28 @@ export async function buildTx({ kind, wallet, market: marketId, token: tokenId, 
   if (!t) throw new UserError('Unknown token for this market')
   if (!all && !(Number.isFinite(amount) && amount > 0)) throw new UserError('Invalid amount')
   return lending(kind, owner, m, t, amount, !!all)
+}
+
+// Wallets reached by deeplink (Phantom/Solflare on iOS) sign but don't send: relay the signed transaction, only when
+// its fee payer is the wallet that just asked us to build one and it carries that wallet's valid signature.
+export async function sendSigned({ tx, wallet }) {
+  const at = recentlyBuilt.get(wallet)
+  if (!at || Date.now() - at > RELAY_WINDOW_MS) throw new UserError('Unknown transaction, please try again')
+  let messageBytes, signatures, feePayer
+  try {
+    ;({ messageBytes, signatures } = getTransactionDecoder().decode(Uint8Array.from(Buffer.from(tx, 'base64'))))
+    feePayer = String(getCompiledTransactionMessageDecoder().decode(messageBytes).staticAccounts[0])
+  } catch { throw new UserError('Invalid transaction') }
+  const signature = signatures[wallet]
+  if (feePayer !== wallet || !signature || !(await verifySignature(await getPublicKeyFromAddress(address(wallet)), signature, messageBytes))) {
+    throw new UserError('The transaction is not signed by this wallet')
+  }
+  try {
+    return { signature: await rpc.sendTransaction(tx, { encoding: 'base64', preflightCommitment: 'confirmed' }).send() }
+  } catch (e) {
+    console.error('[tx] send failed', e)
+    throw new UserError(/blockhash/i.test(String(e?.message) + JSON.stringify(e?.context ?? {})) ? 'The transaction expired before it was sent, please try again' : 'The network rejected the transaction, please try again')
+  }
 }
 
 // Confirmation status of a sent transaction. A confirmed one refreshes the market cache for everyone.

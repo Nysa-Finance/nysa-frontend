@@ -1,14 +1,15 @@
 # Security headers in front of the Node app. HTTPS is done by Cloudflare: requests arrive over the tunnel as plain HTTP,
 # and this port is not published, so nothing else can reach it.
 # CSP: the page may only load code from itself and talk to itself (the backend does every on-chain read and builds
-# transactions; the wallet extension sends them) and to our Plausible (analytics.nysa.finance, pageview events only).
+# transactions; the wallet extension sends them), to our Plausible (analytics.nysa.finance, pageview events only) and to
+# ws://localhost, where Android's Mobile Wallet Adapter reaches the wallet app on the same phone.
 http://{$DOMAIN} {
 	# Not the live market stream: compression would buffer Server-Sent Events.
 	@compressible not path /api/events
 	encode @compressible zstd gzip
 	reverse_proxy app:3000
 	header {
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://analytics.nysa.finance; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://analytics.nysa.finance ws://localhost:*; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"

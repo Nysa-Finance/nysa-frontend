@@ -4,6 +4,7 @@ import { state, disconnect } from '../store.js'
 import { explorer } from '../config.js'
 import { short } from '../logic.js'
 import ConnectModal from './ConnectModal.vue'
+import WalletHandoff from './WalletHandoff.vue'
 
 const tabs = [
   { to: '/', label: 'Markets', icon: '/app/icon-markets.png' },
@@ -45,5 +46,6 @@ const menu = ref(false)
       <nav><RouterLink to="/analytics">Analytics</RouterLink></nav>
     </footer>
     <ConnectModal v-if="state.connectOpen" @close="state.connectOpen = false" />
+    <WalletHandoff />
   </div>
 </template>

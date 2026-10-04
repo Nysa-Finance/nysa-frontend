@@ -48,6 +48,19 @@ The app also has a Terms of Service gate (stored in localStorage), a wallet conn
 creates the user's Kamino accounts: that setup comes back first (`final: false`); the client sends it, waits for
 confirmation, then asks again for the action itself — two wallet prompts, like the original app.
 
+## Wallets on phones
+Mobile browsers have no wallet extensions (`src/wallets.js`):
+- **Android (Chrome)**: Solana's Mobile Wallet Adapter (`@solana-mobile/wallet-standard-mobile`, loaded only on Android)
+  registers as a Wallet Standard wallet; connecting and signing open the wallet app (Phantom, Solflare, …) to approve, then
+  return to the browser. It talks to the app over `ws://localhost`, allowed in the CSP. Its React Native peers are
+  replaced by empty packages in `vendor/` (the web build never imports them).
+- **iOS (Safari)**: Phantom's and Solflare's deeplink protocol (connect + `signTransaction`, x25519/XSalsa20-Poly1305 via
+  tweetnacl). The page leaves for the wallet app and comes back with the answer; the pending action survives the reload
+  in localStorage, the handoff card (`WalletHandoff.vue`) asks for a tap before each trip (iOS opens apps only on user
+  gestures), and `POST /api/tx/send` relays the signed transaction — only for a wallet that just had one built, with its
+  valid signature. Round trip covered by `src/wallets.test.js`.
+Logos in `public/wallets/` are the official icons shipped in `@solana/wallet-adapter-phantom` / `-solflare`.
+
 ## Supply rewards (boosted APY)
 The USDC reserve's Kamino collateral farm pays USDC incentives. `server/market.js` reads the farm with the market and
 returns each token's reward APR (yearly emission value over the staked value; shown as APR because rewards don't compound).

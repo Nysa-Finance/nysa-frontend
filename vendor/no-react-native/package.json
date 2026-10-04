@@ -1,0 +1,6 @@
+{
+  "name": "react-native",
+  "version": "999.0.0",
+  "description": "Empty stand-in: @solana-mobile packages declare react-native as a peer for native apps, but their web build never imports it. Keeps React Native's toolchain out of this web project.",
+  "license": "MIT"
+}

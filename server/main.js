@@ -12,7 +12,7 @@ import { isAddress } from '@solana/kit'
 import { RPC_URL, rpcCallsLastHour } from './rpc.js'
 import { getSnapshot, onSnapshot, refreshMarket } from './market.js'
 import { getAccount } from './account.js'
-import { buildTx, txStatus, KINDS, UserError } from './tx.js'
+import { buildTx, sendSigned, txStatus, KINDS, UserError } from './tx.js'
 import { getPositions } from './analytics.js'
 import { marketUpdates } from './updates.js'
 import { runSnapshot } from './snapshot.js'
@@ -102,6 +102,12 @@ const routes = [
       console.error('[tx] build failed', b.kind, e) // details stay in the logs (RPC errors can carry provider info)
       send(res, 502, { error: 'Could not build the transaction, please try again.' })
     }
+  }],
+  ['POST', /^\/api\/tx\/send$/, async (req, res) => {
+    if (limited(req, 'send', 20)) return send(res, 429, { error: 'Too many requests' })
+    const b = await jsonBody(req)
+    if (!isAddress(String(b.wallet)) || typeof b.tx !== 'string' || b.tx.length > 2000) throw new UserError('Invalid request')
+    send(res, 200, await sendSigned({ tx: b.tx, wallet: b.wallet }))
   }],
   ['GET', /^\/api\/tx\/(\w{64,90})$/, async (req, res, [signature]) => {
     if (limited(req, 'status', 120)) return send(res, 429, { error: 'Too many requests' })

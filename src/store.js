@@ -8,6 +8,9 @@ import { getBase58Decoder } from '@solana/kit'
 import { tok, tokensOf } from './config.js'
 import { parsePoints, pct } from './logic.js'
 import { event } from './analytics.js'
+import {
+  isIOS, DEEPLINK_WALLETS, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
+} from './wallets.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
 const WALLET_KEY = 'connectedWallet'
@@ -35,6 +38,9 @@ export const state = reactive({
   wallets: [], // detected Wallet Standard wallets
   connectOpen: false,
   points: { board: null, error: null }, // Farm Points leaderboard
+  // Phone wallets reached by deeplink (iOS): a transaction waiting for the user to approve it in the wallet app, or its
+  // outcome after they come back. { status: 'ready'|'sending'|'success'|'error', label, wallet, url?, signature?, error? }
+  handoff: null,
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
@@ -45,6 +51,10 @@ function scanWallets() {
   const ws = getWallets().get().filter(usable)
   state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom')].map(markRaw)
 }
+
+// iOS Safari has no wallet extensions: offer Phantom / Solflare through their deeplink protocol instead.
+export const deeplinkWallets = () => (isIOS && !state.wallets.length ? DEEPLINK_WALLETS : [])
+const deeplinkWallet = (name) => ({ name, deeplink: true })
 
 export function acceptTos() {
   safe(() => localStorage.setItem(TOS_KEY, '1'))
@@ -157,14 +167,21 @@ export async function connectWallet(w) {
   state.connectOpen = false
 }
 
+// Leaves for the wallet app; it sends the user back here connected (see start()). Call it straight from a tap.
+export const connectDeeplink = (name) => location.assign(connectUrl(name))
+
 export async function disconnect() {
-  try { await wallet?.features['standard:disconnect']?.disconnect() } catch { /* wallet already gone */ }
+  if (wallet?.deeplink) clearDeeplinkSession()
+  try { await wallet?.features?.['standard:disconnect']?.disconnect() } catch { /* wallet already gone */ }
   setAccount(null, null)
   safe(() => localStorage.removeItem(WALLET_KEY))
 }
 
 // Silent reconnect to the wallet used last time.
 async function eagerConnect() {
+  if (state.address) return
+  const dl = deeplinkSession()
+  if (dl) return setAccount(deeplinkWallet(dl.wallet), { address: dl.address })
   const name = safe(() => localStorage.getItem(WALLET_KEY))
   const w = name && state.wallets.find((x) => x.name === name)
   if (!w) return
@@ -185,12 +202,70 @@ async function confirmed(signature) {
   throw new Error(`Transaction ${signature} was not confirmed within ${CONFIRM_TIMEOUT_MS / 1000}s`)
 }
 
+const buildTx = (params) => api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: account.address }) })
+
+const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', test: 'Test transfer' }
+const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.token ? ` ${tok(p.token).name}` : ''}`
+function trackSuccess(p) {
+  if (p.kind === 'claim') event('Rewards claimed', { market: p.market })
+  else if (p.token) event(p.kind[0].toUpperCase() + p.kind.slice(1), { token: tok(p.token).name })
+}
+
+// ---- deeplink wallets (iOS): every signature is a round trip to the wallet app, and the page reloads on return ----
+const PENDING_KEY = 'nysaPendingTx' // the action being signed, kept across the page reload
+let cancelPending = null
+async function deeplinkStep(params) {
+  const built = await buildTx(params)
+  safe(() => localStorage.setItem(PENDING_KEY, JSON.stringify({ params, final: built.final })))
+  state.handoff = { status: 'ready', label: labelOf(params) + (built.final ? '' : ' · account setup (1 of 2)'), wallet: wallet.name, url: signUrl(built.tx) }
+}
+export function cancelHandoff() {
+  safe(() => localStorage.removeItem(PENDING_KEY))
+  state.handoff = null
+  cancelPending?.(new Error('Transaction cancelled'))
+  cancelPending = null
+}
+export const dismissHandoff = () => { state.handoff = null }
+
+// Back from the wallet app with a signed transaction (or a refusal): send it, confirm it, then the next step if any.
+async function resumeDeeplink(ret) {
+  const pending = safe(() => JSON.parse(localStorage.getItem(PENDING_KEY)))
+  safe(() => localStorage.removeItem(PENDING_KEY))
+  if (!pending) return
+  const label = labelOf(pending.params)
+  if (ret.error) {
+    state.handoff = { status: 'error', label, error: ret.error }
+    event('Transaction failed', { action: pending.params.kind, reason: 'rejected' })
+    return
+  }
+  state.handoff = { status: 'sending', label }
+  try {
+    const { signature } = await api('/api/tx/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tx: ret.signed, wallet: account.address }) })
+    await confirmed(signature)
+    if (pending.final) {
+      state.handoff = { status: 'success', label, signature }
+      trackSuccess(pending.params)
+    } else {
+      await deeplinkStep(pending.params) // account created: now the action itself
+    }
+  } catch (e) {
+    state.handoff = { status: 'error', label, error: e.message }
+    event('Transaction failed', { action: pending.params.kind, reason: 'error' })
+  }
+  loadAccount(true)
+}
+
 // First-time setup comes back as a separate transaction (final: false): send it, wait, then ask for the action.
 async function runAction(params) {
   if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
+  if (wallet.deeplink) {
+    // The page leaves for the wallet app from the handoff card; this promise only settles if the user cancels.
+    await deeplinkStep(params)
+    return new Promise((_, reject) => { cancelPending = reject })
+  }
   let minSlot = 0
   for (let step = 0; step < 3; step++) {
-    const built = await api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: account.address }) })
+    const built = await buildTx(params)
     const [{ signature }] = await wallet.features['solana:signAndSendTransaction'].signAndSendTransaction({
       account, chain: CHAIN, transaction: fromBase64(built.tx),
       options: { preflightCommitment: 'confirmed', minContextSlot: Math.max(built.minContextSlot, minSlot) },
@@ -205,8 +280,9 @@ async function runAction(params) {
 // kind: deposit | withdraw | borrow | repay. Returns the confirmed signature.
 export async function sendKaminoAction(kind, { market, token, amount, all }) {
   try {
-    const sig = await runAction({ kind, market: market.id, token: token.token_id, amount, all })
-    event(kind[0].toUpperCase() + kind.slice(1), { token: token.name }) // Deposit | Withdraw | Borrow | Repay
+    const params = { kind, market: market.id, token: token.token_id, amount, all }
+    const sig = await runAction(params)
+    trackSuccess(params) // Deposit | Withdraw | Borrow | Repay
     return sig
   } catch (e) {
     event('Transaction failed', { action: kind, reason: /reject/i.test(e?.message) ? 'rejected' : 'error' })
@@ -215,8 +291,9 @@ export async function sendKaminoAction(kind, { market, token, amount, all }) {
 }
 
 export async function claimRewards(market) {
-  const sig = await runAction({ kind: 'claim', market: market.id })
-  event('Rewards claimed', { market: market.id })
+  const params = { kind: 'claim', market: market.id }
+  const sig = await runAction(params)
+  trackSuccess(params)
   return sig
 }
 
@@ -256,10 +333,18 @@ let started = false
 export function start() {
   if (started) return
   started = true
+  registerMobileWalletAdapter()
   scanWallets()
   getWallets().on('register', scanWallets)
   listenMarket()
+  const ret = readDeeplinkReturn() // back from Phantom/Solflare on iOS?
+  if (ret?.action === 'connect' && ret.error) state.handoff = { status: 'error', label: 'Connect wallet', error: ret.error }
+  else if (ret?.action === 'connect') {
+    setAccount(deeplinkWallet(ret.wallet), { address: ret.address })
+    event('Wallet connected', { wallet: ret.wallet })
+  }
   eagerConnect()
+  if (ret?.action === 'sign') resumeDeeplink(ret)
   setInterval(() => document.visibilityState === 'visible' && loadAccount(), ACCOUNT_REFRESH_MS)
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && loadAccount())
 }

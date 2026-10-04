@@ -1,19 +1,10 @@
 <script setup>
 import { ref, onMounted, onUnmounted } from 'vue'
-import { state, connectWallet } from '../store.js'
+import { state, connectWallet, deeplinkWallets, connectDeeplink } from '../store.js'
+import { MWA_NAME as MWA } from '../wallets.js'
 
 const emit = defineEmits(['close'])
 
-// Mobile browsers (Safari, Chrome) have no wallet extensions: offer to reopen this page inside a wallet app's own browser,
-// where the wallet is available as usual. Universal links open the app, or its store page if it isn't installed.
-const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))
-const here = encodeURIComponent(location.href)
-const origin = encodeURIComponent(location.origin)
-const walletApps = [
-  { name: 'Phantom', color: '#ab9ff2', href: `https://phantom.com/ul/browse/${here}?ref=${origin}` },
-  { name: 'Solflare', color: '#fc7227', href: `https://solflare.com/ul/v1/browse/${here}?ref=${origin}` },
-  { name: 'MetaMask', color: '#f6851b', href: `https://metamask.app.link/dapp/${location.host}${location.pathname}${location.search}` },
-]
 const busy = ref(null) // name of the wallet being connected
 const error = ref(null)
 
@@ -40,20 +31,21 @@ onUnmounted(() => removeEventListener('keydown', onKey))
       <div class="cm-tabs single"><button class="cm-tab on">Solana</button></div>
       <div class="cm-list">
         <button v-for="w in state.wallets" :key="w.name" class="cm-wallet" :disabled="!!busy" @click="connect(w)">
-          <img class="cm-wallet-img" :src="w.icon" alt="" />
-          <span class="cm-wallet-name">{{ w.name }}</span>
+          <!-- Android: Mobile Wallet Adapter opens whichever wallet app you pick (Phantom, Solflare, …) to approve -->
+          <span v-if="w.name === MWA" class="cm-wallet-img cm-pair"><img src="/wallets/phantom.svg" alt="" /><img src="/wallets/solflare.svg" alt="" /></span>
+          <img v-else class="cm-wallet-img" :src="w.icon" alt="" />
+          <span class="cm-wallet-name">{{ w.name === MWA ? 'Phantom, Solflare & other apps' : w.name }}</span>
           <span v-if="busy === w.name" class="cm-spinner" />
           <span v-else class="cm-arrow">→</span>
         </button>
-        <template v-if="!state.wallets.length && isMobile">
-          <a v-for="a in walletApps" :key="a.name" class="cm-wallet" :href="a.href">
-            <span class="cm-wallet-img cm-initial" :style="{ background: a.color }">{{ a.name[0] }}</span>
-            <span class="cm-wallet-name">Open in {{ a.name }}</span>
-            <span class="cm-arrow">↗</span>
-          </a>
-          <div class="cm-hint">Your wallet app opens this page in its own browser, where you can connect.</div>
-        </template>
-        <div v-else-if="!state.wallets.length" class="cm-empty">No Solana wallet detected. Install Phantom and refresh.</div>
+        <!-- iOS: the wallet app opens to approve, then sends you back here -->
+        <button v-for="w in deeplinkWallets()" :key="w.name" class="cm-wallet" @click="connectDeeplink(w.name)">
+          <img class="cm-wallet-img" :src="w.icon" alt="" />
+          <span class="cm-wallet-name">{{ w.name }}</span>
+          <span class="cm-arrow">→</span>
+        </button>
+        <div v-if="deeplinkWallets().length" class="cm-hint">Approve in the app, then you'll come back here automatically.</div>
+        <div v-if="!state.wallets.length && !deeplinkWallets().length" class="cm-empty">No Solana wallet detected. Install Phantom and refresh.</div>
       </div>
       <div v-if="error" class="cm-error"><div class="cm-error-t">Connection failed</div><div class="cm-error-m">{{ error }}</div></div>
       <p class="cm-foot">Nysa on Solana runs on the Kamino Lend market</p>
@@ -83,7 +75,8 @@ onUnmounted(() => removeEventListener('keydown', onKey))
 .cm-wallet-name { flex: 1; text-align: left; font-weight: 600; font-size: 15px; }
 .cm-arrow { color: var(--m1); font-family: var(--mono); }
 .cm-spinner { width: 18px; height: 18px; border: 2px solid var(--line); border-top-color: var(--m1); border-radius: 50%; animation: spin .7s linear infinite; }
-.cm-initial { display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 16px; }
+.cm-pair { display: flex; gap: 4px; width: auto; height: auto; flex-shrink: 0; }
+.cm-pair img { width: 30px; height: 30px; border-radius: 8px; }
 .cm-hint { text-align: center; color: var(--mute); font-size: 12px; padding: 2px 8px 0; }
 .cm-empty { text-align: center; color: var(--mute); font-size: 13px; padding: 18px; border: 1px dashed var(--line); border-radius: 14px; }
 .cm-error { margin-top: 18px; background: #f9407512; border: 1px solid rgba(249,64,117,.3); border-radius: 12px; padding: 12px 14px; color: var(--m2); }

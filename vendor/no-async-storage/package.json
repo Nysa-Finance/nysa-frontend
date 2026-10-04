@@ -1,0 +1,6 @@
+{
+  "name": "@react-native-async-storage/async-storage",
+  "version": "1.99.0",
+  "description": "Empty stand-in: a React Native-only peer of @solana-mobile/wallet-standard-mobile that its web build never imports.",
+  "license": "MIT"
+}
