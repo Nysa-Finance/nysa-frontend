@@ -17,6 +17,7 @@ import { getPositions } from './analytics.js'
 import { marketUpdates } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { read, POINTS, HISTORY } from './storage.js'
+import { LIVE, marketById } from '../src/config.js'
 
 if (!RPC_URL) {
   console.error('SOLANA_RPC is not set (see .env.example)')
@@ -27,7 +28,7 @@ const PORT = Number(process.env.PORT) || 3000
 const DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp',
+  '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp',
   '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
 }
 const EMPTY_POINTS = 'address,cumulative_points,last_supplied_usd,last_snapshot_ts\n'
@@ -124,6 +125,18 @@ const routes = [
   }],
 ]
 
+// Client-side routes of the SPA (keep in sync with src/main.js).
+const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/dashboard', '/debug-transfer'])
+const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/') || !!marketById(p.match(/^\/market\/([\w-]+)\/?$/)?.[1])
+
+// Public pages for search engines; markets come from config.js, so a new live market is listed automatically.
+const SITE = 'https://app.nysa.finance'
+const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${['/', '/lend', '/borrow', '/analytics', ...LIVE.map((m) => `/market/${m.id}`)].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
+</urlset>
+`
+
 async function serveStatic(pathname, res) {
   const file = normalize(join(DIST, decodeURIComponent(pathname)))
   if (!file.startsWith(DIST)) return send(res, 400, 'Bad request', { type: 'text/plain' }) // no ../ escapes
@@ -131,8 +144,10 @@ async function serveStatic(pathname, res) {
   try {
     body = await readFile(file)
   } catch {
-    // A missing file (/favicon.ico, /x.png) is a 404; only extensionless paths are client-side routes (/lend, …).
+    // A missing file (/favicon.ico, /x.png) is a plain 404. Other paths get the SPA, with a real 404 status when they
+    // aren't one of its routes (so search engines don't index "soft 404s"; the SPA shows its Not Found page).
     if (extname(pathname)) return send(res, 404, 'Not found', { type: 'text/plain' })
+    if (!isAppRoute(pathname)) res.statusCode = 404
     served = join(DIST, 'index.html')
     body = await readFile(served)
   }
@@ -155,6 +170,7 @@ http.createServer(async (req, res) => {
       return send(res, 404, { error: 'Not found' })
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { type: 'text/plain' })
+    if (pathname === '/sitemap.xml') return send(res, 200, sitemap(), { type: 'application/xml; charset=utf-8', maxAge: 3600 })
     await serveStatic(pathname === '/' ? '/index.html' : pathname, res)
   } catch (e) {
     if (e instanceof UserError) return send(res, 400, { error: e.message })

@@ -9,9 +9,9 @@ const agreed = ref(false)
   <div class="tos" role="dialog" aria-modal="true" aria-labelledby="tos-title">
     <div class="tos__backdrop" />
     <div class="tos__card">
-      <img class="tos__mark" src="/brand/logo-mark.png" alt="Nysa" />
+      <img class="tos__mark" src="/brand/logo-mark-128.png" alt="Nysa" />
       <div class="tos__tag">Terms of Service</div>
-      <h1 id="tos-title" class="tos__title">Before you <span class="tos__grad">continue</span></h1>
+      <h2 id="tos-title" class="tos__title">Before you <span class="tos__grad">continue</span></h2>
       <p class="tos__text">
         To access the Nysa Finance interface you must read and agree to our Terms of Service. Please review them in full before proceeding.
       </p>

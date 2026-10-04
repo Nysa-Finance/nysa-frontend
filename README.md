@@ -42,6 +42,11 @@ cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`).
 Market-detail and Analytics sections are collapsible cards (`src/components/Section.vue`, native `<details>`).
 The app also has a Terms of Service gate (stored in localStorage), a wallet connect modal (Wallet Standard), and a Farm Points leaderboard.
 
+SEO: the page renders under the Terms of Service dialog (inert until accepted) so crawlers index real content;
+`src/seo.js` sets title, description, canonical and Open Graph tags per route; the server answers 404 for unknown
+routes, serves `/sitemap.xml` (pages + live markets from config.js) and `public/robots.txt`. Fonts are self-hosted
+(`@fontsource/*`, imported in `src/main.js`).
+
 ## Transactions
 `POST /api/tx` builds the action against the market cache with a fresh read of the wallet's obligation, simulates it
 (a failing transaction comes back as a readable error and is never sent) and returns it unsigned. A first deposit also
