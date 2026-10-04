@@ -2,7 +2,7 @@
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { state, rowOf, maxLtvOf, rewardAprOf, boostNote, claimRewards, useTx, loadApyHistory, loadMarketUpdates } from '../store.js'
+import { state, rowOf, riskOf, irmOf, rewardAprOf, boostNote, claimRewards, useTx, loadApyHistory, loadMarketUpdates } from '../store.js'
 import { marketById, tok, tokensOf, explorer } from '../config.js'
 import { usd, pct, compact, short, amt } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -30,10 +30,7 @@ const pointsOpen = ref(false)
 const boosted = computed(() => tokens.value.filter((t) => rewardAprOf(t.token_id) > 0))
 const claimable = computed(() => {
   const by = {}
-  for (const p of state.claimable[m.value.id] ?? []) {
-    const name = tokens.value.find((t) => t.mint === String(p.mint))?.name ?? short(String(p.mint))
-    by[name] = (by[name] ?? 0) + p.amount
-  }
+  for (const p of state.claimable[m.value.id] ?? []) by[p.symbol] = (by[p.symbol] ?? 0) + p.amount
   return Object.entries(by)
 })
 const { tx: claimTx, run: runClaim, reset: resetClaim } = useTx()
@@ -119,11 +116,11 @@ function openDd() {
             <div class="n-thead irm-grid"><div>Asset</div><div>Base rate</div><div>Rate at kink</div><div>Max rate</div><div>Kink</div></div>
             <div v-for="t in tokens" :key="t.token_id" class="n-tr sm irm-grid">
               <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="t" size="sm" />{{ t.name }}</div>
-              <template v-if="t.irm">
-                <div class="n-cell n-num" data-label="Base rate">{{ pct(t.irm.points[0][1]) }}</div>
-                <div class="n-cell n-num" data-label="Rate at kink">{{ pct(t.irm.points.at(-2)[1]) }}</div>
-                <div class="n-cell n-num" data-label="Max rate">{{ pct(t.irm.points.at(-1)[1], 1) }}</div>
-                <div class="n-cell n-num" data-label="Kink">{{ t.irm.points.at(-2)[0] }}%</div>
+              <template v-if="irmOf(t)">
+                <div class="n-cell n-num" data-label="Base rate">{{ pct(irmOf(t).points[0][1]) }}</div>
+                <div class="n-cell n-num" data-label="Rate at kink">{{ pct(irmOf(t).points.at(-2)[1]) }}</div>
+                <div class="n-cell n-num" data-label="Max rate">{{ pct(irmOf(t).points.at(-1)[1], 1) }}</div>
+                <div class="n-cell n-num" data-label="Kink">{{ irmOf(t).points.at(-2)[0] }}%</div>
               </template>
               <div v-else class="n-cell n-muted collateral-only" style="grid-column: span 4">Collateral only — this reserve has no interest rate model</div>
             </div>
@@ -132,7 +129,7 @@ function openDd() {
           <div class="irm-charts">
             <div v-for="t in tokens.filter((t) => t.irm)" :key="t.token_id" class="irm-card">
               <div class="n-asset irm-card-head"><TokenIcon :token="t" size="sm" />{{ t.name }}</div>
-              <IrmChart :irm="t.irm" :utilization="r(t.token_id)?.utilization" />
+              <IrmChart :irm="irmOf(t)" :utilization="r(t.token_id)?.utilization" />
             </div>
           </div>
         </Section>
@@ -143,11 +140,11 @@ function openDd() {
             <div v-for="p in m.pairs" :key="p.collateral + p.liability" class="n-tr sm rp-grid">
               <div class="n-cell n-asset" data-label="Collateral"><TokenIcon :token="tok(p.collateral)" size="sm" />{{ tok(p.collateral).name }}</div>
               <div class="n-cell n-asset" data-label="Liability"><TokenIcon :token="tok(p.liability)" size="sm" />{{ tok(p.liability).name }}</div>
-              <div class="n-cell n-num" data-label="Max LTV">{{ maxLtvOf(p) }}%</div>
-              <div class="n-cell n-num" data-label="Liquidation LTV">{{ p.liqLtv }}%</div>
-              <div class="n-cell n-num" data-label="Max discount">{{ pct(p.maxDiscount, 1) }}</div>
-              <div class="n-cell n-num" data-label="Supply cap">{{ compact(p.supplyCap, tok(p.collateral).name) }}</div>
-              <div class="n-cell n-num" data-label="Borrow cap">{{ compact(p.borrowCap, tok(p.liability).name) }}</div>
+              <div class="n-cell n-num" data-label="Max LTV">{{ riskOf(p).maxLtv }}%</div>
+              <div class="n-cell n-num" data-label="Liquidation LTV">{{ riskOf(p).liqLtv }}%</div>
+              <div class="n-cell n-num" data-label="Max discount">{{ pct(riskOf(p).maxDiscount, 1) }}</div>
+              <div class="n-cell n-num" data-label="Supply cap">{{ compact(riskOf(p).supplyCap, tok(p.collateral).name) }}</div>
+              <div class="n-cell n-num" data-label="Borrow cap">{{ compact(riskOf(p).borrowCap, tok(p.liability).name) }}</div>
             </div>
           </div>
           <p class="hint">An LTV belongs to a (collateral, liability) pair, not to an asset on its own — the same collateral can carry a different limit against a different loan.</p>

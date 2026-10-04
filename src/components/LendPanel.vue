@@ -18,11 +18,8 @@ const on = computed(() => !!state.address)
 const supplied = computed(() => row.value?.supplied ?? 0)
 const available = computed(() => (tab.value === 'lend' ? row.value?.walletBalance ?? 0 : row.value?.maxWithdraw ?? 0))
 const value = computed(() => num(amount.value) * priceOf(token.value.token_id))
-const capRoom = computed(() => {
-  const cap = props.market.pairs.find((p) => p.collateral === token.value.token_id || p.liability === token.value.token_id)
-  const capUnits = cap ? (cap.collateral === token.value.token_id ? cap.supplyCap : cap.borrowCap) : Infinity
-  return Math.max(capUnits - (row.value?.reserve.totalSupplied ?? 0), 0)
-})
+// Room left under the reserve's deposit limit (live from chain).
+const capRoom = computed(() => Math.max((row.value?.reserve.supplyCap ?? Infinity) - (row.value?.reserve.totalSupplied ?? 0), 0))
 
 const warning = computed(() => {
   if (!on.value) return 'Connect a Solana wallet to continue.'

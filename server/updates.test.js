@@ -1,6 +1,6 @@
-// Decoding checks for /api/market-updates, using byte values from real transactions on the Nysa market.
+// Decoding checks for the market index (/api/market-updates), using byte values from real transactions on the Nysa market.
 import assert from 'node:assert/strict'
-import { describe } from './market-updates.js'
+import { describe } from './updates.js'
 import { TOKENS } from '../src/config.js'
 
 const USDC = TOKENS['svm-usdc'], USDY = TOKENS['svm-usdy']

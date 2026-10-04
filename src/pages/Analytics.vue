@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, loadAnalytics, loadPoints } from '../store.js'
+import { state, loadPositions, loadPoints } from '../store.js'
 import { LIVE, tokensOf, explorer } from '../config.js'
 import { usd, pct, amt, compact, short, ago, dur, hfText, hfColor } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -8,18 +8,16 @@ import Section from '../components/Section.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 
 const m = LIVE[0] // ponytail: single live market; iterate LIVE here when a second one ships
-const data = ref(null)
-const error = ref(null)
+const positions = ref(undefined) // undefined = loading, null = unavailable
 const pointsOpen = ref(false)
 const nowSec = ref(Date.now() / 1000)
 
 async function load() {
   try {
-    data.value = await loadAnalytics(m, tokensOf(m))
-    error.value = null
+    positions.value = (await loadPositions()).map((p) => ({ ...p, hf: p.hf ?? Infinity }))
   } catch (e) {
-    console.error('[analytics]', e)
-    error.value = e?.context?.statusCode === 429 ? 'the RPC is rate-limiting requests (try a higher-tier plan)' : e.message
+    console.error('[analytics] positions', e)
+    positions.value = null
   }
   nowSec.value = Date.now() / 1000
 }
@@ -27,7 +25,8 @@ let timer
 onMounted(() => { load(); loadPoints(); timer = setInterval(load, 60_000) })
 onUnmounted(() => clearInterval(timer))
 
-const reserves = computed(() => data.value?.reserves ?? [])
+// Reserve data is live from the backend's market stream (store.js); only positions are fetched here.
+const reserves = computed(() => tokensOf(m).filter((t) => state.reserves[t.token_id]).map((t) => ({ token: t, ...state.reserves[t.token_id] })))
 const collateral = computed(() => reserves.value.filter((r) => m.collateral.includes(r.token.token_id)))
 const borrowable = computed(() => reserves.value.filter((r) => m.loans.includes(r.token.token_id)))
 const tvl = computed(() => reserves.value.reduce((s, r) => s + r.supplyUsd, 0))
@@ -53,8 +52,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <p class="n-sub">Live protocol metrics and oracle health, read on-chain from Kamino Lend</p>
   </div>
 
-  <div v-if="error" class="n-banner warn" role="status">Could not read on-chain data — {{ error }}. Retrying every 60s.</div>
-  <div v-else-if="stale.length" class="n-banner warn" role="status">
+  <div v-if="stale.length" class="n-banner warn" role="status">
     {{ stale.length }} price {{ stale.length === 1 ? 'feed is' : 'feeds are' }} past the reserve's max age ({{ stale.join(', ') }}).
     Kamino refreshes the price inside every transaction, so this only matters if the Scope feed itself stops updating.
   </div>
@@ -62,32 +60,32 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
   <div class="n-stats stat-4">
     <div class="n-stat">
       <div class="k">Total value locked</div>
-      <div class="v"><span v-if="data">{{ usd(tvl) }}</span><span v-else class="n-skel" /></div>
+      <div class="v"><span v-if="state.loaded">{{ usd(tvl) }}</span><span v-else class="n-skel" /></div>
       <div class="s">{{ reserves.length }} active reserves</div>
     </div>
     <div class="n-stat">
       <div class="k">Total borrowed</div>
-      <div class="v"><span v-if="data">{{ usd(borrowed) }}</span><span v-else class="n-skel" /></div>
+      <div class="v"><span v-if="state.loaded">{{ usd(borrowed) }}</span><span v-else class="n-skel" /></div>
       <div class="s">{{ usd(lendable - borrowed) }} available</div>
     </div>
     <div class="n-stat">
       <div class="k">Avg utilization</div>
-      <div class="v"><span v-if="data">{{ pct(avgUtil, 1) }}</span><span v-else class="n-skel" /></div>
+      <div class="v"><span v-if="state.loaded">{{ pct(avgUtil, 1) }}</span><span v-else class="n-skel" /></div>
       <div class="s">across {{ borrowable.length }} borrowable {{ borrowable.length === 1 ? 'reserve' : 'reserves' }}</div>
     </div>
     <div class="n-stat">
       <div class="k">RWA share of TVL</div>
-      <div class="v accent"><span v-if="data">{{ pct(tvl > 0 ? (rwaUsd / tvl) * 100 : 0, 1) }}</span><span v-else class="n-skel" /></div>
+      <div class="v accent"><span v-if="state.loaded">{{ pct(tvl > 0 ? (rwaUsd / tvl) * 100 : 0, 1) }}</span><span v-else class="n-skel" /></div>
       <div class="s">{{ usd(rwaUsd) }} in RWAs</div>
     </div>
   </div>
 
   <div class="sections">
     <Section title="Oracle feeds" open>
-      <template #meta>{{ reserves.length }} feeds · refreshed every 60s</template>
+      <template #meta>{{ reserves.length }} feeds · live</template>
       <div class="n-table">
         <div class="n-thead or-grid"><div>Feed</div><div>Price</div><div>Last update</div><div>Window</div><div>Expires in</div><div>Status</div></div>
-        <div v-if="!data" class="n-empty">Reading on-chain data…</div>
+        <div v-if="!state.loaded" class="n-empty">Reading on-chain data…</div>
         <div v-for="r in reserves" :key="r.token.token_id" class="n-tr sm or-grid">
           <div class="n-cell n-asset" data-label="Feed">
             <TokenIcon :token="r.token" size="sm" />
@@ -138,19 +136,19 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
           <div class="n-cell n-num" data-label="Supplied">{{ usd(r.supplyUsd) }}</div>
           <div class="n-cell n-num" data-label="Borrowed">{{ usd(r.borrowUsd) }}</div>
           <div class="n-cell n-num" data-label="Utilization">{{ pct(r.utilization, 1) }}</div>
-          <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct(r.supplyApy) }}</div>
-          <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r.borrowApy) }}</div>
+          <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct(r.supplyAPR) }}</div>
+          <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r.borrowAPR) }}</div>
         </div>
       </div>
     </Section>
 
     <Section title="Positions">
-      <template #meta>{{ data?.positions ? `${data.positions.length} open · sorted by risk` : '' }}</template>
+      <template #meta>{{ positions ? `${positions.length} open · sorted by risk` : '' }}</template>
       <div class="n-table">
         <div class="n-thead po-grid"><div>Wallet</div><div>Deposits</div><div>Debt</div><div>LTV</div><div>Liq. LTV</div><div>Health factor</div></div>
-        <div v-if="data && !data.positions" class="n-empty">Open positions are temporarily unavailable.</div>
-        <div v-else-if="data && !data.positions.length" class="n-empty">No open positions in this market yet.</div>
-        <div v-for="p in data?.positions ?? []" :key="p.owner" class="n-tr sm po-grid">
+        <div v-if="positions === null" class="n-empty">Open positions are temporarily unavailable.</div>
+        <div v-else-if="positions?.length === 0" class="n-empty">No open positions in this market yet.</div>
+        <div v-for="p in positions ?? []" :key="p.owner" class="n-tr sm po-grid">
           <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗</a></div>
           <div class="n-cell n-num" data-label="Deposits">{{ usd(p.deposits) }}</div>
           <div class="n-cell n-num" data-label="Debt">{{ usd(p.debt) }}</div>

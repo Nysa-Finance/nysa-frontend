@@ -2,7 +2,7 @@
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { state, rowOf, priceOf, loadPoints, myPoints } from '../store.js'
+import { state, rowOf, priceOf, loadPoints, myPoints, riskOf } from '../store.js'
 import { LIVE, tok, tokensOf } from '../config.js'
 import { usd, pct, amt, amtDust, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -24,7 +24,8 @@ const loans = computed(() =>
       const debtUsd = units * priceOf(id)
       const coll = m.collateral.map((c) => ({ t: tok(c), usd: (rowOf(c)?.supplied ?? 0) * priceOf(c) }))
       const collUsd = coll.reduce((s, c) => s + c.usd, 0)
-      const liq = m.pairs.find((p) => p.liability === id)?.liqLtv ?? 0
+      const pair = m.pairs.find((p) => p.liability === id)
+      const liq = pair ? riskOf(pair).liqLtv : 0
       return { m, t: tok(id), units, usd: debtUsd, coll, collUsd, hf: healthFactor(collUsd, liq, debtUsd), apr: rowOf(id)?.reserve.borrowAPR ?? 0 }
     }),
   ).filter((l) => l.units > 0),

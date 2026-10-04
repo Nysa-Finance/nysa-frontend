@@ -1,16 +1,15 @@
-// GET /api/market-updates — admin changes to the Nysa Kamino market and its reserves (LTVs, rate curve, oracles, caps…),
-// decoded from on-chain transactions, plus the addresses of every position (obligation) opened in the market.
-// Indexed incrementally into a private Blob: each call only fetches transactions newer than the last one seen.
+// Market index: admin changes to the Nysa Kamino market and its reserves (LTVs, rate curve, oracles, caps…), decoded
+// from on-chain transactions, plus the addresses of every position (obligation) opened in the market.
+// Indexed incrementally into DATA_DIR: each refresh only fetches transactions newer than the last one seen.
 // The position list replaces getProgramAccounts, which rate-limited RPC plans refuse (Alchemy free).
 import { createRequire } from 'node:module'
 import { address, getBase58Decoder, getBase58Encoder } from '@solana/kit'
-import { createRpc } from '../src/loadMarket.js'
+import { rpc as client } from './rpc.js'
 import { LIVE, TOKENS } from '../src/config.js'
 import { compact, usd, dur, short } from '../src/logic.js'
-import { readBlob, writeBlob } from './_storage.js'
+import { read, write, INDEX } from './storage.js'
 
 const require = createRequire(import.meta.url)
-const BLOB = 'market-history/index-v2.json' // v2 adds obligations (v1 had updates only)
 const KLEND = 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'
 
 // Kamino admin instructions (Anchor discriminator → name + args layout), from klend-sdk's generated code.
@@ -27,7 +26,6 @@ const ADMIN = {
   socializeLoss: 'Bad debt socialized',
   socializeLossV2: 'Bad debt socialized',
 }
-// Static require paths on purpose: Vercel's file tracer can't follow template-string requires.
 const IX_MODULES = {
   initLendingMarket: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initLendingMarket.js'),
   initObligation: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initObligation.js'), // indexed, not listed
@@ -142,7 +140,6 @@ function safe(fn) { try { return fn() } catch { return null } }
 
 // ---- indexing ----
 const RESERVES = new Map(Object.values(TOKENS).map((t) => [t.reserve, t]))
-// 429 back-off is handled by createRpc (src/loadMarket.js).
 
 async function indexNew(rpc, marketAddr, state) {
   const b58 = getBase58Encoder()
@@ -197,35 +194,22 @@ async function indexNew(rpc, marketAddr, state) {
 // Bring the index up to date and return it: { lastSig, updates, obligations: { [market]: [address] } }.
 // Also used by the daily snapshot to find every position without getProgramAccounts.
 export async function refreshIndex(rpc) {
-  const state = { lastSig: {}, updates: [], obligations: {}, ...JSON.parse((await readBlob(BLOB)) ?? '{}') }
+  const state = { lastSig: {}, updates: [], obligations: {}, ...JSON.parse((await read(INDEX)) ?? '{}') }
   let changed = false
   for (const m of LIVE) changed = (await indexNew(rpc, m.kaminoMarket, state)) || changed
-  if (changed) await writeBlob(BLOB, JSON.stringify(state), 'application/json')
+  if (changed) await write(INDEX, JSON.stringify(state))
   return state
 }
 
-// At most one refresh per minute, shared by concurrent requests: without a CDN in front (VPS), a burst of
-// requests would otherwise each scan the RPC (quota exhaustion) and race on writing the index.
+// At most one refresh per minute, shared by concurrent requests (and by the analytics positions list).
 let cached = null, cachedAt = 0
-function freshIndex(rpcUrl) {
+export function freshIndex() {
   if (!cached || Date.now() - cachedAt > 60_000) {
     cachedAt = Date.now()
-    cached = refreshIndex(createRpc(rpcUrl)).catch((e) => { cached = null; throw e })
+    cached = refreshIndex(client).catch((e) => { cached = null; throw e })
   }
   return cached
 }
 
-export default async function handler(req, res) {
-  try {
-    const rpcUrl = process.env.SOLANA_RPC || process.env.VITE_SOLANA_RPC
-    if (!rpcUrl) throw new Error('SOLANA_RPC (or VITE_SOLANA_RPC) is not set')
-    const state = await freshIndex(rpcUrl)
-    res.setHeader('content-type', 'application/json')
-    res.setHeader('cache-control', 'public, s-maxage=300, stale-while-revalidate=600')
-    res.end(JSON.stringify({ updates: [...state.updates].sort((a, b) => b.ts - a.ts), obligations: state.obligations }))
-  } catch (e) {
-    console.error('[market-updates] failed', e)
-    res.statusCode = 500
-    res.end(JSON.stringify({ error: 'Could not read market updates' }))
-  }
-}
+// GET /api/market-updates payload: newest first.
+export const marketUpdates = async () => ({ updates: [...(await freshIndex()).updates].sort((a, b) => b.ts - a.ts) })

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { state, rowOf, priceOf, maxLtvOf, sendKaminoAction, useTx } from '../store.js'
+import { state, rowOf, priceOf, riskOf, sendKaminoAction, useTx } from '../store.js'
 import { pct, amt, amtDust, usdFull, num, borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
@@ -25,7 +25,7 @@ const debt = computed(() => loanRow.value?.borrowed ?? 0)
 const debtUsd = computed(() => debt.value * loanPrice.value)
 const pairLtv = (cid) => {
   const pair = props.market.pairs.find((p) => p.collateral === cid && p.liability === loan.value.token_id)
-  return pair ? maxLtvOf(pair) : 0
+  return pair ? riskOf(pair).maxLtv : 0
 }
 
 // Existing collateral + whatever the user is about to deposit.

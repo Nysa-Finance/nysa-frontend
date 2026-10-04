@@ -1,11 +1,6 @@
-// Static market configuration. Live numbers (APYs, supply, borrow) come from the Kamino API;
-// everything here is on-chain config that rarely changes.
-// Max LTV is read live (maxLtvOf in store.js); this value is only the fallback before the Kamino API answers.
-// ponytail: IRM curve + other risk params hardcoded (verified on-chain on 2026-10-01; the API does not expose them); read them via kamino.js if they start changing.
-
-export const KAMINO_API = 'https://api.kamino.finance'
-// The public endpoint rate-limits/403s browsers quickly — set VITE_SOLANA_RPC to a keyed RPC (Helius, Alchemy, …).
-export const SOLANA_RPC = import.meta.env?.VITE_SOLANA_RPC || 'https://api.mainnet-beta.solana.com'
+// Static market configuration, shared by the frontend and the backend (server/).
+// Live numbers, risk parameters and rate curves come from chain via the backend (server/market.js); the risk values
+// and IRM here are only shown until the first market update arrives (riskOf / irmOf in store.js).
 export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-of-service'
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`

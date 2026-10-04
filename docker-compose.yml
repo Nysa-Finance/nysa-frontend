@@ -1,16 +1,12 @@
-# VPS stack: Cloudflare Tunnel -> Caddy (security headers) -> app (site + /api + daily snapshot),
+# VPS stack: Cloudflare Tunnel -> Caddy (security headers) -> app (site + backend API + daily snapshot),
 # plus self-hosted Plausible Analytics (Tunnel -> plausible, on its own network). Settings come from .env.
 # No port is published: the tunnel connects out to Cloudflare, which does HTTPS, geoblocking and WAF in front.
 services:
   app:
-    build:
-      context: .
-      args:
-        VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:?set VITE_SOLANA_RPC in .env}
+    build: .
     environment: # only what the app needs (not the tunnel or Plausible secrets)
-      VITE_SOLANA_RPC: ${VITE_SOLANA_RPC}
       SOLANA_RPC: ${SOLANA_RPC:-}
-      CRON_SECRET: ${CRON_SECRET:-}
+      VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:-} # old name, still accepted
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
@@ -32,7 +28,6 @@ services:
         COPY Caddyfile /etc/caddy/Caddyfile
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
-      RPC_ORIGIN: ${RPC_ORIGIN:?set RPC_ORIGIN in .env}
     volumes:
       - caddy_data:/data
       - caddy_config:/config

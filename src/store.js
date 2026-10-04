@@ -1,14 +1,19 @@
-// Global app state: live reserve data (Kamino API), Solana wallet (Wallet Standard), balances, positions.
+// Global app state. The browser never calls the Solana RPC:
+// - market data is pushed by the backend over Server-Sent Events (/api/events), on load and whenever it changes;
+// - the connected wallet's balances, positions and rewards come from /api/account;
+// - transactions are built and simulated by /api/tx; the wallet only signs and sends them.
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
-import { KAMINO_API, SOLANA_RPC, LIVE, TOKENS, tok, tokensOf } from './config.js'
+import { getBase58Decoder } from '@solana/kit'
+import { tok, tokensOf } from './config.js'
 import { parsePoints, pct } from './logic.js'
 import { event } from './analytics.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
 const WALLET_KEY = 'connectedWallet'
 const CHAIN = 'solana:mainnet'
-const kamino = () => import('./kamino.js') // klend-sdk is big; load it only once a wallet is involved
+const ACCOUNT_REFRESH_MS = 60_000 // while the tab is visible; right after a transaction it refreshes immediately
+const CONFIRM_TIMEOUT_MS = 90_000
 
 const safe = (fn, fallback = null) => {
   try { return fn() } catch { return fallback }
@@ -17,19 +22,19 @@ const safe = (fn, fallback = null) => {
 export const state = reactive({
   tosAccepted: safe(() => localStorage.getItem(TOS_KEY) === '1', false),
   loaded: false,
-  loading: false,
+  loading: true,
   error: null, // market data
   walletError: null, // balances/positions
-  reserves: {}, // token_id -> reserve metrics
+  reserves: {}, // token_id -> reserve metrics, risk parameters and rate curve (live from chain)
+  rewards: {}, // token_id -> { apr, rewards: [{ symbol, apr, perDay, runwayDays }] } supply rewards
   address: null,
   balances: {}, // token_id -> units in wallet
   positions: {}, // token_id -> { supplied, borrowed, maxWithdraw } units
+  claimable: {}, // market id -> [{ symbol, amount }] unclaimed rewards of the connected wallet
   walletName: null,
   wallets: [], // detected Wallet Standard wallets
   connectOpen: false,
   points: { board: null, error: null }, // Farm Points leaderboard
-  rewards: {}, // token_id -> { apr, rewards: [{ symbol, apr, perDay, runwayDays }] } supply rewards (/api/rewards)
-  claimable: {}, // market id -> [{ mint, amount }] unclaimed rewards of the connected wallet
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
@@ -53,8 +58,18 @@ export const rewardAprOf = (id) => state.rewards[id]?.apr ?? 0
 export const boostNote = (id, supplyApy) =>
   `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(id))} ${state.rewards[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
 
-// Max LTV is changed by governance (Market Updates), so prefer the live value from the Kamino API over config.
-export const maxLtvOf = (pair) => state.reserves[pair.collateral]?.maxLtv ?? pair.maxLtv
+// Risk parameters of a collateral/liability pair. Governance changes them (Market Updates), so the live on-chain
+// values win; config.js only fills in until the first market update arrives.
+export function riskOf(pair) {
+  const c = state.reserves[pair.collateral], l = state.reserves[pair.liability]
+  return {
+    ...pair,
+    ...(c && { maxLtv: c.maxLtv, liqLtv: c.liqLtv, maxDiscount: c.maxDiscount, supplyCap: c.supplyCap }),
+    ...(l && { borrowCap: l.borrowCap }),
+  }
+}
+// Interest rate model of a borrowable token (live curve and fee); null for collateral-only tokens.
+export const irmOf = (t) => (t.irm ? state.reserves[t.token_id]?.irm ?? t.irm : null)
 
 // Everything a view needs for one token, merged.
 export function rowOf(id) {
@@ -72,97 +87,44 @@ export function marketSummary(m) {
   return { totalSuppliedUsd: state.loaded ? s : null, totalBorrowedUsd: state.loaded ? b : null }
 }
 
-async function loadReserves() {
-  for (const m of LIVE) {
-    const res = await fetch(`${KAMINO_API}/kamino-market/${m.kaminoMarket}/reserves/metrics?env=mainnet-beta`)
-    if (!res.ok) throw new Error(`Kamino API responded ${res.status}`)
-    const list = await res.json()
-    for (const t of tokensOf(m)) {
-      const x = list.find((r) => r.reserve === t.reserve)
-      if (!x) continue
-      const supplied = +x.totalSupply, borrowed = +x.totalBorrow
-      state.reserves[t.token_id] = {
-        supplyAPR: +x.supplyApy * 100,
-        borrowAPR: m.loans.includes(t.token_id) ? +x.borrowApy * 100 : null,
-        totalSupplied: supplied,
-        totalBorrowed: borrowed,
-        supplyUsd: +x.totalSupplyUsd,
-        borrowUsd: +x.totalBorrowUsd,
-        utilization: supplied > 0 ? (borrowed / supplied) * 100 : 0,
-        availableLiquidity: Math.max(supplied - borrowed, 0),
-        price: supplied > 0 ? +x.totalSupplyUsd / supplied : t.price,
-        maxLtv: +x.maxLtv * 100,
-      }
-    }
-  }
-}
-
-async function rpc(method, params) {
-  let res
-  for (let i = 0; ; i++) { // retry HTTP 429 (rate-limited RPC plan) with backoff
-    res = await fetch(SOLANA_RPC, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-    })
-    if (res.status !== 429 || i >= 4) break
-    await new Promise((r) => setTimeout(r, 500 * 2 ** i))
-  }
-  if (res.status === 429) throw new Error('the RPC is rate-limiting requests')
-  const j = await res.json()
-  if (j.error) throw new Error(j.error.message)
-  return j.result
-}
-
-async function loadBalances(owner) {
-  const out = {}
-  for (const t of Object.values(TOKENS)) {
-    const r = await rpc('getTokenAccountsByOwner', [owner, { mint: t.mint }, { encoding: 'jsonParsed' }])
-    out[t.token_id] = r.value.reduce((s, a) => s + (a.account.data.parsed.info.tokenAmount.uiAmount ?? 0), 0)
-  }
-  state.balances = out
-}
-
-// Positions via klend-sdk. The same read also yields reserve metrics at the current block, which replace the
-// REST ones (Kamino's API lags a few minutes after activity, e.g. showing 0% APY right after a borrow).
-async function loadPositions(owner) {
-  const { loadPositions: read } = await kamino()
-  const out = {}, claimable = {}
-  for (const m of LIVE) {
-    const { positions, reserves, rewards } = await read(m, tokensOf(m), owner)
-    Object.assign(out, positions)
-    Object.assign(state.reserves, reserves)
-    claimable[m.id] = rewards
-  }
-  state.positions = out
-  state.claimable = claimable
-}
-
-async function loadRewards() {
-  const res = await fetch('/api/rewards')
-  if (!res.ok) throw new Error(`Rewards responded ${res.status}`)
-  state.rewards = await res.json()
-}
-
-export async function refresh() {
-  state.loading = true
-  loadRewards().catch((e) => console.error('[refresh] rewards', e)) // optional: the app works without it
-  try {
-    await loadReserves()
-    state.error = null
-  } catch (e) {
-    console.error('[refresh] market data', e)
-    state.error = e.message
-  }
-  try {
-    if (state.address) await Promise.all([loadBalances(state.address), loadPositions(state.address)])
-    state.walletError = null
-  } catch (e) {
-    console.error('[refresh] wallet', e)
-    state.walletError = e.message
-  } finally {
+// ---- market: pushed by the backend (EventSource reconnects by itself) ----
+function listenMarket() {
+  const es = new EventSource('/api/events')
+  es.addEventListener('market', (e) => {
+    const s = JSON.parse(e.data)
+    state.reserves = s.reserves
+    state.rewards = s.rewards
     state.loaded = true
     state.loading = false
+    state.error = null
+  })
+  es.onerror = () => {
+    if (!state.loaded) { state.loading = false; state.error = 'the server is not reachable' }
+  }
+}
+
+// ---- connected wallet ----
+async function api(path, init) {
+  const res = await fetch(path, init)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(body.error ?? `Server responded ${res.status}`)
+  return body
+}
+
+// fresh: skip the server's short per-wallet cache (after a transaction).
+export async function loadAccount(fresh = false) {
+  const addr = state.address
+  if (!addr) return
+  try {
+    const a = await api(`/api/account/${addr}${fresh ? '?fresh' : ''}`)
+    if (state.address !== addr) return // switched wallet meanwhile
+    state.balances = a.balances
+    state.positions = a.positions
+    state.claimable = a.claimable
+    state.walletError = null
+  } catch (e) {
+    console.error('[account]', e)
+    state.walletError = e.message
   }
 }
 
@@ -171,12 +133,11 @@ function setAccount(w, acc) {
   account = acc
   state.address = acc?.address ?? null
   state.walletName = acc ? w.name : null
-  if (!acc) {
-    state.balances = {}
-    state.positions = {}
-    state.claimable = {}
-    state.walletError = null
-  }
+  state.balances = {}
+  state.positions = {}
+  state.claimable = {}
+  state.walletError = null
+  if (acc) loadAccount()
 }
 
 async function connectWith(w, silent) {
@@ -185,9 +146,7 @@ async function connectWith(w, silent) {
   if (!acc) throw new Error(`${w.name} returned no Solana account`)
   setAccount(w, acc)
   w.features['standard:events']?.on('change', ({ accounts: next }) => {
-    if (!next || wallet !== w) return
-    setAccount(w, next[0] ?? null)
-    refresh()
+    if (next && wallet === w) setAccount(w, next[0] ?? null)
   })
   safe(() => localStorage.setItem(WALLET_KEY, w.name))
 }
@@ -196,7 +155,6 @@ export async function connectWallet(w) {
   await connectWith(w, false)
   event('Wallet connected', { wallet: w.name })
   state.connectOpen = false
-  refresh()
 }
 
 export async function disconnect() {
@@ -213,12 +171,41 @@ async function eagerConnect() {
   try { await connectWith(w, true) } catch { /* no longer authorised */ }
 }
 
+// ---- transactions: built by the backend, signed and sent by the wallet ----
+const fromBase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
+
+async function confirmed(signature) {
+  const until = Date.now() + CONFIRM_TIMEOUT_MS
+  while (Date.now() < until) {
+    const s = await api(`/api/tx/${signature}`)
+    if (s.status === 'confirmed') return s.slot
+    if (s.status === 'failed') throw new Error(`Transaction failed on-chain: ${s.error}`)
+    await new Promise((r) => setTimeout(r, 1500))
+  }
+  throw new Error(`Transaction ${signature} was not confirmed within ${CONFIRM_TIMEOUT_MS / 1000}s`)
+}
+
+// First-time setup comes back as a separate transaction (final: false): send it, wait, then ask for the action.
+async function runAction(params) {
+  if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
+  let minSlot = 0
+  for (let step = 0; step < 3; step++) {
+    const built = await api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: account.address }) })
+    const [{ signature }] = await wallet.features['solana:signAndSendTransaction'].signAndSendTransaction({
+      account, chain: CHAIN, transaction: fromBase64(built.tx),
+      options: { preflightCommitment: 'confirmed', minContextSlot: Math.max(built.minContextSlot, minSlot) },
+    })
+    const sig = getBase58Decoder().decode(signature)
+    minSlot = await confirmed(sig)
+    if (built.final) return sig
+  }
+  throw new Error('Account setup did not complete, please try again')
+}
+
 // kind: deposit | withdraw | borrow | repay. Returns the confirmed signature.
 export async function sendKaminoAction(kind, { market, token, amount, all }) {
-  if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
-  const { execute } = await kamino()
   try {
-    const sig = await execute(kind, { wallet, account, market, token, amount, all })
+    const sig = await runAction({ kind, market: market.id, token: token.token_id, amount, all })
     event(kind[0].toUpperCase() + kind.slice(1), { token: token.name }) // Deposit | Withdraw | Borrow | Repay
     return sig
   } catch (e) {
@@ -228,20 +215,15 @@ export async function sendKaminoAction(kind, { market, token, amount, all }) {
 }
 
 export async function claimRewards(market) {
-  if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
-  const { claimRewards: claim } = await kamino()
-  const sig = await claim({ wallet, account, market })
+  const sig = await runAction({ kind: 'claim', market: market.id })
   event('Rewards claimed', { market: market.id })
   return sig
 }
 
-// TEMPORARY: see testTransfer in kamino.js.
-export async function sendTestTransfer() {
-  if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
-  const { testTransfer } = await kamino()
-  return testTransfer({ wallet, account })
-}
+// TEMPORARY (/debug-transfer page): 1000 lamports to yourself, see server/tx.js.
+export const sendTestTransfer = () => runAction({ kind: 'test' })
 
+// ---- read-only data from the backend ----
 // Farm Points leaderboard (shared by the modal, Portfolio and Analytics). Loaded once per page view.
 let pointsReq = null
 export function loadPoints() {
@@ -256,26 +238,19 @@ export const myPoints = () => state.points.board?.rows.find((r) => r.address ===
 // Daily reserve history for Realized APY (recorded by the daily snapshot). Loaded once per page view.
 let historyReq = null
 export function loadApyHistory() {
-  historyReq ??= fetch('/api/apy-history')
-    .then((r) => { if (!r.ok) throw new Error(`History responded ${r.status}`); return r.json() })
-    .catch((e) => { historyReq = null; throw e })
+  historyReq ??= api('/api/apy-history').catch((e) => { historyReq = null; throw e })
   return historyReq
 }
 
-// Admin changes to the market and its reserves (decoded on-chain by /api/market-updates). Loaded once per page view.
+// Admin changes to the market and its reserves (decoded on-chain by the backend). Loaded once per page view.
 let updatesReq = null
 export function loadMarketUpdates() {
-  updatesReq ??= fetch('/api/market-updates')
-    .then((r) => { if (!r.ok) throw new Error(`Updates responded ${r.status}`); return r.json() })
-    .catch((e) => { updatesReq = null; throw e })
+  updatesReq ??= api('/api/market-updates').catch((e) => { updatesReq = null; throw e })
   return updatesReq
 }
 
-// Lazy Analytics data (klend-sdk).
-export async function loadAnalytics(m, tokens) {
-  const index = await loadMarketUpdates().catch(() => null) // position addresses come with the market index
-  return (await kamino()).loadAnalytics(m, tokens, index?.obligations?.[m.kaminoMarket] ?? null)
-}
+// Every open position, riskiest first (hf null = no debt).
+export const loadPositions = () => api('/api/analytics').then((a) => a.positions)
 
 let started = false
 export function start() {
@@ -283,8 +258,10 @@ export function start() {
   started = true
   scanWallets()
   getWallets().on('register', scanWallets)
-  eagerConnect().finally(refresh)
-  setInterval(refresh, 60_000)
+  listenMarket()
+  eagerConnect()
+  setInterval(() => document.visibilityState === 'visible' && loadAccount(), ACCOUNT_REFRESH_MS)
+  document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && loadAccount())
 }
 
 // Sequential multi-step transaction runner shared by the Lend/Borrow panels.
@@ -304,11 +281,12 @@ export function useTx() {
         } catch (e) {
           tx.error = `${s.label} — ${/reject/i.test(e?.message) ? 'Transaction rejected in your wallet.' : e?.message ?? 'Transaction failed'}`
           tx.status = 'error'
+          loadAccount(true)
           return false
         }
       }
       tx.status = 'success'
-      refresh()
+      loadAccount(true)
       return true
     },
   }

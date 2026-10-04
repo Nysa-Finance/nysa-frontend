@@ -36,8 +36,8 @@ const menu = ref(false)
       </div>
     </header>
     <main class="n-main">
-      <div v-if="state.error" class="n-banner warn" role="status">Could not read market data — {{ state.error }}. Retrying every 60s.</div>
-      <div v-if="state.walletError" class="n-banner warn" role="status">Could not read your wallet balances — {{ state.walletError }}. Set VITE_SOLANA_RPC to a dedicated Solana RPC.</div>
+      <div v-if="state.error" class="n-banner warn" role="status">Could not load market data — {{ state.error }}. Reconnecting automatically.</div>
+      <div v-if="state.walletError" class="n-banner warn" role="status">Could not read your wallet balances — {{ state.walletError }}. Retrying shortly.</div>
       <slot />
     </main>
     <footer class="n-footer">
