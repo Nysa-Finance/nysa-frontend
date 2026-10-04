@@ -209,6 +209,13 @@ export async function sendKaminoAction(kind, { market, token, amount, all }) {
   }
 }
 
+// TEMPORARY: see testTransfer in kamino.js.
+export async function sendTestTransfer() {
+  if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
+  const { testTransfer } = await kamino()
+  return testTransfer({ wallet, account })
+}
+
 // Farm Points leaderboard (shared by the modal, Portfolio and Analytics). Loaded once per page view.
 let pointsReq = null
 export function loadPoints() {

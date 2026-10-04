@@ -9,7 +9,7 @@ import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables, compileTransaction, getTransactionEncoder,
-  getBase64EncodedWireTransaction, getBase58Decoder,
+  getBase64EncodedWireTransaction, getBase58Decoder, AccountRole,
 } from '@solana/kit'
 import { SOLANA_RPC } from './config.js'
 import { loadMarket as loadMarketDirect, createRpc } from './loadMarket.js'
@@ -179,6 +179,17 @@ export async function execute(kind, { wallet, account, market: m, token, amount,
     initUserMetadata: { skipInitialization: false, skipLutCreation: true },
   })
   return send(wallet, account, owner, axn)
+}
+
+// TEMPORARY (Phantom warning test, /debug-transfer): 1000 lamports to yourself through the same simulate → signAndSend
+// path as Kamino actions, to tell a domain-level warning from an instruction-level one. Remove after the test.
+export async function testTransfer({ wallet, account }) {
+  const owner = address(account.address)
+  const data = new Uint8Array(12)
+  new DataView(data.buffer).setUint32(0, 2, true) // System program instruction 2 = Transfer
+  new DataView(data.buffer).setBigUint64(4, 1000n, true) // lamports
+  const ix = { programAddress: address('11111111111111111111111111111111'), accounts: [{ address: owner, role: AccountRole.WRITABLE_SIGNER }, { address: owner, role: AccountRole.WRITABLE }], data }
+  return (await signSendConfirm(wallet, account, await compile(owner, [ix], {}))).signature
 }
 
 // Everything the Analytics page shows, read live from chain: reserves (incl. Scope oracle freshness) and positions.
