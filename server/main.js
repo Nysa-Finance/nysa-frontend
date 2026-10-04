@@ -131,7 +131,9 @@ async function serveStatic(pathname, res) {
   try {
     body = await readFile(file)
   } catch {
-    served = join(DIST, 'index.html') // client-side routes (/lend, /market/…) → the SPA
+    // A missing file (/favicon.ico, /x.png) is a 404; only extensionless paths are client-side routes (/lend, …).
+    if (extname(pathname)) return send(res, 404, 'Not found', { type: 'text/plain' })
+    served = join(DIST, 'index.html')
     body = await readFile(served)
   }
   res.setHeader('content-type', TYPES[extname(served)] ?? 'application/octet-stream')
