@@ -81,6 +81,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-chip.warn { border-color: #e8b33966; color: var(--n-amber); }
 .n-chip.mainnet { border-color: #9945ffa6; color: #cdb0ff; background: #9945ff1f; }
 .n-accent { color: var(--n-pink); font-weight: 600; }
+.n-boost { margin-left: 4px; color: var(--n-green); cursor: help; }
 .n-num { font-variant-numeric: tabular-nums; }
 .n-skel { display: inline-block; height: 1em; min-width: 46px; border-radius: 3px; background: #161616; animation: n-pulse 1.4s ease-in-out infinite; vertical-align: middle; }
 .n-actions { display: flex; gap: 8px; justify-content: flex-end; }

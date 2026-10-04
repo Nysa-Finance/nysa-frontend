@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -82,4 +82,6 @@ assert.equal(amtDust(0.000002742), '< 0.0001')
 assert.equal(amtDust(0), '0')
 assert.equal(amtDust(1.04422), '1.0442')
 
+assert.equal(Math.round(rewardApr(1000 / 31_536_000, 1, 10_000)), 10) // 1000 USDC/year on 10k staked = 10%
+assert.equal(rewardApr(1, 1, 0), 0) // nothing staked
 console.log('logic ok')

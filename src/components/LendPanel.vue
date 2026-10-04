@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { state, rowOf, priceOf, sendKaminoAction, useTx } from '../store.js'
+import { state, rowOf, priceOf, rewardAprOf, sendKaminoAction, useTx } from '../store.js'
 import { pct, amt, usdFull, num, floorTo, coversAll } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
@@ -64,6 +64,10 @@ async function submit() {
       <option v-for="t in options" :key="t.token_id" :value="t.token_id">{{ t.name }}</option>
     </select>
     <div class="n-kv" style="margin-bottom: 10px"><span class="k">Supply APY</span><span class="v accent">{{ pct(row?.reserve.supplyAPR) }}</span></div>
+    <template v-if="rewardAprOf(token.token_id) > 0">
+      <div class="n-kv" style="margin-bottom: 10px"><span class="k">{{ state.rewards[token.token_id].rewards.map((x) => x.symbol).join(' + ') }} rewards APR</span><span class="v" style="color: var(--n-green)">+{{ pct(rewardAprOf(token.token_id)) }}</span></div>
+      <div class="n-kv" style="margin-bottom: 10px"><span class="k">⚡ Boosted APY</span><span class="v accent">{{ pct((row?.reserve.supplyAPR ?? 0) + rewardAprOf(token.token_id)) }}</span></div>
+    </template>
     <div class="n-kv" style="margin-bottom: 10px"><span class="k">Your supplied</span><span class="v">{{ on ? `${amt(supplied)} ${token.name}` : '—' }}</span></div>
     <div class="n-kv" style="margin-bottom: 20px">
       <span class="k">{{ tab === 'lend' ? 'Wallet balance' : 'Available to withdraw' }}</span>

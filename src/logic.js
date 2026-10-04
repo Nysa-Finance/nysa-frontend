@@ -165,3 +165,6 @@ export function niceTicks(max) {
   const top = Math.ceil(m / step - 1e-9) * step
   return { top, ticks: Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step) }
 }
+
+// Farm reward APR in %: yearly reward value over the staked value. Shown as APR because rewards don't compound.
+export const rewardApr = (perSecond, rewardPrice, stakedUsd) => (stakedUsd > 0 ? (perSecond * 31_536_000 * rewardPrice) / stakedUsd * 100 : 0)

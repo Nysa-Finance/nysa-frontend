@@ -2,9 +2,9 @@
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { state, rowOf, maxLtvOf, loadApyHistory, loadMarketUpdates } from '../store.js'
+import { state, rowOf, maxLtvOf, rewardAprOf, boostNote, claimRewards, useTx, loadApyHistory, loadMarketUpdates } from '../store.js'
 import { marketById, tok, tokensOf, explorer } from '../config.js'
-import { usd, pct, compact, short } from '../logic.js'
+import { usd, pct, compact, short, amt } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import IrmChart from '../components/IrmChart.vue'
 import LendPanel from '../components/LendPanel.vue'
@@ -13,6 +13,7 @@ import FarmPointsModal from '../components/FarmPointsModal.vue'
 import NotFound from './NotFound.vue'
 import Section from '../components/Section.vue'
 import RealizedApy from '../components/RealizedApy.vue'
+import TxProgress from '../components/TxProgress.vue'
 import MarketUpdates from '../components/MarketUpdates.vue'
 
 const route = useRoute()
@@ -25,6 +26,18 @@ const loans = computed(() => m.value.loans.map(tok))
 const r = (id) => rowOf(id)?.reserve
 const sum = (ids, k) => ids.reduce((s, id) => s + (r(id)?.[k] ?? 0), 0)
 const pointsOpen = ref(false)
+// Supply rewards (Kamino farm incentives): boosted tokens of this market and the wallet's unclaimed rewards by token.
+const boosted = computed(() => tokens.value.filter((t) => rewardAprOf(t.token_id) > 0))
+const claimable = computed(() => {
+  const by = {}
+  for (const p of state.claimable[m.value.id] ?? []) {
+    const name = tokens.value.find((t) => t.mint === String(p.mint))?.name ?? short(String(p.mint))
+    by[name] = (by[name] ?? 0) + p.amount
+  }
+  return Object.entries(by)
+})
+const { tx: claimTx, run: runClaim, reset: resetClaim } = useTx()
+const claim = () => runClaim([{ label: 'Claim rewards', run: () => claimRewards(m.value) }])
 const apyHistory = ref(null)
 onMounted(() => loadApyHistory().then((h) => (apyHistory.value = h)).catch((e) => console.error('[apy-history]', e)))
 const updates = ref(null)
@@ -54,6 +67,21 @@ function openDd() {
             <button class="n-pill" @click="openDd"><span class="n-dot" />Safety Score {{ m.dueDiligence.safetyScore }}/10</button>
           </div>
           <p class="n-sub blurb">{{ m.blurb }}</p>
+          <div v-if="boosted.length || claimable.length" class="farm-cta reward-cta">
+            <div>
+              <div class="farm-cta-t">
+                <template v-if="boosted.length">⚡ Boosted: {{ boosted.map((t) => `${t.name} supply earns +${pct(rewardAprOf(t.token_id))} APR in ${state.rewards[t.token_id].rewards.map((x) => x.symbol).join(' + ')} rewards`).join(' · ') }}.</template>
+                <template v-else>You have unclaimed rewards.</template>
+              </div>
+              <div class="farm-cta-s">
+                <template v-if="claimable.length">Claimable: {{ claimable.map(([name, a]) => `${amt(a, 4)} ${name}`).join(' + ') }}</template>
+                <template v-else-if="state.address">Rewards accrue every second on your supply and can be claimed here.</template>
+                <template v-else>Connect your wallet to see and claim your rewards.</template>
+              </div>
+            </div>
+            <button v-if="claimable.length" class="n-btn-sm" :disabled="claimTx.status === 'running'" @click="claim">Claim</button>
+          </div>
+          <TxProgress :tx="claimTx" style="margin: -10px 0 22px" @dismiss="resetClaim" />
           <div v-if="m.farmPoints" class="farm-cta">
             <div>
               <div class="farm-cta-t">This market is eligible for farming Nysa Points.</div>
@@ -75,7 +103,7 @@ function openDd() {
               <div class="n-cell n-num" data-label="Deposits">{{ usd(r(t.token_id)?.supplyUsd) }}</div>
               <div class="n-cell n-num" data-label="Borrowed">{{ m.loans.includes(t.token_id) ? usd(r(t.token_id)?.borrowUsd) : '—' }}</div>
               <div class="n-cell n-num" data-label="Utilization">{{ pct(r(t.token_id)?.utilization, 1) }}</div>
-              <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct(r(t.token_id)?.supplyAPR) }}</div>
+              <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct((r(t.token_id)?.supplyAPR ?? 0) + rewardAprOf(t.token_id)) }}<span v-if="rewardAprOf(t.token_id) > 0" class="n-boost" :title="boostNote(t.token_id, r(t.token_id)?.supplyAPR)" :aria-label="boostNote(t.token_id, r(t.token_id)?.supplyAPR)">⚡</span></div>
               <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r(t.token_id)?.borrowAPR) }}</div>
             </div>
           </div>
@@ -187,6 +215,7 @@ function openDd() {
 .farm-cta-t { font-size: 14px; font-weight: 500; }
 .farm-cta-s { margin-top: 2px; font-size: 13px; color: var(--n-text-3); }
 .farm-cta .n-btn-sm { flex-shrink: 0; }
+.reward-cta { border-color: #3ddc8459; background: #3ddc840f; }
 .n-thead { font-size: 11px; padding: 14px 20px; }
 .n-tr.sm { padding: 15px 20px; font-size: 14px; }
 .ad-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr 1fr; }

@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { state, rowOf } from '../store.js'
+import { state, rowOf, rewardAprOf, boostNote } from '../store.js'
 import { LIVE, tok } from '../config.js'
 import { usd, pct } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -21,7 +21,7 @@ const go = (m) => router.push({ name: 'market-detail', params: { id: m.id }, que
     <template v-if="state.loaded">
       <div v-for="x in rows" :key="x.m.id + x.t.token_id" class="n-tr click ln-grid" @click="go(x.m)">
         <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="x.t" /><span>{{ x.t.name }}</span></div>
-        <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct(x.r?.supplyAPR) }}</div>
+        <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct((x.r?.supplyAPR ?? 0) + rewardAprOf(x.t.token_id)) }}<span v-if="rewardAprOf(x.t.token_id) > 0" class="n-boost" :title="boostNote(x.t.token_id, x.r?.supplyAPR)" :aria-label="boostNote(x.t.token_id, x.r?.supplyAPR)">⚡</span></div>
         <div class="n-cell n-muted" data-label="Market"><span>{{ x.m.name }} <span class="n-chip mainnet" style="margin-left: 8px">Solana</span></span></div>
         <div class="n-cell n-muted n-num" data-label="Utilization">{{ pct(x.r?.utilization, 1) }}</div>
         <div class="n-cell n-num" data-label="Total Supply">{{ usd(x.r?.supplyUsd) }}</div>

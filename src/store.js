@@ -2,7 +2,7 @@
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { KAMINO_API, SOLANA_RPC, LIVE, TOKENS, tok, tokensOf } from './config.js'
-import { parsePoints } from './logic.js'
+import { parsePoints, pct } from './logic.js'
 import { event } from './analytics.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
@@ -28,6 +28,8 @@ export const state = reactive({
   wallets: [], // detected Wallet Standard wallets
   connectOpen: false,
   points: { board: null, error: null }, // Farm Points leaderboard
+  rewards: {}, // token_id -> { apr, rewards: [{ symbol, apr, perDay, runwayDays }] } supply rewards (/api/rewards)
+  claimable: {}, // market id -> [{ mint, amount }] unclaimed rewards of the connected wallet
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
@@ -45,6 +47,12 @@ export function acceptTos() {
 }
 
 export const priceOf = (id) => state.reserves[id]?.price ?? tok(id).price
+// Supply reward APR (Kamino farm incentives) on top of the supply APY; 0 when the reserve has no active rewards.
+export const rewardAprOf = (id) => state.rewards[id]?.apr ?? 0
+// Tooltip for a boosted APY, e.g. "3.10% supply APY + 12.00% USDC rewards APR".
+export const boostNote = (id, supplyApy) =>
+  `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(id))} ${state.rewards[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
+
 // Max LTV is changed by governance (Market Updates), so prefer the live value from the Kamino API over config.
 export const maxLtvOf = (pair) => state.reserves[pair.collateral]?.maxLtv ?? pair.maxLtv
 
@@ -119,17 +127,26 @@ async function loadBalances(owner) {
 // REST ones (Kamino's API lags a few minutes after activity, e.g. showing 0% APY right after a borrow).
 async function loadPositions(owner) {
   const { loadPositions: read } = await kamino()
-  const out = {}
+  const out = {}, claimable = {}
   for (const m of LIVE) {
-    const { positions, reserves } = await read(m, tokensOf(m), owner)
+    const { positions, reserves, rewards } = await read(m, tokensOf(m), owner)
     Object.assign(out, positions)
     Object.assign(state.reserves, reserves)
+    claimable[m.id] = rewards
   }
   state.positions = out
+  state.claimable = claimable
+}
+
+async function loadRewards() {
+  const res = await fetch('/api/rewards')
+  if (!res.ok) throw new Error(`Rewards responded ${res.status}`)
+  state.rewards = await res.json()
 }
 
 export async function refresh() {
   state.loading = true
+  loadRewards().catch((e) => console.error('[refresh] rewards', e)) // optional: the app works without it
   try {
     await loadReserves()
     state.error = null
@@ -157,6 +174,7 @@ function setAccount(w, acc) {
   if (!acc) {
     state.balances = {}
     state.positions = {}
+    state.claimable = {}
     state.walletError = null
   }
 }
@@ -207,6 +225,14 @@ export async function sendKaminoAction(kind, { market, token, amount, all }) {
     event('Transaction failed', { action: kind, reason: /reject/i.test(e?.message) ? 'rejected' : 'error' })
     throw e
   }
+}
+
+export async function claimRewards(market) {
+  if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
+  const { claimRewards: claim } = await kamino()
+  const sig = await claim({ wallet, account, market })
+  event('Rewards claimed', { market: market.id })
+  return sig
 }
 
 // TEMPORARY: see testTransfer in kamino.js.

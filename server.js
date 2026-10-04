@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 
 const PORT = Number(process.env.PORT) || 3000
 const DIST = fileURLToPath(new URL('./dist/', import.meta.url))
-const API = new Set(['points', 'apy-history', 'market-updates', 'points-snapshot'])
+const API = new Set(['points', 'apy-history', 'market-updates', 'points-snapshot', 'rewards'])
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp',

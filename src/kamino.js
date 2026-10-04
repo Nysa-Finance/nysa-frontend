@@ -3,8 +3,9 @@
 import './polyfills.js'
 import Decimal from 'decimal.js'
 import {
-  KaminoAction, VanillaObligation, PROGRAM_ID, U64_MAX, getCurrentLedgerInstant,
+  KaminoAction, VanillaObligation, PROGRAM_ID, U64_MAX, getCurrentLedgerInstant, obligationFarmStatePda,
 } from '@kamino-finance/klend-sdk'
+import { Farms, fetchFarmState, fetchMaybeUserState } from '@kamino-finance/farms-sdk'
 import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
@@ -71,7 +72,45 @@ export async function loadPositions(m, tokens, owner) {
     }
     out[t.token_id] = { supplied, borrowed, maxWithdraw }
   }
-  return { positions: out, reserves }
+  return { positions: out, reserves, rewards: ob ? await pendingRewards(market, ob) : [] }
+}
+
+// Unclaimed rewards of the wallet's obligation in each reserve's collateral farm (Kamino farms, delegated to klend).
+// Not tied to a current deposit: rewards earned before a full withdrawal stay claimable.
+const NONE = '11111111111111111111111111111111'
+async function pendingRewards(market, ob) {
+  const farms = new Farms(rpc)
+  const out = []
+  for (const r of market.reserves.values()) {
+    const farm = r.state.farmCollateral
+    if (String(farm) === NONE) continue
+    const user = await fetchMaybeUserState(rpc, await obligationFarmStatePda(farm, ob.obligationAddress))
+    if (!user.exists) continue
+    const { data: fs } = await fetchFarmState(rpc, farm)
+    const { userPendingRewardAmounts } = farms.getUserPendingRewards(user.data, fs, new Decimal(Math.floor(Date.now() / 1000)), null)
+    userPendingRewardAmounts.forEach((raw, index) => {
+      const info = fs.rewardInfos[index]
+      const amount = Number(String(raw)) / 10 ** Number(info.token.decimals)
+      if (amount > 0) out.push({ farm, mint: info.token.mint, index, amount })
+    })
+  }
+  return out
+}
+
+// Claim every pending farm reward of the wallet's obligation in one transaction (creates the reward ATA if missing).
+export async function claimRewards({ wallet, account, market: m }) {
+  const owner = address(account.address)
+  const market = await loadMarket(m)
+  const ob = await market.getObligationByWallet(owner, obligationType())
+  const pending = ob ? await pendingRewards(market, ob) : []
+  if (!pending.length) throw new Error('No rewards to claim yet')
+  const farms = new Farms(rpc)
+  const ixs = []
+  for (const p of pending) {
+    const [atas, harvest] = await farms.claimForUserForFarmRewardIx(createNoopSigner(owner), p.farm, p.mint, true, p.index, [ob.obligationAddress])
+    ixs.push(...atas.map(([, ix]) => ix), ...harvest)
+  }
+  return (await signSendConfirm(wallet, account, await compile(owner, ixs, {}))).signature
 }
 
 async function fetchLuts(luts) {
