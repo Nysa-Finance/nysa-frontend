@@ -7,9 +7,9 @@ import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
 import { tok, tokensOf } from './config.js'
 import { parsePoints, pct } from './logic.js'
-import { event } from './analytics.js'
+import { event, skipNextPageview } from './analytics.js'
 import {
-  isIOS, DEEPLINK_WALLETS, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
+  isIOS, DEEPLINK_WALLETS, MWA_NAME, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
 } from './wallets.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
@@ -163,7 +163,8 @@ async function connectWith(w, silent) {
 
 export async function connectWallet(w) {
   await connectWith(w, false)
-  event('Wallet connected', { wallet: w.name })
+  // via: how the wallet was reached — browser extension, Android app (Mobile Wallet Adapter) or iOS app (deeplink)
+  event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : { wallet: w.name, via: 'extension' })
   state.connectOpen = false
 }
 
@@ -285,16 +286,21 @@ export async function sendKaminoAction(kind, { market, token, amount, all }) {
     trackSuccess(params) // Deposit | Withdraw | Borrow | Repay
     return sig
   } catch (e) {
-    event('Transaction failed', { action: kind, reason: /reject/i.test(e?.message) ? 'rejected' : 'error' })
+    event('Transaction failed', { action: kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
     throw e
   }
 }
 
 export async function claimRewards(market) {
   const params = { kind: 'claim', market: market.id }
-  const sig = await runAction(params)
-  trackSuccess(params)
-  return sig
+  try {
+    const sig = await runAction(params)
+    trackSuccess(params)
+    return sig
+  } catch (e) {
+    event('Transaction failed', { action: 'claim', reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
+    throw e
+  }
 }
 
 // TEMPORARY (/debug-transfer page): 1000 lamports to yourself, see server/tx.js.
@@ -338,10 +344,11 @@ export function start() {
   getWallets().on('register', scanWallets)
   listenMarket()
   const ret = readDeeplinkReturn() // back from Phantom/Solflare on iOS?
+  if (ret) skipNextPageview()
   if (ret?.action === 'connect' && ret.error) state.handoff = { status: 'error', label: 'Connect wallet', error: ret.error }
   else if (ret?.action === 'connect') {
     setAccount(deeplinkWallet(ret.wallet), { address: ret.address })
-    event('Wallet connected', { wallet: ret.wallet })
+    event('Wallet connected', { wallet: ret.wallet, via: 'ios-app' })
   }
   eagerConnect()
   if (ret?.action === 'sign') resumeDeeplink(ret)
