@@ -41,6 +41,7 @@ export const state = reactive({
   // Phone wallets reached by deeplink (iOS): a transaction waiting for the user to approve it in the wallet app, or its
   // outcome after they come back. { status: 'ready'|'sending'|'success'|'error', label, wallet, url?, signature?, error? }
   handoff: null,
+  blockedWallet: null, // address refused by the backend's sanctions screening (shown in a notice, then disconnected)
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
@@ -117,8 +118,15 @@ function listenMarket() {
 async function api(path, init) {
   const res = await fetch(path, init)
   const body = await res.json().catch(() => ({}))
+  if (res.status === 403 && body.blocked) refuseWallet()
   if (!res.ok) throw new Error(body.error ?? `Server responded ${res.status}`)
   return body
+}
+
+// The backend's sanctions screening refused this wallet: disconnect it and say why.
+function refuseWallet() {
+  state.blockedWallet = state.address
+  disconnect()
 }
 
 // fresh: skip the server's short per-wallet cache (after a transaction).

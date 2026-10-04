@@ -34,6 +34,12 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 | `server/snapshot.js` | Daily Farm Points + APY history snapshot |
 | `server/storage.js` | Files in `DATA_DIR` (atomic writes) |
 
+Sanctions screening (`server/screening.js`): every wallet is checked against the US Treasury's OFAC SDN list, which
+names sanctioned crypto addresses (SOL, USDC, ETH, …). The full XML export is downloaded daily and saved in DATA_DIR
+(the CSV export truncates remarks and drops addresses). A sanctioned wallet gets 403 on account data, transaction
+builds and relays, and the frontend disconnects it with a notice. Until a list is loaded, viewing works but no
+transaction is built (fail closed).
+
 Validation and limits: wallet addresses and actions are checked, request bodies are capped at 4 KB, and the endpoints that
 cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`). The server never holds keys.
 

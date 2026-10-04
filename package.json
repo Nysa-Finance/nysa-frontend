@@ -6,7 +6,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node src/logic.test.js && node src/wallets.test.js && node server/updates.test.js && node vendor/bigint-buffer/test.js",
+    "test": "node src/logic.test.js && node src/wallets.test.js && node server/updates.test.js && node server/screening.test.js && node vendor/bigint-buffer/test.js",
     "server": "node --env-file-if-exists=.env server/main.js"
   },
   "dependencies": {

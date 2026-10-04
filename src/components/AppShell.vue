@@ -5,6 +5,7 @@ import { explorer } from '../config.js'
 import { short } from '../logic.js'
 import ConnectModal from './ConnectModal.vue'
 import WalletHandoff from './WalletHandoff.vue'
+import BlockedWallet from './BlockedWallet.vue'
 
 const tabs = [
   { to: '/', label: 'Markets', icon: '/app/icon-markets.png' },
@@ -47,5 +48,6 @@ const menu = ref(false)
     </footer>
     <ConnectModal v-if="state.connectOpen" @close="state.connectOpen = false" />
     <WalletHandoff />
+    <BlockedWallet />
   </div>
 </template>

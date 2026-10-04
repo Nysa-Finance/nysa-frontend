@@ -16,6 +16,7 @@ import { buildTx, sendSigned, txStatus, KINDS, UserError } from './tx.js'
 import { getPositions } from './analytics.js'
 import { marketUpdates } from './updates.js'
 import { runSnapshot } from './snapshot.js'
+import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
 import { LIVE, marketById } from '../src/config.js'
 
@@ -60,6 +61,15 @@ async function jsonBody(req) {
   try { return JSON.parse(raw) } catch { throw new UserError('Invalid JSON') }
 }
 
+// Sanctions screening (OFAC SDN list, server/screening.js): a sanctioned wallet gets 403 everywhere. Until a list is
+// loaded, viewing still works but no transaction is built or relayed (fail closed).
+const BLOCKED = { error: 'This wallet address is on a sanctions list, so it cannot use the Nysa interface.', blocked: true }
+function blocked(res, wallet, { failClosed }) {
+  if (isSanctioned(wallet)) return send(res, 403, BLOCKED), true
+  if (failClosed && !screeningReady()) return send(res, 503, { error: 'Sanctions screening is starting up, please try again shortly.' }), true
+  return false
+}
+
 // ---- Server-Sent Events: the market snapshot on connect and after every refresh ----
 const clients = new Set()
 const MAX_CLIENTS = 5000
@@ -88,6 +98,7 @@ const routes = [
   ['GET', /^\/api\/account\/(\w+)$/, async (req, res, [wallet]) => {
     if (!isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
     if (limited(req, 'account', 60)) return send(res, 429, { error: 'Too many requests' })
+    if (blocked(res, wallet, { failClosed: false })) return
     const fresh = new URL(req.url, 'http://x').searchParams.has('fresh')
     send(res, 200, await getAccount(wallet, fresh))
   }],
@@ -96,6 +107,7 @@ const routes = [
     const b = await jsonBody(req)
     if (!KINDS.includes(b.kind)) throw new UserError('Unknown action')
     if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
+    if (blocked(res, b.wallet, { failClosed: true })) return
     try {
       send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all }))
     } catch (e) {
@@ -108,6 +120,7 @@ const routes = [
     if (limited(req, 'send', 20)) return send(res, 429, { error: 'Too many requests' })
     const b = await jsonBody(req)
     if (!isAddress(String(b.wallet)) || typeof b.tx !== 'string' || b.tx.length > 2000) throw new UserError('Invalid request')
+    if (blocked(res, b.wallet, { failClosed: true })) return
     send(res, 200, await sendSigned({ tx: b.tx, wallet: b.wallet }))
   }],
   ['GET', /^\/api\/tx\/(\w{64,90})$/, async (req, res, [signature]) => {
@@ -121,7 +134,7 @@ const routes = [
   ['GET', /^\/api\/health$/, (req, res) => {
     const s = getSnapshot()
     const age = s ? Math.round((Date.now() - s.updatedAt) / 1000) : null
-    send(res, s && age < 300 ? 200 : 503, { ok: !!s && age < 300, marketAgeSec: age, sseClients: clients.size, rpcCallsLastHour: rpcCallsLastHour() })
+    send(res, s && age < 300 ? 200 : 503, { ok: !!s && age < 300, marketAgeSec: age, sseClients: clients.size, rpcCallsLastHour: rpcCallsLastHour(), sanctionsScreening: screeningStatus() })
   }],
 ]
 
@@ -181,6 +194,7 @@ http.createServer(async (req, res) => {
 }).listen(PORT, () => console.log(`nysa listening on :${PORT}`))
 
 refreshMarket() // first read now, then every REFRESH_MS (market.js)
+startScreening() // OFAC sanctions list: saved copy now, fresh download daily
 
 // Daily snapshot at 00:00 UTC. A missed run (e.g. restart at midnight) is harmless: the next one accrues the whole gap.
 function scheduleSnapshot() {
