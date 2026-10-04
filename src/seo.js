@@ -6,7 +6,7 @@ const SITE = 'https://app.nysa.finance'
 const DEFAULT = 'Lend and borrow against tokenized real-world assets on Solana: supply USDC or borrow against USDY in curated Kamino markets.'
 
 const PAGES = {
-  markets: ['Nysa — RWA lending markets on Solana', DEFAULT],
+  markets: ['Nysa — Transparent curation of Lending Markets for the Tokenized Economy', DEFAULT],
   lend: ['Lend · Nysa', 'Supply USDC and earn yield in curated RWA lending markets on Solana.'],
   borrow: ['Borrow · Nysa', 'Borrow USDC against tokenized real-world assets like Ondo USDY on Solana.'],
   portfolio: ['Portfolio · Nysa', 'Your deposits, loans and health factor across Nysa markets.'],
