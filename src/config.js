@@ -15,7 +15,7 @@ export const TOKENS = {
   'svm-usdc': {
     token_id: 'svm-usdc', name: 'USDC', icon: '/tokens/usdc.webp', decimals: 6, price: 1,
     mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', reserve: 'GQr5hXuRgHAmguh6EqcpeJXrMyqCQch4P6XkSvawwNk2',
-    priceFeed: '3NJYftD5sjVfxSnUdZ1wVML8f3aC6mp1CXCL6L7TnU8C', feedNote: 'Scope · index 20 → 230',
+    priceFeed: '3NJYftD5sjVfxSnUdZ1wVML8f3aC6mp1CXCL6L7TnU8C', feedNote: 'Scope · index 20',
     // Kamino borrow-rate curve points: [utilization %, borrow APR %]
     irm: { points: [[0, 0], [50, 2.05], [90, 3.07], [100, 11.33]], fee: 0 },
   },
