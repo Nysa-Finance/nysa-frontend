@@ -110,6 +110,3 @@ Decoding is covered by `server/updates.test.js`.
   (git reset to `origin/main` + `docker compose up -d --build`; a failing build/test leaves the running version up).
   Secrets: `VPS_SSH_KEY`, `VPS_HOST`, `VPS_KNOWN_HOSTS`.
 - Monitoring: `GET /api/health` → `{ ok, marketAgeSec, sseClients, rpcCallsLastHour }` (503 if market data is over 5 minutes old).
-
-## Not done yet
-- **Liquidations page.** The original reads a liquidation indexer that is offline; open positions and health factors are shown in Analytics instead.
