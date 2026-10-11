@@ -1,6 +1,6 @@
 // Nysa backend (VPS / Docker, behind Caddy and the Cloudflare Tunnel):
 // - serves the Vite build (dist/) with SPA fallback;
-// - JSON API under /api (market, account, transactions, analytics, points, history, market updates, health);
+// - JSON API under /api (market, account, transactions, analytics, points, history, market updates, liquidations, health);
 // - pushes market updates to browsers over Server-Sent Events (/api/events);
 // - runs the daily snapshot at 00:00 UTC.
 // The browser never calls the Solana RPC: it reads from here and only uses the wallet to sign and send.
@@ -12,9 +12,9 @@ import { isAddress } from '@solana/kit'
 import { RPC_URL, rpcCallsLastHour } from './rpc.js'
 import { getSnapshot, onSnapshot, refreshMarket } from './market.js'
 import { getAccount } from './account.js'
-import { buildTx, sendSigned, txStatus, KINDS, UserError } from './tx.js'
+import { buildTx, sendSigned, txStatus, liquidationInfo, KINDS, UserError } from './tx.js'
 import { getPositions } from './analytics.js'
-import { marketUpdates } from './updates.js'
+import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
@@ -107,9 +107,10 @@ const routes = [
     const b = await jsonBody(req)
     if (!KINDS.includes(b.kind)) throw new UserError('Unknown action')
     if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
+    if (b.kind === 'liquidate' && !isAddress(String(b.borrower))) throw new UserError('Invalid borrower address')
     if (blocked(res, b.wallet, { failClosed: true })) return
     try {
-      send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all }))
+      send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all, borrower: b.borrower, preview: !!b.preview }))
     } catch (e) {
       if (e instanceof UserError) throw e
       console.error('[tx] build failed', b.kind, e) // details stay in the logs (RPC errors can carry provider info)
@@ -123,12 +124,19 @@ const routes = [
     if (blocked(res, b.wallet, { failClosed: true })) return
     send(res, 200, await sendSigned({ tx: b.tx, wallet: b.wallet }))
   }],
+  ['GET', /^\/api\/liquidation\/([\w-]+)\/(\w+)$/, async (req, res, [marketId, borrower]) => {
+    const m = marketById(marketId)
+    if (!m || !isAddress(borrower)) return send(res, 400, { error: 'Invalid market or wallet' })
+    if (limited(req, 'liquidation', 60)) return send(res, 429, { error: 'Too many requests' })
+    send(res, 200, await liquidationInfo(m, borrower))
+  }],
   ['GET', /^\/api\/tx\/(\w{64,90})$/, async (req, res, [signature]) => {
     if (limited(req, 'status', 120)) return send(res, 429, { error: 'Too many requests' })
     send(res, 200, await txStatus(signature))
   }],
   ['GET', /^\/api\/analytics$/, async (req, res) => send(res, 200, { positions: await getPositions() }, { maxAge: 30 })],
   ['GET', /^\/api\/market-updates$/, async (req, res) => send(res, 200, await marketUpdates(), { maxAge: 60 })],
+  ['GET', /^\/api\/liquidations$/, async (req, res) => send(res, 200, await marketLiquidations(), { maxAge: 60 })],
   ['GET', /^\/api\/points$/, async (req, res) => send(res, 200, (await read(POINTS)) ?? EMPTY_POINTS, { type: 'text/csv; charset=utf-8', maxAge: 300 })],
   ['GET', /^\/api\/apy-history$/, async (req, res) => send(res, 200, (await read(HISTORY)) ?? '{"tokens":{}}', { maxAge: 300 })],
   ['GET', /^\/api\/health$/, (req, res) => {
@@ -139,14 +147,14 @@ const routes = [
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js).
-const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/dashboard', '/debug-transfer'])
+const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard', '/debug-transfer'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/') || !!marketById(p.match(/^\/market\/([\w-]+)\/?$/)?.[1])
 
 // Public pages for search engines; markets come from config.js, so a new live market is listed automatically.
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${['/', '/lend', '/borrow', '/analytics', ...LIVE.map((m) => `/market/${m.id}`)].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
+${['/', '/lend', '/borrow', '/analytics', '/liquidations', ...LIVE.map((m) => `/market/${m.id}`)].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
 </urlset>
 `
 

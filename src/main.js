@@ -28,6 +28,7 @@ const router = createRouter({
     { path: '/portfolio', name: 'portfolio', component: () => import('./pages/Portfolio.vue') },
     { path: '/market/:id', name: 'market-detail', component: () => import('./pages/MarketDetail.vue') },
     { path: '/analytics', name: 'analytics', component: () => import('./pages/Analytics.vue') },
+    { path: '/liquidations', name: 'liquidations', component: () => import('./pages/Liquidations.vue') },
     { path: '/dashboard', redirect: { name: 'markets' } },
     { path: '/debug-transfer', component: () => import('./pages/DebugTransfer.vue'), meta: { noindex: true } }, // TEMPORARY Phantom test, not linked
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./pages/NotFound.vue') },

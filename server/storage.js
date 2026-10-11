@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 const DIR = process.env.DATA_DIR || 'data'
 export const POINTS = 'farm-points/points_state.csv'
 export const HISTORY = 'market-history/history.json'
-export const INDEX = 'market-history/index-v2.json'
+export const INDEX = 'market-history/index-v3.json' // v3: + liquidations and obligation owners (full re-index)
 export const SANCTIONS = 'sanctions/ofac-addresses.json'
 
 // Text content, or null if the file does not exist yet.

@@ -29,7 +29,7 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 | `server/market.js` | Market cache: reserves, oracle prices, risk params, rate curves, reward farms (`/api/market`, `/api/events`) |
 | `server/account.js` | A wallet's balances, Kamino positions and pending farm rewards |
 | `server/tx.js` | Builds deposit / withdraw / borrow / repay / claim with klend-sdk + farms-sdk, simulates, returns unsigned |
-| `server/updates.js` | Market index: admin changes (Market Updates) and every obligation address, from chain history |
+| `server/updates.js` | Market index: admin changes (Market Updates), liquidations and every obligation (address + owner), from chain history |
 | `server/analytics.js` | Open positions with health factor for the Analytics page |
 | `server/snapshot.js` | Daily Farm Points + APY history snapshot |
 | `server/storage.js` | Files in `DATA_DIR` (atomic writes) |
@@ -44,7 +44,7 @@ Validation and limits: wallet addresses and actions are checked, request bodies 
 cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`). The server never holds keys.
 
 ## Pages
-`/` Markets · `/lend` · `/borrow` · `/portfolio` · `/market/:id?mode=lend|borrow&tab=&asset=` · `/analytics` · 404.
+`/` Markets · `/lend` · `/borrow` · `/portfolio` · `/market/:id?mode=lend|borrow&tab=&asset=` · `/analytics` · `/liquidations` · 404.
 Market-detail and Analytics sections are collapsible cards (`src/components/Section.vue`, native `<details>`).
 The app also has a Terms of Service gate (stored in localStorage), a wallet connect modal (Wallet Standard), and a Farm Points leaderboard.
 
@@ -93,9 +93,21 @@ Math: `realizedApy` / `windowApy` / `dailyApySeries` in `src/logic.js` (tested).
 ## Market Updates
 `/api/market-updates` lists admin changes to the market and its reserves (LTVs, rate curve, oracles, caps, status, market settings…),
 decoded from Kamino Lend instructions (`updateReserveConfig`, `updateLendingMarket`, `initReserve`, … incl. CPI/multisig calls) using
-klend-sdk's generated layouts. It indexes incrementally into `market-history/index-v2.json`: each refresh fetches only
+klend-sdk's generated layouts. It indexes incrementally into `market-history/index-v3.json`: each refresh fetches only
 transactions newer than the last one seen. Values are formatted at index time; after changing a formatter, delete that file to re-index.
 Decoding is covered by `server/updates.test.js`.
+
+## Liquidations
+`/liquidations` lists open loans by health factor, with the collateral price at which each one is liquidated
+(price / health factor: one collateral asset, stablecoin debt), and every liquidation in the market. The same index
+decodes Kamino's `liquidateObligationAndRedeemReserveCollateral(V2)`: debt repaid = token transfers into the repay
+reserve's liquidity vault, collateral seized = transfers out of the withdraw reserve's liquidity vault
+(`/api/liquidations`, decoding covered by `server/updates.test.js`).
+
+Anyone can liquidate an unhealthy loan from the page (`LiquidateModal.vue`, `kind: 'liquidate'` in `server/tx.js`):
+`GET /api/liquidation/:market/:borrower` gives the repayable amount under Kamino's rules (close factor, per-transaction
+cap, full liquidation of small loans); the quote is a simulation of the real transaction (the liquidator's token
+balances after it), and the transaction sent pays out at least 99% of that quote or fails.
 
 ## VPS deploy (Docker)
 - `docker-compose.yml`: `app` (Node 24: site + backend) + `caddy` (CSP and security headers from `Caddyfile`) + `tunnel` (cloudflared)

@@ -213,10 +213,11 @@ async function confirmed(signature) {
 
 const buildTx = (params) => api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: account.address }) })
 
-const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', test: 'Test transfer' }
+const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate', test: 'Test transfer' }
 const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.token ? ` ${tok(p.token).name}` : ''}`
 function trackSuccess(p) {
   if (p.kind === 'claim') event('Rewards claimed', { market: p.market })
+  else if (p.kind === 'liquidate') event('Liquidation', { market: p.market })
   else if (p.token) event(p.kind[0].toUpperCase() + p.kind.slice(1), { token: tok(p.token).name })
 }
 
@@ -311,6 +312,24 @@ export async function claimRewards(market) {
   }
 }
 
+// Liquidation of someone else's unhealthy loan: how much can be repaid, a quote (simulated on-chain), then the action.
+export const loadLiquidationInfo = (market, borrower) => api(`/api/liquidation/${market.id}/${borrower}`)
+export async function previewLiquidation(market, borrower, amount) {
+  if (!account) throw new Error('Connect a Solana wallet to continue.')
+  return (await buildTx({ kind: 'liquidate', market: market.id, borrower, amount, preview: true })).quote
+}
+export async function liquidate(market, borrower, amount) {
+  const params = { kind: 'liquidate', market: market.id, borrower, amount }
+  try {
+    const sig = await runAction(params)
+    trackSuccess(params)
+    return sig
+  } catch (e) {
+    event('Transaction failed', { action: 'liquidate', reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
+    throw e
+  }
+}
+
 // TEMPORARY (/debug-transfer page): 1000 lamports to yourself, see server/tx.js.
 export const sendTestTransfer = () => runAction({ kind: 'test' })
 
@@ -342,6 +361,8 @@ export function loadMarketUpdates() {
 
 // Every open position, riskiest first (hf null = no debt).
 export const loadPositions = () => api('/api/analytics').then((a) => a.positions)
+// Every liquidation in the live markets, newest first (decoded on-chain by the backend).
+export const loadLiquidations = () => api('/api/liquidations').then((a) => a.liquidations)
 
 let started = false
 export function start() {

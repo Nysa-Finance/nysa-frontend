@@ -1,6 +1,6 @@
 // Decoding checks for the market index (/api/market-updates), using byte values from real transactions on the Nysa market.
 import assert from 'node:assert/strict'
-import { describe } from './updates.js'
+import { describe, liquidation } from './updates.js'
 import { TOKENS } from '../src/config.js'
 
 const USDC = TOKENS['svm-usdc'], USDY = TOKENS['svm-usdy']
@@ -28,5 +28,15 @@ assert.deepEqual(market(5, [0xe0, 0x93, 0x04]), { action: 'Global borrow limit',
 assert.deepEqual(market(2, [25]), { action: 'Liquidation close factor', value: '25%' })
 assert.deepEqual(market(30, [1]), { action: 'Borrow order execution enabled', value: 'on' })
 assert.deepEqual(describe('initReserve', {}), { action: 'Reserve created', value: null })
+
+// Liquidation: repaid = transfers into the repay reserve's liquidity vault, seized = transfers out of the withdraw
+// reserve's liquidity vault (liquidator share + fee); unrelated transfers are ignored.
+const acc = ['LIQUIDATOR', 'OBLIGATION', 'MARKET', 'AUTH', USDC.reserve, USDC.mint, 'USDC_VAULT', USDY.reserve, USDY.mint, 'CMINT', 'CSUPPLY', 'USDY_VAULT']
+assert.deepEqual(liquidation(acc, [
+  { source: 'LIQ_USDC', dest: 'USDC_VAULT', amount: 1_000_000_000n }, // 1,000 USDC repaid
+  { source: 'CSUPPLY', dest: 'LIQ_C', amount: 900_000_000n }, // cTokens (not counted)
+  { source: 'USDY_VAULT', dest: 'LIQ_USDY', amount: 910_000_000n },
+  { source: 'USDY_VAULT', dest: 'FEE', amount: 4_000_000n },
+], { OBLIGATION: 'OWNER' }), { obligation: 'OBLIGATION', owner: 'OWNER', liquidator: 'LIQUIDATOR', repaid: 1000, repaidToken: 'USDC', seized: 914, seizedToken: 'USDY' })
 
 console.log('market-updates ok')

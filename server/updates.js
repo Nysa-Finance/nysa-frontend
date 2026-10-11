@@ -1,5 +1,5 @@
 // Market index: admin changes to the Nysa Kamino market and its reserves (LTVs, rate curve, oracles, caps…), decoded
-// from on-chain transactions, plus the addresses of every position (obligation) opened in the market.
+// from on-chain transactions, every liquidation, plus the addresses (and owners) of every position (obligation).
 // Indexed incrementally into DATA_DIR: each refresh only fetches transactions newer than the last one seen.
 // The position list replaces getProgramAccounts, which rate-limited RPC plans refuse (Alchemy free).
 import { createRequire } from 'node:module'
@@ -29,6 +29,8 @@ const ADMIN = {
 const IX_MODULES = {
   initLendingMarket: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initLendingMarket.js'),
   initObligation: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initObligation.js'), // indexed, not listed
+  liquidateObligationAndRedeemReserveCollateral: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/liquidateObligationAndRedeemReserveCollateral.js'),
+  liquidateObligationAndRedeemReserveCollateralV2: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/liquidateObligationAndRedeemReserveCollateralV2.js'),
   updateLendingMarket: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/updateLendingMarket.js'),
   updateLendingMarketOwner: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/updateLendingMarketOwner.js'),
   initReserve: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initReserve.js'),
@@ -138,8 +140,43 @@ export function describe(name, args, token) {
 }
 function safe(fn) { try { return fn() } catch { return null } }
 
-// ---- indexing ----
+// ---- liquidations ----
 const RESERVES = new Map(Object.values(TOKENS).map((t) => [t.reserve, t]))
+const TOKEN_PROGRAMS = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PhnBqCXEpPxuEb']
+
+// SPL token transfers among an instruction's inner instructions: [{ source, dest, amount }].
+function transfers(ixs, keys, b58) {
+  const out = []
+  for (const ix of ixs) {
+    if (!TOKEN_PROGRAMS.includes(keys[ix.programIdIndex])) continue
+    const d = Buffer.from(b58.encode(ix.data))
+    const a = ix.accounts.map((i) => keys[i])
+    if (d[0] === 3 && d.length >= 9) out.push({ source: a[0], dest: a[1], amount: d.readBigUInt64LE(1) }) // Transfer
+    if (d[0] === 12 && d.length >= 10) out.push({ source: a[0], dest: a[2], amount: d.readBigUInt64LE(1) }) // TransferChecked
+  }
+  return out
+}
+
+// One Kamino liquidation from its accounts and the token transfers it made: the debt repaid into the repay reserve's
+// liquidity vault and the collateral paid out of the withdraw reserve's liquidity vault (to the liquidator, incl. fees).
+// accounts: liquidator, obligation, lendingMarket, authority, repayReserve, repayMint, repaySupply, withdrawReserve,
+// withdrawMint, collateralMint, collateralSupply, withdrawLiquiditySupply, …
+export function liquidation(accounts, moves, owners = {}) {
+  const repay = RESERVES.get(accounts[4]), withdraw = RESERVES.get(accounts[7])
+  const sum = (pick) => moves.filter(pick).reduce((s, m) => s + m.amount, 0n)
+  const units = (n, t) => (t ? Number(n) / 10 ** t.decimals : null)
+  return {
+    obligation: accounts[1],
+    owner: owners[accounts[1]] ?? null,
+    liquidator: accounts[0],
+    repaid: units(sum((m) => m.dest === accounts[6]), repay),
+    repaidToken: repay?.name ?? short(accounts[5], 4, 4),
+    seized: units(sum((m) => m.source === accounts[11]), withdraw),
+    seizedToken: withdraw?.name ?? short(accounts[8], 4, 4),
+  }
+}
+
+// ---- indexing ----
 
 async function indexNew(rpc, marketAddr, state) {
   const b58 = getBase58Encoder()
@@ -151,17 +188,29 @@ async function indexNew(rpc, marketAddr, state) {
     before = page.at(-1).signature
   }
   if (!sigs.length) return false
-  const seen = new Set(state.updates.map((u) => u.id))
+  const seen = new Set([...state.updates, ...state.liquidations].map((u) => u.id))
   const ok = sigs.filter((s) => !s.err).reverse() // oldest first
   for (let i = 0; i < ok.length; i += 4) {
-    const txs = await Promise.all(ok.slice(i, i + 4).map((s) => rpc.getTransaction(s.signature, { encoding: 'json', maxSupportedTransactionVersion: 0 }).send()))
+    // Version 1 is Solana's newer transaction format (same JSON fields here); asking for 0 would fail on those.
+    const txs = await Promise.all(ok.slice(i, i + 4).map((s) => rpc.getTransaction(s.signature, { encoding: 'json', maxSupportedTransactionVersion: 1 }).send()))
     txs.forEach((t, j) => {
       if (!t) return
       const sig = ok[i + j].signature
       const keys = [...t.transaction.message.accountKeys, ...(t.meta?.loadedAddresses?.writable ?? []), ...(t.meta?.loadedAddresses?.readonly ?? [])].map(String)
-      // Top-level and inner (CPI, e.g. via a multisig) instructions.
-      const all = [...t.transaction.message.instructions, ...(t.meta?.innerInstructions ?? []).flatMap((x) => x.instructions)]
-      all.forEach((ix, k) => {
+      // Top-level and inner (CPI, e.g. via a multisig) instructions, each with the instructions it invoked: a top-level
+      // instruction's whole inner group, an inner one's deeper calls that follow it.
+      // ponytail: a liquidation called through another program shares that group, so a flash loan from the same
+      // reserve in the same group would count toward "repaid"; split by stackHeight further if a bot ever does that.
+      const all = []
+      t.transaction.message.instructions.forEach((ix, i) => {
+        const inner = t.meta?.innerInstructions?.find((g) => g.index === i)?.instructions ?? []
+        all.push({ ix, calls: inner })
+        inner.forEach((x, j) => {
+          const end = inner.findIndex((y, k) => k > j && (y.stackHeight ?? 2) <= (x.stackHeight ?? 2))
+          all.push({ ix: x, calls: inner.slice(j + 1, end === -1 ? undefined : end) })
+        })
+      })
+      all.forEach(({ ix, calls }, k) => {
         if (keys[ix.programIdIndex] !== KLEND) return
         const data = Buffer.from(b58.encode(ix.data))
         const def = IXS[data.subarray(0, 8).toString('hex')]
@@ -170,10 +219,16 @@ async function indexNew(rpc, marketAddr, state) {
         if (def.name === 'initObligation') { // accounts: owner, feePayer, obligation, lendingMarket, …
           const list = (state.obligations[marketAddr] ??= [])
           if (!list.includes(accounts[2])) list.push(accounts[2])
+          state.owners[accounts[2]] = accounts[0]
           return
         }
         const id = `${sig}:${k}`
         if (seen.has(id)) return
+        seen.add(id)
+        if (def.name.startsWith('liquidate')) {
+          state.liquidations.push({ id, sig, ts: Number(t.blockTime), market: marketAddr, ...liquidation(accounts, transfers(calls, keys, b58), state.owners) })
+          return
+        }
         const reserve = accounts.find((a) => RESERVES.has(a))
         const token = reserve && RESERVES.get(reserve)
         let args = {}
@@ -183,7 +238,6 @@ async function indexNew(rpc, marketAddr, state) {
           target: token ? `${token.name} reserve` : 'Market',
           ...describe(def.name, args, token),
         })
-        seen.add(id)
       })
     })
   }
@@ -191,10 +245,11 @@ async function indexNew(rpc, marketAddr, state) {
   return true
 }
 
-// Bring the index up to date and return it: { lastSig, updates, obligations: { [market]: [address] } }.
+// Bring the index up to date and return it:
+// { lastSig, updates, liquidations, obligations: { [market]: [address] }, owners: { [obligation]: wallet } }.
 // Also used by the daily snapshot to find every position without getProgramAccounts.
 export async function refreshIndex(rpc) {
-  const state = { lastSig: {}, updates: [], obligations: {}, ...JSON.parse((await read(INDEX)) ?? '{}') }
+  const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, ...JSON.parse((await read(INDEX)) ?? '{}') }
   let changed = false
   for (const m of LIVE) changed = (await indexNew(rpc, m.kaminoMarket, state)) || changed
   if (changed) await write(INDEX, JSON.stringify(state))
@@ -213,3 +268,5 @@ export function freshIndex() {
 
 // GET /api/market-updates payload: newest first.
 export const marketUpdates = async () => ({ updates: [...(await freshIndex()).updates].sort((a, b) => b.ts - a.ts) })
+// GET /api/liquidations payload: newest first.
+export const marketLiquidations = async () => ({ liquidations: [...(await freshIndex()).liquidations].sort((a, b) => b.ts - a.ts) })

@@ -44,7 +44,7 @@ const menu = ref(false)
     </main>
     <footer class="n-footer">
       <span>Nysa · the on-chain credit market for tokenized assets</span>
-      <nav><RouterLink to="/analytics">Analytics</RouterLink></nav>
+      <nav><RouterLink to="/analytics">Analytics</RouterLink><RouterLink to="/liquidations">Liquidations</RouterLink></nav>
     </footer>
     <ConnectModal v-if="state.connectOpen" @close="state.connectOpen = false" />
     <WalletHandoff />
