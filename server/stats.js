@@ -69,9 +69,17 @@ async function top(period) {
 // Time series of the headline metrics: hours for today, days up to a month, months beyond.
 async function series(period) {
   const unit = period === 'day' ? 'time:hour' : ['6mo', '12mo', 'all'].includes(period) ? 'time:month' : 'time:day'
-  const r = await cached({ metrics: TOP, date_range: period, dimensions: [unit], include: { time_labels: true } })
+  // Plausible refuses views_per_visit with dimensions: it is pageviews / visits, computed per point here.
+  const metrics = TOP.filter((m) => m !== 'views_per_visit')
+  const r = await cached({ metrics, date_range: period, dimensions: [unit], include: { time_labels: true } })
   const byTime = new Map(r.results.map((x) => [x.dimensions[0], x.metrics]))
-  return { unit, points: r.meta.time_labels.map((t) => ({ t, ...Object.fromEntries(TOP.map((m, i) => [m, byTime.get(t)?.[i] ?? 0])) })) }
+  return {
+    unit,
+    points: r.meta.time_labels.map((t) => {
+      const p = { t, ...Object.fromEntries(metrics.map((m, i) => [m, byTime.get(t)?.[i] ?? 0])) }
+      return { ...p, views_per_visit: p.visits ? +(p.pageviews / p.visits).toFixed(2) : 0 }
+    }),
+  }
 }
 
 // Visitors in the last 5 minutes.

@@ -57,17 +57,16 @@ const METRICS = [
   { key: 'bounce_rate', label: 'Bounce rate', fmt: (v) => pct(v, 0), lowerIsBetter: true },
   { key: 'visit_duration', label: 'Visit duration', fmt: dur },
 ]
-const top = ref(null), series = ref(null), topError = ref(null)
+const top = ref(null), series = ref(null), topError = ref(null), seriesError = ref(null)
 const metric = ref(METRICS[0])
 const live = ref(null)
 
+// Headline numbers and chart load independently: one failing doesn't blank the other.
 async function loadTop() {
-  top.value = series.value = topError.value = null
+  top.value = series.value = topError.value = seriesError.value = null
   const p = period.value
-  try {
-    const [t, s] = await Promise.all([stats({ q: 'top' }), stats({ q: 'series' })])
-    if (p === period.value) [top.value, series.value] = [t, s]
-  } catch (e) { if (!(e instanceof AuthError)) topError.value = e.message }
+  stats({ q: 'top' }).then((t) => { if (p === period.value) top.value = t }).catch((e) => { if (!(e instanceof AuthError)) topError.value = e.message })
+  stats({ q: 'series' }).then((s) => { if (p === period.value) series.value = s }).catch((e) => { if (!(e instanceof AuthError)) seriesError.value = e.message })
 }
 async function loadLive() {
   try { live.value = (await adminApi('stats?q=realtime')).visitors } catch { live.value = null }
@@ -178,7 +177,7 @@ onUnmounted(() => clearInterval(liveTimer))
       </div>
       <div class="chart">
         <div class="legend"><span><i />{{ metric.label }}</span></div>
-        <p v-if="topError" class="n-empty">{{ topError }}</p>
+        <p v-if="seriesError" class="n-empty">{{ seriesError }}</p>
         <TrafficChart v-else-if="series" :points="chartPoints" :unit="series.unit.replace('time:', '')" :label="metric.label" :format="(v, axis) => axisFmt(v, axis)" />
         <div v-else class="chart-skel n-skel" />
       </div>
