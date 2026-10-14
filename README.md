@@ -43,21 +43,11 @@ transaction is built (fail closed).
 Validation and limits: wallet addresses and actions are checked, request bodies are capped at 4 KB, and the endpoints that
 cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`). The server never holds keys.
 
-## Pages
-`/` Markets · `/lend` · `/borrow` · `/portfolio` · `/market/:id?mode=lend|borrow&tab=&asset=` · `/analytics` · `/liquidations` · 404.
-Market-detail and Analytics sections are collapsible cards (`src/components/Section.vue`, native `<details>`).
-The app also has a Terms of Service gate (stored in localStorage), a wallet connect modal (Wallet Standard), and a Farm Points leaderboard.
-
-SEO: the page renders under the Terms of Service dialog (inert until accepted) so crawlers index real content;
-`src/seo.js` sets title, description, canonical and Open Graph tags per route; the server answers 404 for unknown
-routes, serves `/sitemap.xml` (pages + live markets from config.js) and `public/robots.txt`. Fonts are self-hosted
-(`@fontsource/*`, imported in `src/main.js`).
-
 ## Transactions
 `POST /api/tx` builds the action against the market cache with a fresh read of the wallet's obligation, simulates it
 (a failing transaction comes back as a readable error and is never sent) and returns it unsigned. A first deposit also
 creates the user's Kamino accounts: that setup comes back first (`final: false`); the client sends it, waits for
-confirmation, then asks again for the action itself — two wallet prompts, like the original app.
+confirmation, then asks again for the action itself.
 
 ## Wallets on phones
 Mobile browsers have no wallet extensions (`src/wallets.js`):
@@ -70,7 +60,6 @@ Mobile browsers have no wallet extensions (`src/wallets.js`):
   in localStorage, the handoff card (`WalletHandoff.vue`) asks for a tap before each trip (iOS opens apps only on user
   gestures), and `POST /api/tx/send` relays the signed transaction — only for a wallet that just had one built, with its
   valid signature. Round trip covered by `src/wallets.test.js`.
-Logos in `public/wallets/` are the official icons shipped in `@solana/wallet-adapter-phantom` / `-solflare`.
 
 ## Supply rewards (boosted APY)
 The USDC reserve's Kamino collateral farm pays USDC incentives. `server/market.js` reads the farm with the market and
@@ -108,17 +97,3 @@ Anyone can liquidate an unhealthy loan from the page (`LiquidateModal.vue`, `kin
 `GET /api/liquidation/:market/:borrower` gives the repayable amount under Kamino's rules (close factor, per-transaction
 cap, full liquidation of small loans); the quote is a simulation of the real transaction (the liquidator's token
 balances after it), and the transaction sent pays out at least 99% of that quote or fails.
-
-## VPS deploy (Docker)
-- `docker-compose.yml`: `app` (Node 24: site + backend) + `caddy` (CSP and security headers from `Caddyfile`) + `tunnel` (cloudflared)
-  + Plausible. No port is published: Cloudflare does HTTPS/WAF/geoblocking and reaches Caddy only through the tunnel
-  (public hostname `DOMAIN` -> `http://caddy:80`, set in the Cloudflare dashboard).
-- `.env` next to the compose file (never committed): `SOLANA_RPC`, `DOMAIN`, `TUNNEL_TOKEN`, `PLAUSIBLE_SECRET_KEY_BASE`,
-  `PLAUSIBLE_TOTP_VAULT_KEY` (see `.env.example`). The app container only receives the variables it uses.
-- Analytics: self-hosted Plausible CE (`plausible` + Postgres + ClickHouse, configs in `plausible/clickhouse/` from the upstream
-  community-edition repo) on its own Docker network, published as `analytics.nysa.finance` -> `http://plausible:8000` in the tunnel.
-  The site sends cookie-less pageviews and custom events with `@plausible-analytics/tracker` (`src/analytics.js`).
-- Auto-deploy: `.github/workflows/deploy.yml` SSHes to the `deploy` user, whose key may only run `scripts/deploy.sh`
-  (git reset to `origin/main` + `docker compose up -d --build`; a failing build/test leaves the running version up).
-  Secrets: `VPS_SSH_KEY`, `VPS_HOST`, `VPS_KNOWN_HOSTS`.
-- Monitoring: `GET /api/health` → `{ ok, marketAgeSec, sseClients, rpcCallsLastHour }` (503 if market data is over 5 minutes old).
