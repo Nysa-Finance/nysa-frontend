@@ -40,6 +40,16 @@ names sanctioned crypto addresses (SOL, USDC, ETH, …). The full XML export is 
 builds and relays, and the frontend disconnects it with a notice. Until a list is loaded, viewing works but no
 transaction is built (fail closed).
 
+Unique users (`server/wallets.js`): every wallet that connects (reads `/api/account`) counts as one user, once per
+day, across devices. Only an HMAC-SHA256 hash of the address is stored (key in DATA_DIR, `wallet-stats/`), never the
+address. `docker compose exec app node server/wallets.js` prints unique wallets today / 7 / 30 days / all time and the
+new ones per day. Plausible keeps counting anonymous visits (no wallet addresses are ever sent to it).
+
+Site analytics (`/admin/analytics`, private): Plausible's statistics (visitors, visits, pageviews, bounce rate,
+duration, sources, pages, locations, devices, goals and their properties, current visitors) and the unique connected
+wallets, in Nysa's UI. The browser sends `ANALYTICS_PASSWORD` to `/api/admin/*`; the backend reads Plausible's Stats API
+(`server/stats.js`, named queries only, cached a minute) with `PLAUSIBLE_API_KEY`, which never reaches the browser.
+
 Validation and limits: wallet addresses and actions are checked, request bodies are capped at 4 KB, and the endpoints that
 cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`). The server never holds keys.
 

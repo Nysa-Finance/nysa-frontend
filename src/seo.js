@@ -12,6 +12,7 @@ const PAGES = {
   portfolio: ['Portfolio · Nysa', 'Your deposits, loans and health factor across Nysa markets.'],
   analytics: ['Analytics · Nysa', 'Live protocol metrics, oracle health and open positions of the Nysa markets, read on-chain.'],
   liquidations: ['Liquidations · Nysa', 'Loans close to liquidation and every liquidation in the Nysa markets, read on-chain from Kamino Lend.'],
+  'site-analytics': ['Site analytics · Nysa', 'Private analytics dashboard.'],
   'not-found': ['Page not found · Nysa', DEFAULT],
 }
 

@@ -7,6 +7,8 @@ services:
     environment: # only what the app needs (not the tunnel or Plausible secrets)
       SOLANA_RPC: ${SOLANA_RPC:-}
       VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:-} # old name, still accepted
+      PLAUSIBLE_API_KEY: ${PLAUSIBLE_API_KEY:-} # Stats API key for the private analytics dashboard
+      ANALYTICS_PASSWORD: ${ANALYTICS_PASSWORD:-} # password of /admin/analytics (empty = dashboard off)
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped

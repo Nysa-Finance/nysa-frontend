@@ -2,5 +2,6 @@ User-agent: *
 Allow: /
 Disallow: /api/
 Disallow: /debug-transfer
+Disallow: /admin/
 
 Sitemap: https://app.nysa.finance/sitemap.xml

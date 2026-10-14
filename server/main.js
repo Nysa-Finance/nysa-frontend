@@ -5,6 +5,7 @@
 // - runs the daily snapshot at 00:00 UTC.
 // The browser never calls the Solana RPC: it reads from here and only uses the wallet to sign and send.
 import http from 'node:http'
+import { createHash, timingSafeEqual } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -17,6 +18,8 @@ import { getPositions } from './analytics.js'
 import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
+import { recordWallet, walletStats, periodDays } from './wallets.js'
+import { siteStats, statsReady, PERIODS } from './stats.js'
 import { read, POINTS, HISTORY } from './storage.js'
 import { LIVE, marketById } from '../src/config.js'
 
@@ -70,6 +73,17 @@ function blocked(res, wallet, { failClosed }) {
   return false
 }
 
+// Private site-analytics dashboard (/admin/analytics): every /api/admin call carries the ANALYTICS_PASSWORD from .env
+// as a bearer token. Compared as SHA-256 digests (constant time); attempts are rate-limited per IP.
+const ADMIN = process.env.ANALYTICS_PASSWORD ? createHash('sha256').update(process.env.ANALYTICS_PASSWORD).digest() : null
+function admin(req, res) {
+  if (!ADMIN) return send(res, 503, { error: 'The analytics dashboard is not configured (ANALYTICS_PASSWORD).' }), false
+  if (limited(req, 'admin', 60)) return send(res, 429, { error: 'Too many requests' }), false
+  const given = createHash('sha256').update(String(req.headers.authorization ?? '').replace(/^Bearer /, '')).digest()
+  if (!timingSafeEqual(given, ADMIN)) return send(res, 401, { error: 'Wrong password' }), false
+  return true
+}
+
 // ---- Server-Sent Events: the market snapshot on connect and after every refresh ----
 const clients = new Set()
 const MAX_CLIENTS = 5000
@@ -99,6 +113,7 @@ const routes = [
     if (!isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
     if (limited(req, 'account', 60)) return send(res, 429, { error: 'Too many requests' })
     if (blocked(res, wallet, { failClosed: false })) return
+    recordWallet(wallet).catch((e) => console.error('[wallets]', e.message)) // unique users = unique connected wallets
     const fresh = new URL(req.url, 'http://x').searchParams.has('fresh')
     send(res, 200, await getAccount(wallet, fresh))
   }],
@@ -139,6 +154,23 @@ const routes = [
   ['GET', /^\/api\/liquidations$/, async (req, res) => send(res, 200, await marketLiquidations(), { maxAge: 60 })],
   ['GET', /^\/api\/points$/, async (req, res) => send(res, 200, (await read(POINTS)) ?? EMPTY_POINTS, { type: 'text/csv; charset=utf-8', maxAge: 300 })],
   ['GET', /^\/api\/apy-history$/, async (req, res) => send(res, 200, (await read(HISTORY)) ?? '{"tokens":{}}', { maxAge: 300 })],
+  ['GET', /^\/api\/admin\/check$/, (req, res) => admin(req, res) && send(res, 200, { ok: true, plausible: statsReady() })],
+  ['GET', /^\/api\/admin\/stats$/, async (req, res) => {
+    if (!admin(req, res)) return
+    if (!statsReady()) return send(res, 503, { error: 'Set PLAUSIBLE_API_KEY in .env to read Plausible.' })
+    const p = new URL(req.url, 'http://x').searchParams
+    try {
+      send(res, 200, await siteStats({ q: p.get('q'), period: p.get('period'), goal: p.get('goal'), prop: p.get('prop') }))
+    } catch (e) {
+      send(res, /^Unknown|^Invalid/.test(e.message) ? 400 : 502, { error: e.message })
+    }
+  }],
+  ['GET', /^\/api\/admin\/wallets$/, async (req, res) => {
+    if (!admin(req, res)) return
+    const period = new URL(req.url, 'http://x').searchParams.get('period')
+    if (!PERIODS.includes(period)) return send(res, 400, { error: 'Unknown period' })
+    send(res, 200, await walletStats(periodDays(period)))
+  }],
   ['GET', /^\/api\/health$/, (req, res) => {
     const s = getSnapshot()
     const age = s ? Math.round((Date.now() - s.updatedAt) / 1000) : null
@@ -147,7 +179,7 @@ const routes = [
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js).
-const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard', '/debug-transfer'])
+const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/admin/analytics', '/dashboard', '/debug-transfer'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/') || !!marketById(p.match(/^\/market\/([\w-]+)\/?$/)?.[1])
 
 // Public pages for search engines; markets come from config.js, so a new live market is listed automatically.
