@@ -129,7 +129,7 @@ const routes = [
     } catch (e) {
       if (e instanceof UserError) throw e
       console.error('[tx] build failed', b.kind, e) // details stay in the logs (RPC errors can carry provider info)
-      send(res, 502, { error: 'Could not build the transaction, please try again.' })
+      send(res, 500, { error: 'Could not build the transaction, please try again.' }) // not 502: Cloudflare replaces 502 bodies
     }
   }],
   ['POST', /^\/api\/tx\/send$/, async (req, res) => {
@@ -162,7 +162,9 @@ const routes = [
     try {
       send(res, 200, await siteStats({ q: p.get('q'), period: p.get('period'), goal: p.get('goal'), prop: p.get('prop') }))
     } catch (e) {
-      send(res, /^Unknown|^Invalid/.test(e.message) ? 400 : 502, { error: e.message })
+      if (/^Unknown|^Invalid/.test(e.message)) return send(res, 400, { error: e.message })
+      console.error('[stats]', p.get('q'), p.get('period'), e.message)
+      send(res, 500, { error: e.message }) // not 502: Cloudflare would replace the body with its own error page
     }
   }],
   ['GET', /^\/api\/admin\/wallets$/, async (req, res) => {
