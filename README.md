@@ -97,3 +97,6 @@ Anyone can liquidate an unhealthy loan from the page (`LiquidateModal.vue`, `kin
 `GET /api/liquidation/:market/:borrower` gives the repayable amount under Kamino's rules (close factor, per-transaction
 cap, full liquidation of small loans); the quote is a simulation of the real transaction (the liquidator's token
 balances after it), and the transaction sent pays out at least 99% of that quote or fails.
+
+## License
+[MIT](LICENSE) © 2026 Nysa Finance. The lending smart contracts are Kamino Lend's; this repository is the interface and its backend.
