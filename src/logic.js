@@ -168,3 +168,11 @@ export function niceTicks(max) {
 
 // Farm reward APR in %: yearly reward value over the staked value. Shown as APR because rewards don't compound.
 export const rewardApr = (perSecond, rewardPrice, stakedUsd) => (stakedUsd > 0 ? (perSecond * 31_536_000 * rewardPrice) / stakedUsd * 100 : 0)
+
+// Liquidation bonus a liquidator actually gets, in %, on Kamino (liquidation_operations.rs): the loan's LTV above the
+// liquidation LTV, floored at the min bonus, capped at the max bonus and at 1 − LTV (so the loan stays solvent). It is
+// lowest just past the threshold and peaks where LTV − LT = 1 − LTV. Loans at ≥99% LTV use the bad-debt bonus instead.
+export function liquidationBonusRange(minPct = 0, maxPct, liqLtvPct) {
+  const room = 100 - liqLtvPct
+  return { low: Math.min(minPct, maxPct, room), high: Math.min(maxPct, Math.max(minPct, room / 2)) }
+}

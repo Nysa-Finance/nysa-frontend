@@ -7,7 +7,7 @@ import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
 import { tok, tokensOf } from './config.js'
-import { parsePoints, pct } from './logic.js'
+import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { event, skipNextPageview } from './analytics.js'
 import {
   isIOS, DEEPLINK_WALLETS, MWA_NAME, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
@@ -76,9 +76,19 @@ export function riskOf(pair) {
   const c = state.reserves[pair.collateral], l = state.reserves[pair.liability]
   return {
     ...pair,
-    ...(c && { maxLtv: c.maxLtv, liqLtv: c.liqLtv, maxDiscount: c.maxDiscount, supplyCap: c.supplyCap }),
+    ...(c && { maxLtv: c.maxLtv, liqLtv: c.liqLtv, supplyCap: c.supplyCap }),
+    // Kamino takes the larger min and max bonus of the two reserves.
+    ...(c && l && { maxDiscount: Math.max(c.maxDiscount, l.maxDiscount), minDiscount: Math.max(c.minDiscount ?? 0, l.minDiscount ?? 0) }),
     ...(l && { borrowCap: l.borrowCap }),
   }
+}
+
+// The liquidation bonus a liquidator really gets on a pair, as text ("2%–2.5%"): the configured max is often unreachable.
+export function bonusText(pair) {
+  const r = riskOf(pair)
+  const { low, high } = liquidationBonusRange(r.minDiscount, r.maxDiscount, r.liqLtv)
+  const p = (v) => `${+v.toFixed(2)}%`
+  return low === high ? p(high) : `${p(low)}–${p(high)}`
 }
 // Interest rate model of a borrowable token (live curve and fee); null for collateral-only tokens.
 export const irmOf = (t) => (t.irm ? state.reserves[t.token_id]?.irm ?? t.irm : null)

@@ -60,6 +60,7 @@ function reserveMetrics(m, t, r, now) {
     maxLtv: s.loanToValue * 100,
     liqLtv: s.liquidationThreshold * 100,
     maxDiscount: s.maxLiquidationBonus * 100,
+    minDiscount: s.minLiquidationBonus * 100,
     supplyCap: num(s.reserveDepositLimit) / f,
     borrowCap: num(s.reserveBorrowLimit) / f,
     irm: { points: s.borrowCurve.map(([u, rate]) => [u * 100, rate * 100]), fee: s.protocolTakeRate },

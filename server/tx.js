@@ -180,7 +180,7 @@ async function liquidate(liquidator, m, borrower, amount, preview) {
     return compile(liquidator, KaminoAction.actionToIxs(axn), await fetchLuts(axn.luts))
   }
   const atas = await Promise.all([ataOf(liquidator, address(debt.mint), repay.getLiquidityTokenProgram()), ataOf(liquidator, address(coll.mint), withdraw.getLiquidityTokenProgram())])
-  const accounts = await fetchEncodedAccounts(rpc, atas)
+  const accounts = await fetchEncodedAccounts(rpc, atas, { commitment: 'confirmed' }) // same commitment as the simulation
   const before = accounts.map((a) => (a.exists ? Buffer.from(a.data).readBigUInt64LE(64) : 0n))
   const after = await simulatedBalances(await make(0), atas)
   const paid = before[0] - after[0], received = after[1] - before[1]

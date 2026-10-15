@@ -1,0 +1,13 @@
+# Pinned versions (Docker images by digest, Actions by commit) don't move on their own: Dependabot proposes updates as
+# pull requests, which CI checks before anything reaches main. npm security fixes come from Dependabot security updates.
+version: 2
+updates:
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

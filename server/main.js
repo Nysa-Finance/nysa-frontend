@@ -65,6 +65,8 @@ async function jsonBody(req) {
 // Sanctions screening (OFAC SDN list, server/screening.js): a sanctioned wallet gets 403 everywhere. Until a list is
 // loaded, viewing still works but no transaction is built or relayed (fail closed).
 const BLOCKED = { error: 'This wallet address is on a sanctions list, so it cannot use the Nysa interface.', blocked: true }
+// A sanctioned borrower's loan isn't liquidated through the interface either (no `blocked`: the liquidator is fine).
+const BLOCKED_LOAN = { error: 'This loan belongs to a wallet on a sanctions list, so the Nysa interface cannot liquidate it.' }
 function blocked(res, wallet, { failClosed }) {
   if (isSanctioned(wallet)) return send(res, 403, BLOCKED), true
   if (failClosed && !screeningReady()) return send(res, 503, { error: 'Sanctions screening is starting up, please try again shortly.' }), true
@@ -125,6 +127,7 @@ const routes = [
     if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
     if (b.kind === 'liquidate' && !isAddress(String(b.borrower))) throw new UserError('Invalid borrower address')
     if (blocked(res, b.wallet, { failClosed: true })) return
+    if (b.kind === 'liquidate' && isSanctioned(b.borrower)) return send(res, 403, BLOCKED_LOAN)
     try {
       send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all, borrower: b.borrower, preview: !!b.preview }))
     } catch (e) {
@@ -144,6 +147,7 @@ const routes = [
     const m = marketById(marketId)
     if (!m || !isAddress(borrower)) return send(res, 400, { error: 'Invalid market or wallet' })
     if (limited(req, 'liquidation', 60)) return send(res, 429, { error: 'Too many requests' })
+    if (isSanctioned(borrower)) return send(res, 403, BLOCKED_LOAN)
     send(res, 200, await liquidationInfo(m, borrower))
   }],
   ['GET', /^\/api\/tx\/(\w{64,90})$/, async (req, res, [signature]) => {

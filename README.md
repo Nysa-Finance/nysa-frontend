@@ -46,6 +46,10 @@ Validation and limits: wallet addresses and actions are checked, request bodies 
 cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`). Each IP may hold 5 market streams
 (`/api/events`); a browser turned away polls `/api/market` instead. The server never holds keys.
 
+Liquidating a sanctioned borrower's loan is refused too. The liquidation bonus shown is what a liquidator can
+actually get (`liquidationBonusRange` in `src/logic.js`), not the configured maximum. Docker images (by digest) and GitHub
+Actions (by commit) are pinned; Dependabot proposes updates as pull requests.
+
 ## Transactions
 `POST /api/tx` builds the action against the market cache with a fresh read of the wallet's obligation, simulates it
 (a failing transaction comes back as a readable error and is never sent) and returns it unsigned. A first deposit also
