@@ -192,7 +192,11 @@ async function serveStatic(pathname, res) {
     served = join(DIST, 'index.html')
     body = await readFile(served)
   }
-  res.setHeader('content-type', TYPES[extname(served)] ?? 'application/octet-stream')
+  const type = TYPES[extname(served)] ?? 'application/octet-stream'
+  res.setHeader('content-type', type)
+  // Public images (favicon, app icon, logos) readable from any origin: wallets like Phantom load the app icon for their
+  // dialogs from their own origin, and fall back to a generic icon when the browser blocks the read.
+  if (type.startsWith('image/')) res.setHeader('access-control-allow-origin', '*')
   // Hashed build assets never change; everything else is revalidated so new deploys show up.
   res.setHeader('cache-control', pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache')
   res.end(body)
