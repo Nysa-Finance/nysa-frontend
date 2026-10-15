@@ -51,6 +51,16 @@ export const MARKETS = [
 ]
 
 export const LIVE = MARKETS.filter((m) => m.visible)
+
+// Kamino Earn vaults curated by Nysa (Earn page). Name, token, allocations and exposure are read on-chain
+// (server/vault.js); only the address, the URL id and the description live here.
+export const VAULTS = [
+  {
+    id: 'rwa-prime', name: 'RWA Prime', address: '2Qxsj1hi95avkp7sANDmbVT5TwqRPGsutuvJasJK9xL7', farmPoints: true,
+    description: "RWA Prime is a USDC vault on Kamino curated by Nysa. Deposits are lent to borrowers who post tokenized real-world assets as collateral, today Ondo's USDY, backed by short-term US Treasuries.",
+  },
+]
+export const vaultById = (id) => VAULTS.find((v) => v.id === id)
 export const tok = (id) => TOKENS[id]
 export const marketById = (id) => LIVE.find((m) => m.id === id)
 export const tokensOf = (m) => [...new Set([...m.collateral, ...m.loans])].map(tok)

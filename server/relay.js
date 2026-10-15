@@ -16,6 +16,7 @@ const MAX_ENTRIES = 10_000
 export const RELAY_PROGRAMS = new Set([
   'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD', // Kamino Lend
   'FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr', // Kamino Farms (reward claims)
+  'KvauGMspG5k6rtzrqqn7WNn3oZdyKqLKwK2XWQ8FLjd', // Kamino Earn vaults (kVault)
   'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', // SPL Token
   'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', // Associated Token Account
   'ComputeBudget111111111111111111111111111111', // Compute Budget

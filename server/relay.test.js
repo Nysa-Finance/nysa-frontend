@@ -32,7 +32,8 @@ const { RELAY_PROGRAMS, noteBuilt, noteRelayed, relayRefusal, confirmedHere } = 
 
 // The allow-list matches the SDKs' program ids (Compute Budget and Lighthouse were checked on mainnet: executable).
 for (const id of [KLEND, FARMS_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS, ASSOCIATED_TOKEN_PROGRAM_ADDRESS, SYSTEM_PROGRAM_ADDRESS]) assert.ok(RELAY_PROGRAMS.has(String(id)), String(id))
-assert.equal(RELAY_PROGRAMS.size, 7)
+assert.equal(RELAY_PROGRAMS.size, 8)
+assert.ok(RELAY_PROGRAMS.has('KvauGMspG5k6rtzrqqn7WNn3oZdyKqLKwK2XWQ8FLjd')) // Earn vaults
 
 const LIGHTHOUSE = 'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95', MEMO = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'
 const ix = (program, signers = []) => ({
