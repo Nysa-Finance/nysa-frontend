@@ -247,6 +247,7 @@ export async function txStatus(signature) {
 
 // Fee payer and block time of a landed transaction; null while this RPC node doesn't have it yet.
 async function landed(signature) {
-  const tx = await rpc.getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 0 }).send()
+  // Version 1 is Solana's newer transaction format; asking for 0 would make the lookup fail on those.
+  const tx = await rpc.getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 }).send()
   return tx && { feePayer: String(tx.transaction.message.accountKeys[0]), blockTime: tx.blockTime == null ? null : Number(tx.blockTime) }
 }

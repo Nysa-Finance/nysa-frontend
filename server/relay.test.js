@@ -12,11 +12,14 @@ import {
   partiallySignTransaction, getBase64EncodedWireTransaction,
 } from '@solana/kit'
 import { PROGRAM_ID as KLEND } from '@kamino-finance/klend-sdk'
-import { TOKEN_PROGRAM_ADDRESS, ASSOCIATED_TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
-import { SYSTEM_PROGRAM_ADDRESS } from '@solana-program/system'
 
 const require = createRequire(import.meta.url)
 const { FARMS_PROGRAM_ADDRESS } = require('@kamino-finance/farms-sdk')
+
+// Well-known program ids, written out: @solana-program/* are not direct dependencies of this repo.
+const TOKEN_PROGRAM_ADDRESS = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'
+const ASSOCIATED_TOKEN_PROGRAM_ADDRESS = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
+const SYSTEM_PROGRAM_ADDRESS = '11111111111111111111111111111111'
 
 process.env.DATA_DIR = mkdtempSync(join(tmpdir(), 'nysa-relay-'))
 const [user, sanctioned, other] = await Promise.all([generateKeyPairSigner(), generateKeyPairSigner(), generateKeyPairSigner()])
@@ -93,7 +96,9 @@ assert.equal(await confirmedHere('LateSig', landed({ feePayer: user.address, blo
 // A build is relayable (and its transactions count) for 10 minutes.
 mock.timers.enable({ apis: ['Date'], now: Date.now() + 11 * 60_000 })
 assert.equal(await relayRefusal(ok, user.address), 'Unknown transaction, please try again')
+const before = lookups
 assert.equal(await confirmedHere('LaterSig', landed({ feePayer: user.address, blockTime: null })), false)
+assert.equal(lookups, before) // no build in the window: not even looked up
 mock.timers.reset()
 
 console.log('relay ok')

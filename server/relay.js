@@ -34,7 +34,8 @@ function remember(map, key, value) {
   if (map.size > MAX_ENTRIES) map.delete(map.keys().next().value)
 }
 
-export const noteBuilt = (wallet) => remember(built, wallet, Date.now())
+let lastBuild = -Infinity // when any wallet last had a transaction built here
+export const noteBuilt = (wallet) => { lastBuild = Date.now(); remember(built, wallet, lastBuild) }
 export const noteRelayed = (signature) => remember(relayed, signature, Date.now())
 const builtAt = (wallet) => { const at = built.get(wallet); return at && Date.now() - at <= WINDOW_MS ? at : null }
 
@@ -66,7 +67,7 @@ export async function confirmedHere(signature, lookup) {
   if (counted.has(signature)) return false
   remember(counted, signature, true)
   if (relayed.has(signature)) return true
-  if (!built.size) return false
+  if (Date.now() - lastBuild > WINDOW_MS) return false // no build in the window: no transaction can be ours, skip the lookup
   let tx = null
   try { tx = await lookup(signature) } finally { if (!tx) counted.delete(signature) } // not visible yet, or failed: a later poll retries
   if (!tx) return false
