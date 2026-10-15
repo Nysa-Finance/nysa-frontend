@@ -1,5 +1,6 @@
 // Global app state. The browser never calls the Solana RPC:
-// - market data is pushed by the backend over Server-Sent Events (/api/events), on load and whenever it changes;
+// - market data is pushed by the backend over Server-Sent Events (/api/events), on load and whenever it changes
+//   (polled from /api/market while the stream is unavailable);
 // - the connected wallet's balances, positions and rewards come from /api/account;
 // - transactions are built and simulated by /api/tx; the wallet only signs and sends them.
 import { reactive, markRaw } from 'vue'
@@ -98,19 +99,49 @@ export function marketSummary(m) {
   return { totalSuppliedUsd: state.loaded ? s : null, totalBorrowedUsd: state.loaded ? b : null }
 }
 
-// ---- market: pushed by the backend (EventSource reconnects by itself) ----
+// ---- market: pushed by the backend; polled from /api/market while the stream is down or refused ----
+const MARKET_POLL_MS = 30_000
+const STREAM_RETRY_MS = 60_000 // after the server refused the stream (too many connections), try it again this often
+let marketAt = 0 // updatedAt of the snapshot shown (a slow poll mustn't overwrite a newer push)
+function showMarket(s) {
+  if (s.updatedAt < marketAt) return
+  marketAt = s.updatedAt
+  state.reserves = s.reserves
+  state.rewards = s.rewards
+  state.loaded = true
+  state.loading = false
+  state.error = null
+}
+
+let poll = null
+async function pollMarket() {
+  try {
+    const res = await fetch('/api/market')
+    if (!res.ok) throw new Error(`Server responded ${res.status}`)
+    showMarket(await res.json())
+  } catch {
+    if (!state.loaded) { state.loading = false; state.error = 'the server is not reachable' }
+  }
+}
+function startPolling() {
+  if (poll) return
+  pollMarket()
+  poll = setInterval(pollMarket, MARKET_POLL_MS)
+}
+function stopPolling() {
+  clearInterval(poll)
+  poll = null
+}
+
 function listenMarket() {
   const es = new EventSource('/api/events')
   es.addEventListener('market', (e) => {
-    const s = JSON.parse(e.data)
-    state.reserves = s.reserves
-    state.rewards = s.rewards
-    state.loaded = true
-    state.loading = false
-    state.error = null
+    stopPolling()
+    showMarket(JSON.parse(e.data))
   })
   es.onerror = () => {
-    if (!state.loaded) { state.loading = false; state.error = 'the server is not reachable' }
+    startPolling() // EventSource reconnects a dropped stream by itself; meanwhile poll
+    if (es.readyState === EventSource.CLOSED) setTimeout(listenMarket, STREAM_RETRY_MS) // refused: it won't retry
   }
 }
 
@@ -213,7 +244,7 @@ async function confirmed(signature) {
 
 const buildTx = (params) => api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: account.address }) })
 
-const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate', test: 'Test transfer' }
+const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate' }
 const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.token ? ` ${tok(p.token).name}` : ''}`
 function trackSuccess(p) {
   if (p.kind === 'claim') event('Rewards claimed', { market: p.market })
@@ -329,9 +360,6 @@ export async function liquidate(market, borrower, amount) {
     throw e
   }
 }
-
-// TEMPORARY (/debug-transfer page): 1000 lamports to yourself, see server/tx.js.
-export const sendTestTransfer = () => runAction({ kind: 'test' })
 
 // ---- read-only data from the backend ----
 // Farm Points leaderboard (shared by the modal, Portfolio and Analytics). Loaded once per page view.

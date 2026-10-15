@@ -5,16 +5,17 @@
 import Decimal from 'decimal.js'
 import { KaminoAction, U64_MAX, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import {
-  address, AccountRole, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
+  address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables, compileTransaction, getTransactionEncoder,
-  getBase64EncodedWireTransaction, fetchEncodedAccounts, getTransactionDecoder, getCompiledTransactionMessageDecoder, getPublicKeyFromAddress, verifySignature,
+  getBase64EncodedWireTransaction, fetchEncodedAccounts,
 } from '@solana/kit'
 import { createRequire } from 'node:module'
 import { marketById, tokensOf, tok } from '../src/config.js'
 import { rpc } from './rpc.js'
 import { getLive, reserveOf, farms, refreshSoon } from './market.js'
 import { obligationType, pendingRewards, ataOf } from './account.js'
+import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
 
 const require = createRequire(import.meta.url)
 const { decodeUserState } = require('@kamino-finance/farms-sdk')
@@ -24,7 +25,7 @@ const SPLIT_ABOVE = 1100 // leave wallet headroom (Phantom adds a guard instruct
 // Setup instructions that can run in their own transaction before the lending one.
 const SEPARABLE = /^(CreateUserAta(?!SOL)|CreateLiquidityUserAta|CreateCollateralUserAta|CreateAdditionalUserTokenAta|CreateAta|createAtasIxs|createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 const BOOTSTRAP = /^(createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
-export const KINDS = ['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate', 'test']
+export const KINDS = ['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate']
 const BUILDERS = {
   deposit: (p) => KaminoAction.buildDepositTxns(p),
   withdraw: (p) => KaminoAction.buildWithdrawTxns(p),
@@ -190,31 +191,16 @@ async function liquidate(liquidator, m, borrower, amount, preview) {
   return { ...(await simulated(await make(min))), final: true, quote }
 }
 
-// TEMPORARY (Phantom warning test, /debug-transfer): 1000 lamports to yourself, to tell a domain-level wallet warning
-// from an instruction-level one. Remove with the page.
-async function testTransfer(owner) {
-  const data = new Uint8Array(12)
-  new DataView(data.buffer).setUint32(0, 2, true) // System program instruction 2 = Transfer
-  new DataView(data.buffer).setBigUint64(4, 1000n, true) // lamports
-  const ix = { programAddress: address('11111111111111111111111111111111'), accounts: [{ address: owner, role: AccountRole.WRITABLE_SIGNER }, { address: owner, role: AccountRole.WRITABLE }], data }
-  return { ...(await simulated(await compile(owner, [ix], {}))), final: true }
-}
-
-// Wallets that just had a transaction built, so /api/tx/send only relays transactions it was asked for.
-const recentlyBuilt = new Map() // wallet -> timestamp
-const RELAY_WINDOW_MS = 10 * 60_000
-
-// Validated request -> { tx: base64 unsigned v0 transaction, minContextSlot, final }.
+// Validated request -> { tx: base64 unsigned v0 transaction, minContextSlot, final }. The wallet is noted (relay.js), so
+// /api/tx/send only relays for wallets that asked for a transaction.
 export async function buildTx(req) {
   const built = await build(req)
-  recentlyBuilt.set(req.wallet, Date.now())
-  if (recentlyBuilt.size > 10_000) for (const [w, at] of recentlyBuilt) if (Date.now() - at > RELAY_WINDOW_MS) recentlyBuilt.delete(w)
+  noteBuilt(req.wallet)
   return built
 }
 
 async function build({ kind, wallet, market: marketId, token: tokenId, amount, all, borrower, preview }) {
   const owner = address(wallet)
-  if (kind === 'test') return testTransfer(owner)
   const m = marketById(marketId)
   if (!m?.kaminoMarket) throw new UserError('Unknown market')
   if (kind === 'claim') return claim(owner, m)
@@ -229,36 +215,38 @@ async function build({ kind, wallet, market: marketId, token: tokenId, amount, a
 }
 
 // Wallets reached by deeplink (Phantom/Solflare on iOS) sign but don't send: relay the signed transaction, only when
-// its fee payer is the wallet that just asked us to build one and it carries that wallet's valid signature.
+// it is that wallet's own, with screened signers and allowed programs (relay.js).
 export async function sendSigned({ tx, wallet }) {
-  const at = recentlyBuilt.get(wallet)
-  if (!at || Date.now() - at > RELAY_WINDOW_MS) throw new UserError('Unknown transaction, please try again')
-  let messageBytes, signatures, feePayer
+  const refused = await relayRefusal(tx, wallet)
+  if (refused) throw new UserError(refused)
   try {
-    ;({ messageBytes, signatures } = getTransactionDecoder().decode(Uint8Array.from(Buffer.from(tx, 'base64'))))
-    feePayer = String(getCompiledTransactionMessageDecoder().decode(messageBytes).staticAccounts[0])
-  } catch { throw new UserError('Invalid transaction') }
-  const signature = signatures[wallet]
-  if (feePayer !== wallet || !signature || !(await verifySignature(await getPublicKeyFromAddress(address(wallet)), signature, messageBytes))) {
-    throw new UserError('The transaction is not signed by this wallet')
-  }
-  try {
-    return { signature: await rpc.sendTransaction(tx, { encoding: 'base64', preflightCommitment: 'confirmed' }).send() }
+    const signature = await rpc.sendTransaction(tx, { encoding: 'base64', preflightCommitment: 'confirmed' }).send()
+    noteRelayed(signature)
+    return { signature }
   } catch (e) {
     console.error('[tx] send failed', e)
     throw new UserError(/blockhash/i.test(String(e?.message) + JSON.stringify(e?.context ?? {})) ? 'The transaction expired before it was sent, please try again' : 'The network rejected the transaction, please try again')
   }
 }
 
-// Confirmation status of a sent transaction. A confirmed one refreshes the market cache for everyone.
+// Confirmation status of a sent transaction. A confirmed one built or relayed here refreshes the market cache for
+// everyone (checked in the background, so the status answer doesn't wait for it).
 export async function txStatus(signature) {
   const { value } = await rpc.getSignatureStatuses([signature]).send()
   const s = value[0]
   if (!s) return { status: 'pending' }
   if (s.err) return { status: 'failed', error: JSON.stringify(s.err, (_, v) => (typeof v === 'bigint' ? String(v) : v)) }
   if (s.confirmationStatus === 'confirmed' || s.confirmationStatus === 'finalized') {
-    refreshSoon()
+    confirmedHere(signature, landed)
+      .then((ours) => ours && refreshSoon())
+      .catch((e) => console.error('[tx] confirmation lookup failed', e?.message))
     return { status: 'confirmed', slot: Number(s.slot) }
   }
   return { status: 'pending' }
+}
+
+// Fee payer and block time of a landed transaction; null while this RPC node doesn't have it yet.
+async function landed(signature) {
+  const tx = await rpc.getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 0 }).send()
+  return tx && { feePayer: String(tx.transaction.message.accountKeys[0]), blockTime: tx.blockTime == null ? null : Number(tx.blockTime) }
 }

@@ -44,9 +44,10 @@ function send(res, status, body, { type = 'application/json', maxAge = 0 } = {})
 
 // Per-IP fixed-window limits on the endpoints that cost RPC calls. Only Cloudflare reaches us (tunnel), so its
 // CF-Connecting-IP header is the real client.
+const clientIp = (req) => req.headers['cf-connecting-ip'] ?? req.socket.remoteAddress
 const hits = new Map()
 function limited(req, name, perMinute) {
-  const key = `${name}:${req.headers['cf-connecting-ip'] ?? req.socket.remoteAddress}`
+  const key = `${name}:${clientIp(req)}`
   const now = Date.now()
   let e = hits.get(key)
   if (!e || now - e.start > 60_000) hits.set(key, (e = { start: now, n: 0 }))
@@ -71,18 +72,33 @@ function blocked(res, wallet, { failClosed }) {
 }
 
 // ---- Server-Sent Events: the market snapshot on connect and after every refresh ----
+// Streams are capped per client IP too, so one client can't take every slot; a browser turned away polls /api/market.
 const clients = new Set()
 const MAX_CLIENTS = 5000
+const MAX_STREAMS_PER_IP = 5
+const streams = new Map() // client IP -> open streams
 const event = (data) => `event: market\ndata: ${JSON.stringify(data)}\n\n`
 function events(req, res) {
+  const ip = clientIp(req)
+  if ((streams.get(ip) ?? 0) >= MAX_STREAMS_PER_IP) return send(res, 429, { error: 'Too many connections from this address' })
   if (clients.size >= MAX_CLIENTS) return send(res, 503, { error: 'Too many connections' })
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-accel-buffering': 'no' })
   res.write('retry: 5000\n\n')
   const snapshot = getSnapshot()
   if (snapshot) res.write(event(snapshot))
   clients.add(res)
-  const drop = () => clients.delete(res)
+  streams.set(ip, (streams.get(ip) ?? 0) + 1)
+  let open = true
+  const drop = () => {
+    if (!open) return
+    open = false
+    clients.delete(res)
+    const n = streams.get(ip) - 1
+    if (n > 0) streams.set(ip, n)
+    else streams.delete(ip)
+  }
   req.on('close', drop)
+  res.on('close', drop)
   res.on('error', drop) // client gone mid-write
 }
 onSnapshot((snapshot) => { const msg = event(snapshot); for (const c of clients) c.write(msg) })
@@ -147,7 +163,7 @@ const routes = [
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js).
-const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard', '/debug-transfer'])
+const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/') || !!marketById(p.match(/^\/market\/([\w-]+)\/?$/)?.[1])
 
 // Public pages for search engines; markets come from config.js, so a new live market is listed automatically.
