@@ -77,7 +77,8 @@ services:
     logging: *logs
 
   plausible_db:
-    image: postgres:18-alpine
+    # Plausible CE supports Postgres 16; a major upgrade needs a dump/restore (18 refuses 16's data files).
+    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
     environment:
       POSTGRES_PASSWORD: postgres # reachable only from the analytics network
     volumes:
@@ -90,7 +91,8 @@ services:
     logging: *logs
 
   plausible_events_db:
-    image: clickhouse/clickhouse-server:26.6-alpine
+    # Plausible CE ships 24.12; this data already ran on 26.6 (Dependabot), and going back two majors is riskier than staying.
+    image: clickhouse/clickhouse-server:26.6.8.7-alpine@sha256:cc35536b7f4a2e552576cffa19b165e182b6e1df7695aa453d4d64b5ed15b713
     environment:
       CLICKHOUSE_SKIP_USER_SETUP: 1
     volumes:

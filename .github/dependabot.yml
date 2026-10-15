@@ -1,13 +1,25 @@
 # Pinned versions (Docker images by digest, Actions by commit) don't move on their own: Dependabot proposes updates as
 # pull requests, which CI checks before anything reaches main. npm security fixes come from Dependabot security updates.
+# Major versions of the databases, Plausible and Node are not proposed: they need a planned upgrade (Postgres needs a
+# dump/restore, Plausible supports specific database versions), not a one-click merge.
 version: 2
 updates:
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
   - package-ecosystem: docker-compose
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: postgres
+        update-types: [version-update:semver-major]
+      - dependency-name: clickhouse/clickhouse-server
+        update-types: [version-update:semver-major]
+      - dependency-name: ghcr.io/plausible/community-edition
+        update-types: [version-update:semver-major]
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
