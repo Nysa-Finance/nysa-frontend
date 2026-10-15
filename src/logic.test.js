@@ -96,4 +96,7 @@ assert.ok(Math.abs(slices[0].end - 1.5 * Math.PI) < 1e-9 && Math.abs(slices[1].e
 assert.deepEqual(pieSlices([0, 0]).map((x) => x.share), [0, 0]) // nothing allocated yet
 assert.equal(arcPath(50, 50, 40, 25, 0, Math.PI / 2), 'M50.00,10.00A40,40 0 0 1 90.00,50.00L75.00,50.00A25,25 0 0 0 50.00,25.00Z')
 assert.equal((arcPath(50, 50, 40, 25, 0, 2 * Math.PI).match(/M/g) ?? []).length, 2) // full circle: two halves
+// 99.99998% (all invested but a few micro-USDC): drawn as a full circle, not as an arc whose ends coincide.
+const nearFull = pieSlices([4.5546, 0.000001])[0]
+assert.equal((arcPath(50, 50, 40, 25, nearFull.start, nearFull.end).match(/M/g) ?? []).length, 2)
 console.log('logic ok')

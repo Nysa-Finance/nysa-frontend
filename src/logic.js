@@ -189,10 +189,11 @@ export function pieSlices(values) {
   })
 }
 
-// SVG path of a donut slice (outer radius r, inner radius ri) between two angles from pieSlices. A whole circle is
-// drawn as two half arcs, since one SVG arc can't start and end at the same point.
+// SVG path of a donut slice (outer radius r, inner radius ri) between two angles from pieSlices. A whole circle, or
+// one within ~0.02% of it, is drawn as two half arcs: an SVG arc whose ends round to the same point isn't drawn at all.
+const FULL = 2 * Math.PI - 1e-3
 export function arcPath(cx, cy, r, ri, start, end) {
-  if (end - start >= 2 * Math.PI - 1e-9) return arcPath(cx, cy, r, ri, start, start + Math.PI) + arcPath(cx, cy, r, ri, start + Math.PI, end - 1e-9)
+  if (end - start >= FULL) return arcPath(cx, cy, r, ri, start, start + Math.PI) + arcPath(cx, cy, r, ri, start + Math.PI, start + 2 * Math.PI - 1e-2)
   const pt = (rad, a) => `${(cx + rad * Math.sin(a)).toFixed(2)},${(cy - rad * Math.cos(a)).toFixed(2)}`
   const large = end - start > Math.PI ? 1 : 0
   return `M${pt(r, start)}A${r},${r} 0 ${large} 1 ${pt(r, end)}L${pt(ri, end)}A${ri},${ri} 0 ${large} 0 ${pt(ri, start)}Z`

@@ -16,7 +16,9 @@ const parts = computed(() => {
   const a = props.vault.allocations.map((x, i) => ({
     label: x.marketName ?? `Market ${x.market.slice(0, 4)}…`, color: COLORS[i % COLORS.length], value: invested.value ? x.invested : x.weight, alloc: x,
   }))
-  return invested.value && props.vault.available > 0 ? [...a, { label: 'Not invested yet', color: IDLE, value: props.vault.available }] : a
+  // Uninvested tokens get a slice only when they matter (≥ 0.01%): a few micro-USDC left over isn't worth a label.
+  const idle = props.vault.total > 0 ? props.vault.available / props.vault.total : 0
+  return invested.value && idle >= 1e-4 ? [...a, { label: 'Not invested yet', color: IDLE, value: props.vault.available }] : a
 })
 const slices = computed(() => pieSlices(parts.value.map((p) => p.value)).map((s, i) => ({ ...s, ...parts.value[i] })))
 const hover = ref(null)
