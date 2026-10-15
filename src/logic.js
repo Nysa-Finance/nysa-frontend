@@ -176,3 +176,24 @@ export function liquidationBonusRange(minPct = 0, maxPct, liqLtvPct) {
   const room = 100 - liqLtvPct
   return { low: Math.min(minPct, maxPct, room), high: Math.min(maxPct, Math.max(minPct, room / 2)) }
 }
+
+// Pie chart: each value's share (%) and its arc in radians, clockwise from 12 o'clock. Negative values count as 0.
+export function pieSlices(values) {
+  const total = values.reduce((s, v) => s + Math.max(v, 0), 0)
+  let at = 0
+  return values.map((v) => {
+    const share = total > 0 ? Math.max(v, 0) / total : 0
+    const start = at
+    at += share * 2 * Math.PI
+    return { share: share * 100, start, end: at }
+  })
+}
+
+// SVG path of a donut slice (outer radius r, inner radius ri) between two angles from pieSlices. A whole circle is
+// drawn as two half arcs, since one SVG arc can't start and end at the same point.
+export function arcPath(cx, cy, r, ri, start, end) {
+  if (end - start >= 2 * Math.PI - 1e-9) return arcPath(cx, cy, r, ri, start, start + Math.PI) + arcPath(cx, cy, r, ri, start + Math.PI, end - 1e-9)
+  const pt = (rad, a) => `${(cx + rad * Math.sin(a)).toFixed(2)},${(cy - rad * Math.cos(a)).toFixed(2)}`
+  const large = end - start > Math.PI ? 1 : 0
+  return `M${pt(r, start)}A${r},${r} 0 ${large} 1 ${pt(r, end)}L${pt(ri, end)}A${ri},${ri} 0 ${large} 0 ${pt(ri, start)}Z`
+}

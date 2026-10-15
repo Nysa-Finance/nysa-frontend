@@ -214,8 +214,13 @@ async function vaultAction(kind, owner, v, amount, all) {
     const d = await vaultClient.depositIxs(signer, kv, new Decimal(amount), reserves, null, null, undefined, undefined, minShares)
     const deposit = [buildComputeBudgetIx(VAULT_CU), ...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
     // Then invest what the vault holds into its reserves, so deposits earn right away: Kamino's crank does this for
-    // vaults listed in its UI; until then this is the fallback. Dropped if it doesn't fit or fails to simulate.
-    const invest = await vaultClient.investAllReservesIxs(signer, kv, now).catch((e) => (console.warn('[vault] invest ixs', e?.message), []))
+    // vaults listed in its UI; until then this is the fallback. `invest` lets the program size each reserve's amount
+    // on-chain, after the deposit (investAllReservesIxs sizes it from the state before, and fails). Dropped if it
+    // doesn't fit or fails to simulate.
+    const invest = []
+    try {
+      for (const [a, r] of reserves) invest.push(...await vaultClient.investSingleReserveIxs(signer, kv, { address: a, state: r.state }, reserves))
+    } catch (e) { console.warn('[vault] invest ixs', e?.message); invest.length = 0 }
     if (invest.length) {
       const both = await compile(owner, [...deposit, ...invest], luts)
       if (both.size <= SPLIT_ABOVE) {

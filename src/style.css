@@ -33,7 +33,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-tabs { display: flex; gap: 6px; justify-self: center; }
 .n-tab { display: flex; align-items: center; gap: 8px; padding: 8px 18px; font-size: 14px; font-weight: 500; border-radius: 999px; color: #fff9; transition: background .15s, color .15s; white-space: nowrap; }
 .n-tab:hover { color: #fff; background: #0a0a0a; }
-.n-tab.router-link-exact-active { color: #fff; background: var(--n-bg-3); }
+.n-tab.router-link-exact-active, .n-tab.on { color: #fff; background: var(--n-bg-3); }
 .n-tab img { width: 16px; height: 16px; opacity: .85; }
 .n-nav-right { display: flex; align-items: center; gap: 10px; justify-self: end; position: relative; }
 .n-pill { font-size: 12px; padding: 7px 13px; border-radius: 999px; border: 1px solid var(--n-line-2); color: #ffffffb3; display: inline-flex; align-items: center; gap: 7px; }
@@ -146,14 +146,6 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-acc-body .n-table { background: #000; }
 
 /* ---------- page grids ---------- */
-.mk-grid { grid-template-columns: 1.4fr .85fr .8fr 1fr .85fr 1fr 1fr 170px; }
-.mk-grid.click { border-left: 2px solid transparent; transition: background .2s, border-color .2s; }
-.mk-grid.click:hover { background: var(--n-bg-3); border-left-color: var(--n-pink); }
-.mk-grid .name { font-weight: 600; transition: color .2s; }
-.mk-grid.click:hover .name { color: var(--n-pink); }
-.mk-grid .n-actions { opacity: 0; pointer-events: none; transition: opacity .2s; }
-.mk-grid.click:hover .n-actions { opacity: 1; pointer-events: auto; }
-.mk-grid.soon { filter: blur(4px); opacity: .45; pointer-events: none; user-select: none; }
 .ln-grid { grid-template-columns: 1.8fr 1fr 1.4fr 1fr 1.2fr; }
 .bw-grid { grid-template-columns: 1.8fr 1fr 1.4fr 1.6fr; }
 .dp-grid { grid-template-columns: 1.2fr 1.5fr 1fr 1.5fr; }
@@ -184,7 +176,6 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
   .n-tr > .n-cell:empty { display: none; }
   .n-actions { justify-content: stretch; }
   .n-actions .n-btn-sm { flex: 1; }
-  .mk-grid .n-actions { opacity: 1; pointer-events: auto; }
   .n-row-wrap:has(.soon) { display: none; }
   .n-stats, .n-detail-grid { grid-template-columns: 1fr !important; }
   .n-acc > summary { padding: 18px; }

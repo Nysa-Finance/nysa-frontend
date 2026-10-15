@@ -209,7 +209,7 @@ const VAULT_FIELDS = {
   MinWithdrawAmount: ['Min withdrawal', (v, t) => amount(u64(v), t)],
   MinInvestAmount: ['Min invest amount', (v, t) => amount(u64(v), t)],
   MinInvestDelaySlots: ['Min invest delay', (v) => `${u64(v)} slots`],
-  CrankFundFeePerReserve: ['Crank fee per reserve', (v) => `${u64(v)} lamports`],
+  CrankFundFeePerReserve: ['Crank fee per reserve', (v) => `${u64(v)} lamport${u64(v) === 1n ? '' : 's'}`],
   UnallocatedWeight: ['Unallocated weight', (v) => String(u64(v))],
   UnallocatedTokensCap: ['Unallocated cap', (v, t) => amount(u64(v), t)],
   WithdrawalPenaltyBps: ['Withdrawal penalty', (v) => bps(u64(v))],

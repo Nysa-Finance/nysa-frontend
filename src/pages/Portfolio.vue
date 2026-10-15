@@ -2,16 +2,24 @@
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { state, rowOf, priceOf, loadPoints, myPoints, riskOf } from '../store.js'
-import { LIVE, tok, tokensOf } from '../config.js'
+import { state, rowOf, priceOf, loadPoints, myPoints, riskOf, claimRewards, useTx } from '../store.js'
+import { LIVE, VAULTS, tok, tokensOf } from '../config.js'
 import { usd, pct, amt, amtDust, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
+import TxProgress from '../components/TxProgress.vue'
 
 const router = useRouter()
 const view = ref('deposits')
 const on = computed(() => !!state.address)
 
+// Earn vault deposits: shares valued in the vault's token.
+const vaultDeposits = computed(() =>
+  VAULTS.map((v) => ({ v, live: state.vaults[v.id], value: state.vaultPositions[v.id]?.value ?? 0 }))
+    .filter((d) => d.value > 0)
+    .map((d) => ({ ...d, t: tok(d.live?.tokenId ?? 'svm-usdc'), usd: d.value * priceOf(d.live?.tokenId ?? 'svm-usdc'), apr: d.live?.apy ?? 0 })),
+)
+// Deposits held directly in a market: collateral, and loan-asset deposits made before lending moved to the vaults.
 const deposits = computed(() =>
   LIVE.flatMap((m) => tokensOf(m).map((t) => ({ m, t, units: rowOf(t.token_id)?.supplied ?? 0 })))
     .filter((d) => d.units > 0)
@@ -30,11 +38,13 @@ const loans = computed(() =>
     }),
   ).filter((l) => l.units > 0),
 )
-const supplied = computed(() => deposits.value.reduce((s, d) => s + d.usd, 0))
+const supplied = computed(() => deposits.value.reduce((s, d) => s + d.usd, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd, 0))
+// USDC lent straight to a market (not through a vault): can be withdrawn, and moved into the vault.
+const directLending = computed(() => deposits.value.filter((d) => d.m.loans.includes(d.t.token_id)))
 const borrowed = computed(() => loans.value.reduce((s, l) => s + l.usd, 0))
 const netApy = computed(() => {
   if (!supplied.value) return null
-  const earn = deposits.value.reduce((s, d) => s + d.usd * d.apr, 0) - loans.value.reduce((s, l) => s + l.usd * l.apr, 0)
+  const earn = deposits.value.reduce((s, d) => s + d.usd * d.apr, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd * d.apr, 0) - loans.value.reduce((s, l) => s + l.usd * l.apr, 0)
   return earn / supplied.value
 })
 const hf = computed(() => (loans.value.length ? Math.min(...loans.value.map((l) => l.hf)) : Infinity))
@@ -44,6 +54,15 @@ const pointsOpen = ref(false)
 const points = computed(myPoints)
 onMounted(loadPoints)
 const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params: { id: m.id }, query: { mode, tab, asset } })
+const goVault = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query: { tab } })
+// Unclaimed farm rewards from direct market deposits, per market.
+const claimable = computed(() => LIVE.map((m) => {
+  const by = {}
+  for (const p of state.claimable[m.id] ?? []) by[p.symbol] = (by[p.symbol] ?? 0) + p.amount
+  return { m, items: Object.entries(by) }
+}).filter((c) => c.items.length))
+const { tx: claimTx, run: runClaim, reset: resetClaim } = useTx()
+const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards(m) }])
 </script>
 
 <template>
@@ -62,8 +81,18 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
 
   <div v-if="on" class="n-banner fp-banner">
     <span v-if="points">Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span>
-    <span v-else>Supply to the USDY Ondo Market to start earning Farm Points. Points accrue as supplied balance × time, snapshotted daily.</span>
+    <span v-else>Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as supplied balance × time, snapshotted daily.</span>
     <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'portfolio' })">View leaderboard</button>
+  </div>
+
+  <div v-for="c in claimable" :key="c.m.id" class="n-banner reward-banner">
+    <span>Unclaimed rewards from {{ c.m.name }}: <b>{{ c.items.map(([name, a]) => `${amt(a, 4)} ${name}`).join(' + ') }}</b></span>
+    <button class="n-btn-sm" :disabled="claimTx.status === 'running'" @click="claim(c.m)">Claim</button>
+  </div>
+  <TxProgress :tx="claimTx" style="margin: -10px 0 22px" @dismiss="resetClaim" />
+  <div v-if="directLending.length && VAULTS[0]" class="n-banner">
+    You have {{ directLending.map((d) => `${amtDust(d.units)} ${d.t.name}`).join(' + ') }} lent directly to a market. Lending now goes through
+    <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
   </div>
 
   <div class="n-seg toggle">
@@ -72,15 +101,23 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
   </div>
 
   <div v-if="view === 'deposits'" class="n-table">
-    <div class="n-thead dp-grid"><div>Market</div><div>Asset Supplied</div><div>$ Value</div><div /></div>
+    <div class="n-thead dp-grid"><div>Vault / Market</div><div>Asset Supplied</div><div>$ Value</div><div /></div>
     <div v-if="!on" class="n-empty">Connect a wallet to see your deposits.</div>
-    <div v-else-if="!deposits.length" class="n-empty">No active deposits.</div>
-    <template v-else><div v-for="d in deposits" :key="d.m.id + d.t.token_id" class="n-tr dp-grid">
+    <div v-else-if="!deposits.length && !vaultDeposits.length" class="n-empty">No active deposits.</div>
+    <template v-else><div v-for="d in vaultDeposits" :key="d.v.id" class="n-tr dp-grid">
+      <div class="n-cell" data-label="Market"><span class="mk">{{ d.live?.name ?? d.v.name }}</span> <span class="n-chip">Vault</span></div>
+      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amtDust(d.value) }} {{ d.t.name }}</span></div>
+      <div class="n-cell n-muted n-num" data-label="$ Value">{{ usd(d.usd) }}</div>
+      <div class="n-cell n-actions">
+        <button class="n-btn-sm" @click="goVault(d.v, 'deposit')">Deposit</button>
+        <button class="n-btn-sm ghost" @click="goVault(d.v, 'withdraw')">Withdraw</button>
+      </div>
+    </div><div v-for="d in deposits" :key="d.m.id + d.t.token_id" class="n-tr dp-grid">
       <div class="n-cell" data-label="Market"><span class="mk">{{ d.m.name }}</span> <span class="n-chip mainnet">Solana</span></div>
       <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amtDust(d.units) }} {{ d.t.name }}</span></div>
       <div class="n-cell n-muted n-num" data-label="$ Value">{{ usd(d.usd) }}</div>
       <div class="n-cell n-actions">
-        <button class="n-btn-sm ghost" @click="go(d.m, 'lend', 'withdraw', d.t.token_id)">Withdraw</button>
+        <button class="n-btn-sm ghost" @click="go(d.m, 'withdraw', undefined, d.t.token_id)">Withdraw</button>
       </div>
     </div></template>
   </div>
@@ -96,8 +133,8 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
       <div class="n-cell n-muted n-num" data-label="Collateral $ Value">{{ usd(l.collUsd) }}</div>
       <div class="n-cell n-num" data-label="HF" :style="{ color: hfColor(l.hf), fontWeight: 600 }">{{ hfText(l.hf) }}</div>
       <div class="n-cell n-actions">
-        <button class="n-btn-sm" @click="go(l.m, 'borrow', 'repay', l.t.token_id)">Repay</button>
-        <button class="n-btn-sm ghost" @click="go(l.m, 'borrow', 'borrow', l.t.token_id)">Add collateral</button>
+        <button class="n-btn-sm" @click="go(l.m, undefined, 'repay', l.t.token_id)">Repay</button>
+        <button class="n-btn-sm ghost" @click="go(l.m, undefined, 'borrow', l.t.token_id)">Add collateral</button>
       </div>
     </div></template>
   </div>
@@ -108,4 +145,7 @@ const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params:
 .mk { font-weight: 600; }
 .fp-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .fp-banner b { color: #fff; font-weight: 600; }
+.reward-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-left-color: var(--n-green); }
+.reward-banner b { color: #fff; font-weight: 600; }
+.link { color: var(--n-pink); }
 </style>

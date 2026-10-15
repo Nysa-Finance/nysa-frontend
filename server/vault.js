@@ -62,6 +62,9 @@ export async function readVault(v, markets, now, reserveMetrics) {
       invested: n(holdings.invested),
       depositCap: Number(state.depositCap) / 10 ** Number(state.tokenMintDecimals),
       minDeposit: Number(state.minDepositAmount) / 10 ** Number(state.tokenMintDecimals),
+      // Charged on withdrawals and left in the vault (set on-chain by the curator).
+      withdrawPenaltyPct: Number(state.withdrawalPenaltyBps) / 100,
+      withdrawPenaltyFixed: Number(state.withdrawalPenaltyLamports) / 10 ** Number(state.tokenMintDecimals),
       performanceFee: Number(state.performanceFeeBps) / 100,
       managementFee: Number(state.managementFeeBps) / 100,
       sharesMint: String(state.sharesMint),

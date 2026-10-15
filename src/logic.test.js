@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange, pieSlices, arcPath } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -88,4 +88,12 @@ assert.equal(rewardApr(1, 1, 0), 0) // nothing staked
 assert.deepEqual(liquidationBonusRange(2, 5, 95), { low: 2, high: 2.5 })
 assert.deepEqual(liquidationBonusRange(2, 5, 80), { low: 2, high: 5 }) // wide band: the max is reachable
 assert.deepEqual(liquidationBonusRange(4, 5, 95), { low: 4, high: 4 })
+// Vault allocation pie: shares and arcs; a single allocation fills the circle.
+const slices = pieSlices([75, 25, -5])
+assert.deepEqual(slices.map((x) => x.share), [75, 25, 0])
+assert.equal(slices[0].start, 0)
+assert.ok(Math.abs(slices[0].end - 1.5 * Math.PI) < 1e-9 && Math.abs(slices[1].end - 2 * Math.PI) < 1e-9)
+assert.deepEqual(pieSlices([0, 0]).map((x) => x.share), [0, 0]) // nothing allocated yet
+assert.equal(arcPath(50, 50, 40, 25, 0, Math.PI / 2), 'M50.00,10.00A40,40 0 0 1 90.00,50.00L75.00,50.00A25,25 0 0 0 50.00,25.00Z')
+assert.equal((arcPath(50, 50, 40, 25, 0, 2 * Math.PI).match(/M/g) ?? []).length, 2) // full circle: two halves
 console.log('logic ok')

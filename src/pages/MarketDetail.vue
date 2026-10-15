@@ -1,10 +1,12 @@
 <script setup>
+// A market's borrow page (/borrow/:id): supply collateral and borrow, with the market's risk data. Lending goes through
+// the Earn vaults; `?mode=withdraw` opens the withdraw panel (collateral, or USDC lent here directly before Earn).
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { state, rowOf, riskOf, irmOf, rewardAprOf, boostNote, claimRewards, useTx, loadApyHistory, loadMarketUpdates, bonusText } from '../store.js'
+import { state, rowOf, riskOf, irmOf, rewardAprOf, boostNote, loadMarketUpdates, bonusText } from '../store.js'
 import { marketById, tok, tokensOf, explorer } from '../config.js'
-import { usd, pct, compact, short, amt } from '../logic.js'
+import { usd, pct, compact, short } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import IrmChart from '../components/IrmChart.vue'
 import LendPanel from '../components/LendPanel.vue'
@@ -12,35 +14,23 @@ import BorrowPanel from '../components/BorrowPanel.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 import NotFound from './NotFound.vue'
 import Section from '../components/Section.vue'
-import RealizedApy from '../components/RealizedApy.vue'
-import TxProgress from '../components/TxProgress.vue'
 import MarketUpdates from '../components/MarketUpdates.vue'
 
 const route = useRoute()
 const router = useRouter()
 const m = computed(() => marketById(route.params.id))
-const mode = computed(() => (route.query.mode === 'borrow' ? 'borrow' : 'lend'))
+const mode = computed(() => (route.query.mode === 'withdraw' ? 'withdraw' : 'borrow'))
 const tokens = computed(() => tokensOf(m.value))
 const collateral = computed(() => m.value.collateral.map(tok))
 const loans = computed(() => m.value.loans.map(tok))
 const r = (id) => rowOf(id)?.reserve
 const sum = (ids, k) => ids.reduce((s, id) => s + (r(id)?.[k] ?? 0), 0)
 const pointsOpen = ref(false)
-// Supply rewards (Kamino farm incentives): boosted tokens of this market and the wallet's unclaimed rewards by token.
-const boosted = computed(() => tokens.value.filter((t) => rewardAprOf(t.token_id) > 0))
-const claimable = computed(() => {
-  const by = {}
-  for (const p of state.claimable[m.value.id] ?? []) by[p.symbol] = (by[p.symbol] ?? 0) + p.amount
-  return Object.entries(by)
-})
-const { tx: claimTx, run: runClaim, reset: resetClaim } = useTx()
-const claim = () => runClaim([{ label: 'Claim rewards', run: () => claimRewards(m.value) }])
-const apyHistory = ref(null)
-onMounted(() => loadApyHistory().then((h) => (apyHistory.value = h)).catch((e) => console.error('[apy-history]', e)))
+// Admin changes to this market (the index also holds the vaults' own, tagged with another source).
 const updates = ref(null)
 const updatesError = ref(null)
-onMounted(() => loadMarketUpdates().then((d) => (updates.value = d.updates)).catch((e) => (updatesError.value = e.message)))
-const back = () => (history.state?.back ? router.back() : router.push('/'))
+onMounted(() => loadMarketUpdates().then((d) => (updates.value = d.updates.filter((u) => u.source === m.value?.kaminoMarket))).catch((e) => (updatesError.value = e.message)))
+const back = () => (history.state?.back ? router.back() : router.push({ name: 'borrow' }))
 
 function openDd() {
   const dd = document.getElementById('dd')
@@ -64,25 +54,10 @@ function openDd() {
             <button class="n-pill" @click="openDd"><span class="n-dot" />Safety Score {{ m.dueDiligence.safetyScore }}/10</button>
           </div>
           <p class="n-sub blurb">{{ m.blurb }}</p>
-          <div v-if="boosted.length || claimable.length" class="farm-cta reward-cta">
-            <div>
-              <div class="farm-cta-t">
-                <template v-if="boosted.length">⚡ Boosted: {{ boosted.map((t) => `${t.name} supply earns +${pct(rewardAprOf(t.token_id))} APR in ${state.rewards[t.token_id].rewards.map((x) => x.symbol).join(' + ')} rewards`).join(' · ') }}.</template>
-                <template v-else>You have unclaimed rewards.</template>
-              </div>
-              <div class="farm-cta-s">
-                <template v-if="claimable.length">Claimable: {{ claimable.map(([name, a]) => `${amt(a, 4)} ${name}`).join(' + ') }}</template>
-                <template v-else-if="state.address">Rewards accrue every second on your supply and can be claimed here.</template>
-                <template v-else>Connect your wallet to see and claim your rewards.</template>
-              </div>
-            </div>
-            <button v-if="claimable.length" class="n-btn-sm" :disabled="claimTx.status === 'running'" @click="claim">Claim</button>
-          </div>
-          <TxProgress :tx="claimTx" style="margin: -10px 0 22px" @dismiss="resetClaim" />
           <div v-if="m.farmPoints" class="farm-cta">
             <div>
               <div class="farm-cta-t">This market is eligible for farming Nysa Points.</div>
-              <div class="farm-cta-s">Lend out tokens and earn points.</div>
+              <div class="farm-cta-s">Collateral supplied here earns points on its balance, every day.</div>
             </div>
             <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'market' })">Check your points →</button>
           </div>
@@ -104,11 +79,6 @@ function openDd() {
               <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r(t.token_id)?.borrowAPR) }}</div>
             </div>
           </div>
-        </Section>
-
-        <Section v-for="t in loans" :key="'ra' + t.token_id" :title="loans.length > 1 ? `Realized APY · ${t.name}` : 'Realized APY'">
-          <template #meta>Current {{ pct(r(t.token_id)?.supplyAPR) }}</template>
-          <RealizedApy :token="t" :history="apyHistory?.tokens?.[t.token_id]" :current-apy="r(t.token_id)?.supplyAPR" />
         </Section>
 
         <Section title="Interest rate model">
@@ -187,9 +157,10 @@ function openDd() {
       </div>
 
       <aside class="side">
+        <RouterLink v-if="mode === 'withdraw'" :to="{ name: 'market-detail', params: { id: m.id } }" class="side-switch">← Back to borrowing</RouterLink>
         <LendPanel
-          v-if="mode === 'lend'" :key="'l' + route.fullPath" :market="m" :tokens="loans" :all-tokens="tokens"
-          :initial-tab="route.query.tab" :initial-asset="route.query.asset"
+          v-if="mode === 'withdraw'" :key="'l' + route.fullPath" :market="m" :tokens="loans" :all-tokens="tokens"
+          initial-tab="withdraw" :initial-asset="route.query.asset" withdraw-only
         />
         <BorrowPanel
           v-else :key="'b' + route.fullPath" :market="m" :collateral-tokens="collateral" :loan-tokens="loans"
@@ -206,13 +177,14 @@ function openDd() {
 .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .head-stats { margin-bottom: 22px; }
 .side { position: sticky; top: 96px; }
+.side-switch { display: inline-block; margin-bottom: 12px; font-size: 13px; color: var(--n-text-3); }
+.side-switch:hover { color: var(--n-pink); }
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
 .farm-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ec008c59; border-radius: 8px; background: #ec008c0f; }
 .farm-cta-t { font-size: 14px; font-weight: 500; }
 .farm-cta-s { margin-top: 2px; font-size: 13px; color: var(--n-text-3); }
 .farm-cta .n-btn-sm { flex-shrink: 0; }
-.reward-cta { border-color: #3ddc8459; background: #3ddc840f; }
 .n-thead { font-size: 11px; padding: 14px 20px; }
 .n-tr.sm { padding: 15px 20px; font-size: 14px; }
 .ad-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr 1fr; }

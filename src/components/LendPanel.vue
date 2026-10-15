@@ -4,10 +4,11 @@ import { state, rowOf, priceOf, rewardAprOf, sendKaminoAction, useTx } from '../
 import { pct, amt, usdFull, num, floorTo, coversAll } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
-const props = defineProps({ market: Object, tokens: Array, allTokens: Array, initialTab: String, initialAsset: String })
+// withdrawOnly: only the Withdraw tab (the market page, for collateral and deposits made before the Earn vaults).
+const props = defineProps({ market: Object, tokens: Array, allTokens: Array, initialTab: String, initialAsset: String, withdrawOnly: Boolean })
 const { tx, run, reset } = useTx()
 
-const tab = ref(props.initialTab === 'withdraw' ? 'withdraw' : 'lend')
+const tab = ref(props.withdrawOnly || props.initialTab === 'withdraw' ? 'withdraw' : 'lend')
 const options = computed(() => (tab.value === 'withdraw' ? props.allTokens : props.tokens))
 const assetId = ref(props.initialAsset ?? props.tokens[0]?.token_id)
 const amount = ref('')
@@ -52,7 +53,8 @@ async function submit() {
 
 <template>
   <div class="n-panel">
-    <div class="n-seg" style="margin-bottom: 22px">
+    <div v-if="withdrawOnly" class="n-label" style="margin-bottom: 16px; font-size: 15px; color: #fff">Withdraw from {{ market.name }}</div>
+    <div v-else class="n-seg" style="margin-bottom: 22px">
       <button :class="{ on: tab === 'lend' }" @click="tab = 'lend'">Lend</button>
       <button :class="{ on: tab === 'withdraw' }" @click="tab = 'withdraw'">Withdraw</button>
     </div>
