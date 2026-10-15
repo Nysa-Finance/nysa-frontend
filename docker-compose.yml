@@ -24,7 +24,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM caddy:2
+        FROM caddy:2.11.4@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af
         COPY Caddyfile /etc/caddy/Caddyfile
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
@@ -40,7 +40,7 @@ services:
     logging: *logs
 
   tunnel:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.9.3@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
     command: tunnel --no-autoupdate run # public hostname -> http://caddy:80 is set in the Cloudflare dashboard
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}

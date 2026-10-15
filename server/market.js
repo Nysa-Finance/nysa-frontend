@@ -9,11 +9,14 @@ import { address } from '@solana/kit'
 import { LIVE, tokensOf } from '../src/config.js'
 import { rewardApr, short } from '../src/logic.js'
 import { rpc } from './rpc.js'
+import { createRefresher } from './refresh.js'
 
 const require = createRequire(import.meta.url)
 const { Farms, fetchFarmState } = require('@kamino-finance/farms-sdk')
 
 export const REFRESH_MS = 60_000 // how stale market data may get without activity; confirmed txs refresh sooner
+const SOON_MS = 2_000 // after a confirmed transaction
+const SOON_GAP_MS = 10_000 // post-transaction reads at most this often, however many confirmations come in
 export const NONE = '11111111111111111111111111111111'
 export const num = (v) => (v == null ? 0 : typeof v === 'number' ? v : v.toNumber())
 export const farms = new Farms(rpc)
@@ -57,6 +60,7 @@ function reserveMetrics(m, t, r, now) {
     maxLtv: s.loanToValue * 100,
     liqLtv: s.liquidationThreshold * 100,
     maxDiscount: s.maxLiquidationBonus * 100,
+    minDiscount: s.minLiquidationBonus * 100,
     supplyCap: num(s.reserveDepositLimit) / f,
     borrowCap: num(s.reserveBorrowLimit) / f,
     irm: { points: s.borrowCurve.map(([u, rate]) => [u * 100, rate * 100]), fee: s.protocolTakeRate },
@@ -110,7 +114,6 @@ async function readAll() {
 let live = new Map()
 let snapshot = null // the JSON the browser gets (/api/market, /api/events)
 const listeners = new Set()
-let timer = null, inflight = null
 
 export const getSnapshot = () => snapshot
 export const onSnapshot = (fn) => listeners.add(fn)
@@ -122,24 +125,15 @@ export function getLive(m) {
   return l
 }
 
-function schedule(ms) {
-  clearTimeout(timer)
-  timer = setTimeout(refreshMarket, ms)
-  timer.unref?.()
-}
+// Concurrent callers share one read (refresh.js). On failure the previous data stays served and the next tick retries.
+const refresher = createRefresher(() => readAll()
+  .then((r) => {
+    live = r.live
+    snapshot = r.snapshot
+    for (const fn of listeners) fn(snapshot)
+  })
+  .catch((e) => console.error('[market] refresh failed', e)), { every: REFRESH_MS, soon: SOON_MS, minGap: SOON_GAP_MS })
 
-// Concurrent callers share one read. On failure the previous data stays served and the next tick retries.
-export function refreshMarket() {
-  inflight ??= readAll()
-    .then((r) => {
-      live = r.live
-      snapshot = r.snapshot
-      for (const fn of listeners) fn(snapshot)
-    })
-    .catch((e) => console.error('[market] refresh failed', e))
-    .finally(() => { inflight = null; schedule(REFRESH_MS) })
-  return inflight
-}
-
-// After a confirmed transaction: refresh shortly (debounced), so balances and APYs update for everyone.
-export const refreshSoon = () => schedule(2_000)
+export const refreshMarket = refresher.run
+// After a transaction built or relayed here confirms (tx.js): refresh shortly, so balances and APYs update for everyone.
+export const refreshSoon = refresher.soon

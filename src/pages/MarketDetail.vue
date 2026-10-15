@@ -2,7 +2,7 @@
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { state, rowOf, riskOf, irmOf, rewardAprOf, boostNote, claimRewards, useTx, loadApyHistory, loadMarketUpdates } from '../store.js'
+import { state, rowOf, riskOf, irmOf, rewardAprOf, boostNote, claimRewards, useTx, loadApyHistory, loadMarketUpdates, bonusText } from '../store.js'
 import { marketById, tok, tokensOf, explorer } from '../config.js'
 import { usd, pct, compact, short, amt } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -136,13 +136,13 @@ function openDd() {
 
         <Section title="Risk parameters">
           <div class="n-table">
-            <div class="n-thead rp-grid"><div>Collateral</div><div>Liability</div><div>Max LTV</div><div>Liquidation LTV</div><div>Max discount</div><div>Supply cap</div><div>Borrow cap</div></div>
+            <div class="n-thead rp-grid"><div>Collateral</div><div>Liability</div><div>Max LTV</div><div>Liquidation LTV</div><div>Liquidation bonus</div><div>Supply cap</div><div>Borrow cap</div></div>
             <div v-for="p in m.pairs" :key="p.collateral + p.liability" class="n-tr sm rp-grid">
               <div class="n-cell n-asset" data-label="Collateral"><TokenIcon :token="tok(p.collateral)" size="sm" />{{ tok(p.collateral).name }}</div>
               <div class="n-cell n-asset" data-label="Liability"><TokenIcon :token="tok(p.liability)" size="sm" />{{ tok(p.liability).name }}</div>
               <div class="n-cell n-num" data-label="Max LTV">{{ riskOf(p).maxLtv }}%</div>
               <div class="n-cell n-num" data-label="Liquidation LTV">{{ riskOf(p).liqLtv }}%</div>
-              <div class="n-cell n-num" data-label="Max discount">{{ pct(riskOf(p).maxDiscount, 1) }}</div>
+              <div class="n-cell n-num" data-label="Liquidation bonus" :title="`Configured max ${pct(riskOf(p).maxDiscount, 1)}; what a liquidator can actually get with these LTVs`">{{ bonusText(p) }}</div>
               <div class="n-cell n-num" data-label="Supply cap">{{ compact(riskOf(p).supplyCap, tok(p.collateral).name) }}</div>
               <div class="n-cell n-num" data-label="Borrow cap">{{ compact(riskOf(p).borrowCap, tok(p.liability).name) }}</div>
             </div>

@@ -15,10 +15,10 @@ the wallet only signs and sends them. So the RPC key stays server-side, RPC usag
 klend-sdk stays out of the browser bundle.
 
 ```
-browser ── /api/events (SSE) ── market snapshot on connect and after every refresh
+browser ── /api/events (SSE) ── market snapshot on connect and after every refresh (/api/market polled if refused)
         ── /api/account/:wallet  balances, positions, unclaimed rewards (cached 15s per wallet)
         ── POST /api/tx          unsigned, simulated transaction → wallet signAndSendTransaction
-        ── GET  /api/tx/:sig     confirmation (a confirmed tx refreshes the market for everyone)
+        ── GET  /api/tx/:sig     confirmation (a confirmed tx built or relayed here refreshes the market for everyone)
 backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per account read + tx builds
 ```
 
@@ -27,8 +27,10 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 | `server/main.js` | HTTP server: static `dist/`, API routes, SSE, per-IP rate limits, daily snapshot schedule |
 | `server/rpc.js` | The single RPC client (429 backoff, call counter for `/api/health`) |
 | `server/market.js` | Market cache: reserves, oracle prices, risk params, rate curves, reward farms (`/api/market`, `/api/events`) |
+| `server/refresh.js` | Market cache timer: every 60s, sooner after our transactions confirm (never postponed, at most every 10s) |
 | `server/account.js` | A wallet's balances, Kamino positions and pending farm rewards |
 | `server/tx.js` | Builds deposit / withdraw / borrow / repay / claim with klend-sdk + farms-sdk, simulates, returns unsigned |
+| `server/relay.js` | Transactions built or relayed here: what `/api/tx/send` relays, which confirmations refresh the market |
 | `server/updates.js` | Market index: admin changes (Market Updates), liquidations and every obligation (address + owner), from chain history |
 | `server/analytics.js` | Open positions with health factor for the Analytics page |
 | `server/snapshot.js` | Daily Farm Points + APY history snapshot |
@@ -41,7 +43,12 @@ builds and relays, and the frontend disconnects it with a notice. Until a list i
 transaction is built (fail closed).
 
 Validation and limits: wallet addresses and actions are checked, request bodies are capped at 4 KB, and the endpoints that
-cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`). The server never holds keys.
+cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`). Each IP may hold 5 market streams
+(`/api/events`); a browser turned away polls `/api/market` instead. The server never holds keys.
+
+Liquidating a sanctioned borrower's loan is refused too. The liquidation bonus shown is what a liquidator can
+actually get (`liquidationBonusRange` in `src/logic.js`), not the configured maximum. Docker images (by digest) and GitHub
+Actions (by commit) are pinned; Dependabot proposes updates as pull requests.
 
 ## Transactions
 `POST /api/tx` builds the action against the market cache with a fresh read of the wallet's obligation, simulates it
@@ -59,7 +66,9 @@ Mobile browsers have no wallet extensions (`src/wallets.js`):
   tweetnacl). The page leaves for the wallet app and comes back with the answer; the pending action survives the reload
   in localStorage, the handoff card (`WalletHandoff.vue`) asks for a tap before each trip (iOS opens apps only on user
   gestures), and `POST /api/tx/send` relays the signed transaction — only for a wallet that just had one built, with its
-  valid signature. Round trip covered by `src/wallets.test.js`.
+  valid signature, when no signer is sanctioned and every instruction calls Kamino Lend/Farms, SPL Token, ATA,
+  Compute Budget, System or Lighthouse (wallet guard) (`server/relay.js`, `server/relay.test.js`). Round trip covered by
+  `src/wallets.test.js`.
 
 ## Supply rewards (boosted APY)
 The USDC reserve's Kamino collateral farm pays USDC incentives. `server/market.js` reads the farm with the market and

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, riskOf, loadPositions, loadLiquidations } from '../store.js'
+import { state, riskOf, bonusText, loadPositions, loadLiquidations } from '../store.js'
 import { LIVE, tok, explorer, txUrl } from '../config.js'
 import { pct, amt, compact, short, hfText, hfColor } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -118,12 +118,14 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
         <div class="n-stats params">
           <div class="n-stat"><div class="k">Max LTV</div><div class="v sm">{{ pct(risk.maxLtv, 0) }}</div><div class="s">borrowing limit</div></div>
           <div class="n-stat"><div class="k">Liquidation LTV</div><div class="v sm">{{ pct(risk.liqLtv, 0) }}</div><div class="s">health factor 1</div></div>
-          <div class="n-stat"><div class="k">Max liquidation bonus</div><div class="v sm">{{ pct(risk.maxDiscount, 0) }}</div><div class="s">paid to the liquidator</div></div>
+          <div class="n-stat"><div class="k">Liquidation bonus</div><div class="v sm">{{ bonusText(pair) }}</div><div class="s">paid to the liquidator · configured max {{ pct(risk.maxDiscount, 0) }}</div></div>
         </div>
         <p>
           The health factor is your collateral, weighted by the liquidation LTV, divided by your debt. If it falls below 1,
           because the collateral price dropped or interest grew the debt, the loan can be liquidated: anyone can repay part of
-          the debt and receive collateral of the same value plus a bonus of up to {{ pct(risk.maxDiscount, 0) }}.
+          the debt and receive collateral of the same value plus a bonus of {{ bonusText(pair) }}. The bonus grows with how far
+          the loan is past its liquidation LTV, but it is also capped so the loan stays solvent, which is why the configured
+          {{ pct(risk.maxDiscount, 0) }} maximum can't be reached with these settings.
         </p>
         <p>
           Liquidations are executed on-chain by Kamino Lend's smart contracts, and each one is listed above with its
