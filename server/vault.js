@@ -90,7 +90,7 @@ export async function readVault(v, markets, now, reserveMetrics) {
       tokensPerShare: n(perShareNow),
       total,
       totalUsd: total * price,
-      available: n(holdings.available) + vested,
+      available: n(holdings.available), // in the vault, uninvested (vested rewards not in it yet: they count in `total` only)
       invested: n(holdings.invested),
       bufferTarget: n(target.targetUnallocatedAmount), // tokens kept uninvested to serve withdrawals at once
       depositCap: Number(state.depositCap) / 10 ** Number(state.tokenMintDecimals),
