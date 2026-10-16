@@ -3,7 +3,7 @@
 // holds keys. First-time setup (Kamino user accounts) or oversized transactions come back in two steps: the client
 // sends the setup transaction, waits for it, then asks again and gets the action itself (`final: true`).
 import Decimal from 'decimal.js'
-import { KaminoAction, U64_MAX, obligationFarmStatePda, buildComputeBudgetIx } from '@kamino-finance/klend-sdk'
+import { KaminoAction, KaminoVault, U64_MAX, obligationFarmStatePda, buildComputeBudgetIx } from '@kamino-finance/klend-sdk'
 import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
@@ -216,11 +216,17 @@ async function vaultAction(kind, owner, v, amount, all) {
     const deposit = [buildComputeBudgetIx(VAULT_CU), ...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
     // Then invest what the vault holds into its reserves, so deposits earn right away: Kamino's crank does this for
     // vaults listed in its UI; until then this is the fallback. `invest` lets the program size each reserve's amount
-    // on-chain, after the deposit (investAllReservesIxs sizes it from the state before, and fails). Dropped if it
-    // doesn't fit or fails to simulate.
+    // on-chain, after the deposit (investAllReservesIxs sizes it from the state before, and fails). The SDK only emits
+    // an invest when it sees tokens to move, so it is shown the vault as it is after the deposit: from the state
+    // before, a vault already on target would get none and the deposit would sit idle. Dropped if it doesn't fit or
+    // fails to simulate.
+    const after = Object.assign(Object.create(Object.getPrototypeOf(state)), state, {
+      tokenAvailable: state.tokenAvailable.add(new state.tokenAvailable.constructor(new Decimal(amount).mul(10 ** Number(state.tokenMintDecimals)).floor().toFixed())), // BN, as decoded
+    })
+    const kvAfter = KaminoVault.loadWithClientAndState(vaultClient, kv.address, after)
     const invest = []
     try {
-      for (const [a, r] of reserves) invest.push(...await vaultClient.investSingleReserveIxs(signer, kv, { address: a, state: r.state }, reserves))
+      for (const [a, r] of reserves) invest.push(...await vaultClient.investSingleReserveIxs(signer, kvAfter, { address: a, state: r.state }, reserves))
     } catch (e) { console.warn('[vault] invest ixs', e?.message); invest.length = 0 }
     if (invest.length) {
       const both = await compile(owner, [...deposit, ...invest], luts)
