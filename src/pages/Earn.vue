@@ -12,7 +12,7 @@ import FarmPointsModal from '../components/FarmPointsModal.vue'
 const router = useRouter()
 const pointsOpen = ref(false)
 const rows = computed(() => VAULTS.map((v) => ({ v, live: state.vaults[v.id] })))
-const go = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query: tab ? { tab } : {} })
+const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
 </script>
 
 <template>
@@ -21,7 +21,7 @@ const go = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query:
     <p class="n-sub">Deposit into curated vaults and earn yield from loans backed by tokenized real-world assets</p>
   </div>
   <div class="n-table ea-table">
-    <div class="n-thead ea-grid"><div>Vault</div><div>Network</div><div>Infra</div><div>APY</div><div>Exposure</div><div>Total Supply</div><div /></div>
+    <div class="n-thead ea-grid"><div>Vault</div><div>Network</div><div>Infra</div><div>APY</div><div>Exposure</div><div>Total Supply</div></div>
     <template v-if="state.loaded">
       <div v-for="x in rows" :key="x.v.id" class="n-tr click ea-grid" @click="go(x.v)">
         <div class="n-cell n-asset" data-label="Vault">
@@ -42,11 +42,10 @@ const go = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query:
           </div>
         </div>
         <div class="n-cell n-num" data-label="Total Supply">{{ x.live ? usd(x.live.exposureSupplyUsd) : '—' }}</div>
-        <div class="n-cell act"><button type="button" class="n-btn-sm" @click.stop="go(x.v, 'deposit')">Deposit</button></div>
       </div>
       <div v-if="!rows.length" class="n-empty">No vaults are live yet.</div>
     </template>
-    <div v-else class="n-tr ea-grid"><span v-for="i in 7" :key="i" class="n-skel" /></div>
+    <div v-else class="n-tr ea-grid"><span v-for="i in 6" :key="i" class="n-skel" /></div>
   </div>
   <!-- Mobile: one card per vault (name and APY on top, then the same data as the table). -->
   <div class="ea-cards">
@@ -86,10 +85,9 @@ const go = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query:
 </template>
 
 <style scoped>
-.ea-grid { grid-template-columns: 1.8fr 1fr 1fr 1.1fr 1fr 1.1fr auto; }
+.ea-grid { grid-template-columns: 1.8fr 1fr 1fr 1.1fr 1fr 1.1fr; }
 .vault-id { display: flex; align-items: center; gap: 12px; }
 .name-col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.act { justify-content: flex-end; }
 /* Mobile cards (the table on wider screens). */
 .ea-cards { display: none; flex-direction: column; gap: 14px; }
 .ea-card { border: 1px solid var(--n-line); border-radius: 16px; background: var(--n-bg-2); padding: 20px 22px 12px; cursor: pointer; transition: border-color .15s; }
