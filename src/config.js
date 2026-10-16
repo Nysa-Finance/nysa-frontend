@@ -57,7 +57,7 @@ export const LIVE = MARKETS.filter((m) => m.visible)
 export const VAULTS = [
   {
     id: 'rwa-prime', name: 'RWA Prime', address: '2Qxsj1hi95avkp7sANDmbVT5TwqRPGsutuvJasJK9xL7', farmPoints: true,
-    description: "RWA Prime is a USDC vault on Kamino curated by Nysa. Deposits are lent to borrowers who post tokenized real-world assets as collateral, today Ondo's USDY, backed by short-term US Treasuries.",
+    description: "RWA Prime is a USDC vault on Kamino curated by Nysa, allocating deposits to carefully selected lending markets backed by high-quality, lower-risk tokenized real-world assets.",
   },
 ]
 export const vaultById = (id) => VAULTS.find((v) => v.id === id)
