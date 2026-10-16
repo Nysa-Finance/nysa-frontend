@@ -46,7 +46,11 @@ function send(res, status, body, { type = 'application/json', maxAge = 0 } = {})
 // CF-Connecting-IP header is the real client.
 const clientIp = (req) => req.headers['cf-connecting-ip'] ?? req.socket.remoteAddress
 const hits = new Map()
+// IPs exempt from these limits, for a load test from a known machine (comma-separated; empty = none).
+const EXEMPT = new Set((process.env.RATE_LIMIT_EXEMPT_IPS ?? '').split(',').map((s) => s.trim()).filter(Boolean))
+if (EXEMPT.size) console.warn(`[limits] rate limits off for ${EXEMPT.size} IP(s) (RATE_LIMIT_EXEMPT_IPS)`)
 function limited(req, name, perMinute) {
+  if (EXEMPT.has(clientIp(req))) return false
   const key = `${name}:${clientIp(req)}`
   const now = Date.now()
   let e = hits.get(key)

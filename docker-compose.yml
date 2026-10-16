@@ -7,6 +7,7 @@ services:
     environment: # only what the app needs (not the tunnel or Plausible secrets)
       SOLANA_RPC: ${SOLANA_RPC:-}
       VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:-} # old name, still accepted
+      RATE_LIMIT_EXEMPT_IPS: ${RATE_LIMIT_EXEMPT_IPS:-} # only during a load test (loadtest/README.md)
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
