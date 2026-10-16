@@ -103,7 +103,8 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
             <div class="addr-row"><span class="addr-k">Performance fee</span><span class="n-num">{{ live ? pct(live.performanceFee) : '—' }}</span></div>
             <div class="addr-row">
               <span class="addr-k">Withdrawal fee</span>
-              <span class="n-num">{{ live ? pct(live.withdrawPenaltyPct) : '—' }}<template v-if="live?.withdrawPenaltyFixed"> + {{ live.withdrawPenaltyFixed }} {{ token.name }}</template></span>
+              <span class="n-num">{{ live ? pct(live.withdrawPenaltyPct) : '—' }}<!-- a fixed part of 1 base unit (0.000001 USDC) is dust: shown as 0% like Kamino does -->
+                <template v-if="live?.withdrawPenaltyFixed > 10 ** -token.decimals"> + {{ live.withdrawPenaltyFixed }} {{ token.name }}</template></span>
             </div>
           </div>
           <p class="hint">Management fee: yearly, on the vault's assets. Performance fee: on the interest earned. Withdrawal fee: charged when withdrawing and left in the vault.</p>
