@@ -6,7 +6,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { state, loadApyHistory, loadMarketUpdates, vaultApyNote } from '../store.js'
 import { vaultById, tok, explorer } from '../config.js'
-import { usd, pct, amt, short } from '../logic.js'
+import { usd, pct, short } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import Section from '../components/Section.vue'
 import ExposureChart from '../components/ExposureChart.vue'
@@ -63,7 +63,6 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
           <div v-if="live?.rewards" class="farm-cta reward-cta">
             <div>
               <div class="farm-cta-t">⚡ Boosted: +{{ pct(live.rewardsApy) }} APY in {{ live.rewards.symbol }} rewards, auto-compounded into your deposit.</div>
-              <div class="farm-cta-s">{{ amt(live.rewards.perWeek, 2) }} {{ live.rewards.symbol }} a week, shared by all depositors · {{ amt(live.rewards.left, 2) }} {{ live.rewards.symbol }} left, about {{ live.rewards.daysLeft < 1 ? `${Math.max(Math.round(live.rewards.daysLeft * 24), 1)} h` : `${Math.round(live.rewards.daysLeft)} d` }} at this rate.</div>
             </div>
           </div>
           <div v-if="v.farmPoints" class="farm-cta">
