@@ -10,6 +10,7 @@ import { LIVE, tokensOf } from '../src/config.js'
 import { rewardApr, short } from '../src/logic.js'
 import { rpc } from './rpc.js'
 import { createRefresher } from './refresh.js'
+import { readVaults } from './vault.js'
 
 const require = createRequire(import.meta.url)
 const { Farms, fetchFarmState } = require('@kamino-finance/farms-sdk')
@@ -108,10 +109,12 @@ async function readAll() {
     }
     live.set(m.id, { market, now, farms: farmStates })
   }
-  return { live, snapshot: { updatedAt: Date.now(), slot: Number(now.slot), blockTime: Number(now.blockTime), reserves, rewards } }
+  const vaults = await readVaults(new Map([...live.values()].map((l) => [String(l.market.getAddress()), l.market])), now, reserves)
+  return { live, vaults: vaults.live, snapshot: { updatedAt: Date.now(), slot: Number(now.slot), blockTime: Number(now.blockTime), reserves, rewards, vaults: vaults.views } }
 }
 
 let live = new Map()
+let liveVaults = new Map() // vault id -> { kv, state, reserves, perShare } (vault.js)
 let snapshot = null // the JSON the browser gets (/api/market, /api/events)
 const listeners = new Set()
 
@@ -124,11 +127,18 @@ export function getLive(m) {
   if (!l) throw new Error('Market data is still loading, try again in a few seconds')
   return l
 }
+// A vault's state, its reserves and value per share, as of the last refresh.
+export function getVault(id) {
+  const v = liveVaults.get(id)
+  if (!v) throw new Error('Vault data is still loading, try again in a few seconds')
+  return v
+}
 
 // Concurrent callers share one read (refresh.js). On failure the previous data stays served and the next tick retries.
 const refresher = createRefresher(() => readAll()
   .then((r) => {
     live = r.live
+    liveVaults = r.vaults
     snapshot = r.snapshot
     for (const fn of listeners) fn(snapshot)
   })

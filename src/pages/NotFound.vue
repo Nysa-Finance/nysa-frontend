@@ -3,7 +3,7 @@
     <div class="nf-code">404</div>
     <h1 class="nf-title">Page <span class="serif">not found</span></h1>
     <p class="nf-sub">The page you're looking for doesn't exist or has moved.</p>
-    <RouterLink to="/" class="nf-btn">Back to markets</RouterLink>
+    <RouterLink to="/earn" class="nf-btn">Back to Earn</RouterLink>
   </div>
 </template>
 

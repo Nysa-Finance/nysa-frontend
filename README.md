@@ -70,6 +70,28 @@ Mobile browsers have no wallet extensions (`src/wallets.js`):
   Compute Budget, System or Lighthouse (wallet guard) (`server/relay.js`, `server/relay.test.js`). Round trip covered by
   `src/wallets.test.js`.
 
+## Earn vaults
+Lending goes through Nysa-curated Kamino Earn vaults (kVaults), e.g. **RWA Prime** (`VAULTS` in `src/config.js`: address,
+URL id and description only). `server/vault.js` reads each vault with the market cache: allocations, holdings, value per
+share, utilization and APY; its **exposure** (the markets it is allocated to and their collateral) comes from the on-chain allocation.
+- APY = supply APY (invested share × each reserve's supply APY, `getVaultActualAPY`) + rewards APY: the vault's
+  auto-compounding rewards (`rewardInfo`, paid per second into the vault while the funded balance lasts) over its AUM,
+  as on Kamino. Utilization = Σ invested × reserve utilization / AUM.
+- Allocations are targets (`getVaultComputedReservesAllocation`): weights plus the unallocated weight (a liquidity
+  buffer kept uninvested for instant withdrawals), capped per reserve. Kamino's bot syncs vaults to them about every
+  15 minutes; the Exposure donut splits uninvested tokens into the buffer and what is awaiting sync.
+- `/earn`: vaults with network, infra (Kamino), APY (⚡ breakdown), exposure (collateral icons), Total Supply (collateral
+  + loan asset supplied in the exposure markets) and a Deposit button.
+- `/earn/:id`: Exposure (allocation donut, `pieSlices`/`arcPath` in `src/logic.js`, and markets), Realized APY from the vault's
+  share value, Market Updates of the vault and its exposure markets, Fees (management, performance, withdrawal) and
+  Addresses (vault, admin, allocation admin, oracle); rewards boost card; Deposit / Withdraw panel (`VaultPanel.vue`).
+- Transactions `vault-deposit` (min shares out, then `invest` into the allocated reserves in the same transaction, sized
+  on-chain, as fallback for Kamino's crank) and `vault-withdraw` (shares worth the amount, or all).
+- `/borrow/:id` is a market's borrow page (risk parameters, rate model, addresses, due diligence). `?mode=withdraw`
+  withdraws collateral, or USDC lent to the market directly before the vaults (Portfolio links there).
+- Old links redirect: `/` and `/lend` → `/earn`, `/market/:id?mode=lend` → the vault, other `/market/:id` → `/borrow/:id`.
+Verified end to end on a Surfpool mainnet fork (deposit + invest, withdraw all).
+
 ## Supply rewards (boosted APY)
 The USDC reserve's Kamino collateral farm pays USDC incentives. `server/market.js` reads the farm with the market and
 returns each token's reward APR (yearly emission value over the staked value; shown as APR because rewards don't compound).
@@ -78,20 +100,23 @@ wallet's unclaimed rewards (`kind: 'claim'`, one transaction harvesting every pe
 
 ## Farm Points
 Points accrue as **supplied USD × days**: each daily snapshot adds `last_supplied_usd × days since last snapshot` to every wallet's total,
-then records its current deposits (USDC lent + USDY collateral) in the Nysa Kamino market. Logic: `snapshotPoints` in `src/logic.js` (tested).
-Only wallets with deposits in the Nysa market(s) listed in `src/config.js` (`LIVE`) are tracked. Run a snapshot by hand:
+then records its current deposits (USDC lent + USDY collateral) in the Nysa Kamino market and its Earn vault shares (valued
+at the vault's share value; depositors found by the market index). Logic: `snapshotPoints` in `src/logic.js` (tested).
+Only wallets with deposits in the Nysa market(s) and vaults listed in `src/config.js` are tracked. Run a snapshot by hand:
 `docker compose exec app node server/snapshot.js`.
 
 ## Realized APY
 The daily snapshot also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
-utilization to `market-history/history.json`, plus the reserve's creation time (share value is exactly 1 then).
-The market page shows 30D / 7D realized APY (share-value growth over the window, annualised) next to the live APY, and a daily chart.
+utilization to `market-history/history.json`, plus the reserve's creation time (share value is exactly 1 then); and per
+Earn vault, its tokens per share (`vaults` in that file). The vault page shows 30D / 7D realized APY (share-value growth over the window, annualised) next to the live APY, and a daily chart.
 Math: `realizedApy` / `windowApy` / `dailyApySeries` in `src/logic.js` (tested).
 
 ## Market Updates
 `/api/market-updates` lists admin changes to the market and its reserves (LTVs, rate curve, oracles, caps, status, market settings…),
-decoded from Kamino Lend instructions (`updateReserveConfig`, `updateLendingMarket`, `initReserve`, … incl. CPI/multisig calls) using
-klend-sdk's generated layouts. It indexes incrementally into `market-history/index-v3.json`: each refresh fetches only
+decoded from Kamino Lend instructions (`updateReserveConfig`, `updateLendingMarket`, `initReserve`, … incl. CPI/multisig calls), and
+to the Earn vaults (allocations, fees, caps, admin, farm… from kVault instructions), using klend-sdk's generated layouts. Each
+update has a `source` (market or vault address): the vault page shows the vault's and its exposure markets', the borrow page
+the market's. It indexes incrementally into `market-history/index-v4.json`: each refresh fetches only
 transactions newer than the last one seen. Values are formatted at index time; after changing a formatter, delete that file to re-index.
 Decoding is covered by `server/updates.test.js`.
 

@@ -6,7 +6,7 @@
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
-import { tok, tokensOf } from './config.js'
+import { tok, tokensOf, vaultById } from './config.js'
 import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { event, skipNextPageview } from './analytics.js'
 import {
@@ -35,6 +35,8 @@ export const state = reactive({
   balances: {}, // token_id -> units in wallet
   positions: {}, // token_id -> { supplied, borrowed, maxWithdraw } units
   claimable: {}, // market id -> [{ symbol, amount }] unclaimed rewards of the connected wallet
+  vaults: {}, // vault id -> Earn vault metrics, allocations and exposure (live from chain, server/vault.js)
+  vaultPositions: {}, // vault id -> { shares, value } of the connected wallet
   walletName: null,
   wallets: [], // detected Wallet Standard wallets
   connectOpen: false,
@@ -69,6 +71,9 @@ export const rewardAprOf = (id) => state.rewards[id]?.apr ?? 0
 // Tooltip for a boosted APY, e.g. "3.10% supply APY + 12.00% USDC rewards APR".
 export const boostNote = (id, supplyApy) =>
   `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(id))} ${state.rewards[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
+
+// Tooltip for a vault's boosted APY: "1.47% supply APY + 11,212.83% USDC rewards APY, auto-compounded".
+export const vaultApyNote = (v) => `${pct(v.supplyApy)} supply APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
 
 // Risk parameters of a collateral/liability pair. Governance changes them (Market Updates), so the live on-chain
 // values win; config.js only fills in until the first market update arrives.
@@ -117,6 +122,7 @@ function showMarket(s) {
   if (s.updatedAt < marketAt) return
   marketAt = s.updatedAt
   state.reserves = s.reserves
+  state.vaults = s.vaults ?? {}
   state.rewards = s.rewards
   state.loaded = true
   state.loading = false
@@ -180,6 +186,7 @@ export async function loadAccount(fresh = false) {
     state.balances = a.balances
     state.positions = a.positions
     state.claimable = a.claimable
+    state.vaultPositions = a.vaults ?? {}
     state.walletError = null
   } catch (e) {
     console.error('[account]', e)
@@ -195,6 +202,7 @@ function setAccount(w, acc) {
   state.balances = {}
   state.positions = {}
   state.claimable = {}
+  state.vaultPositions = {}
   state.walletError = null
   if (acc) loadAccount()
 }
@@ -254,10 +262,11 @@ async function confirmed(signature) {
 
 const buildTx = (params) => api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: account.address }) })
 
-const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate' }
-const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.token ? ` ${tok(p.token).name}` : ''}`
+const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate', 'vault-deposit': 'Deposit', 'vault-withdraw': 'Withdraw' }
+const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.vault ? ` ${vaultById(p.vault)?.name ?? ''}` : p.token ? ` ${tok(p.token).name}` : ''}`
 function trackSuccess(p) {
   if (p.kind === 'claim') event('Rewards claimed', { market: p.market })
+  else if (p.kind.startsWith('vault-')) event(p.kind === 'vault-deposit' ? 'Vault deposit' : 'Vault withdraw', { vault: p.vault })
   else if (p.kind === 'liquidate') event('Liquidation', { market: p.market })
   else if (p.token) event(p.kind[0].toUpperCase() + p.kind.slice(1), { token: tok(p.token).name })
 }
@@ -334,6 +343,19 @@ export async function sendKaminoAction(kind, { market, token, amount, all }) {
     const params = { kind, market: market.id, token: token.token_id, amount, all }
     const sig = await runAction(params)
     trackSuccess(params) // Deposit | Withdraw | Borrow | Repay
+    return sig
+  } catch (e) {
+    event('Transaction failed', { action: kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
+    throw e
+  }
+}
+
+// Earn vault: deposit the vault's token for shares, or withdraw `amount` of it (all: every share). Confirmed signature.
+export async function sendVaultAction(kind, vault, { amount, all }) {
+  const params = { kind, vault: vault.id, amount, all }
+  try {
+    const sig = await runAction(params)
+    trackSuccess(params)
     return sig
   } catch (e) {
     event('Transaction failed', { action: kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })

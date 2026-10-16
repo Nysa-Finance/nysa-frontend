@@ -1,6 +1,6 @@
 // Decoding checks for the market index (/api/market-updates), using byte values from real transactions on the Nysa market.
 import assert from 'node:assert/strict'
-import { describe, liquidation } from './updates.js'
+import { describe, describeVault, liquidation } from './updates.js'
 import { TOKENS } from '../src/config.js'
 
 const USDC = TOKENS['svm-usdc'], USDY = TOKENS['svm-usdy']
@@ -38,5 +38,15 @@ assert.deepEqual(liquidation(acc, [
   { source: 'USDY_VAULT', dest: 'LIQ_USDY', amount: 910_000_000n },
   { source: 'USDY_VAULT', dest: 'FEE', amount: 4_000_000n },
 ], { OBLIGATION: 'OWNER' }), { obligation: 'OBLIGATION', owner: 'OWNER', liquidator: 'LIQUIDATOR', repaid: 1000, repaidToken: 'USDC', seized: 914, seizedToken: 'USDY' })
+
+// Earn vault admin changes (values from the RWA Prime vault's own transactions).
+const vaultCfg = (field, bytes) => describeVault('updateVaultConfig', { entry: { [field]: {} }, data: Buffer.from(bytes) }, USDC)
+const le64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64LE(BigInt(n)); return b }
+assert.deepEqual(vaultCfg('DepositCap', le64(250_000_000_000)), { action: 'Deposit cap', value: '250K USDC' })
+assert.deepEqual(vaultCfg('MinDepositAmount', le64(1000)), { action: 'Min deposit', value: '0.001 USDC' })
+assert.deepEqual(vaultCfg('PerformanceFeeBps', le64(1000)), { action: 'Performance fee', value: '10%' })
+assert.deepEqual(vaultCfg('Name', Buffer.from('RWA Prime')), { action: 'Vault name', value: 'RWA Prime' })
+assert.deepEqual(describeVault('updateReserveAllocation', { weight: 100n, cap: 0xffffffffffffffffn }, USDC, USDC), { action: 'Allocation', value: 'weight 100, cap unlimited' })
+assert.deepEqual(describeVault('removeAllocation', {}, USDC), { action: 'Allocation removed', value: null })
 
 console.log('market-updates ok')

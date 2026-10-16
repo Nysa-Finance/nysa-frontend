@@ -8,7 +8,7 @@ import TokenIcon from '../components/TokenIcon.vue'
 
 const router = useRouter()
 const rows = computed(() => LIVE.flatMap((m) => m.loans.map((id) => ({ m, t: tok(id), r: rowOf(id)?.reserve }))))
-const go = (m) => router.push({ name: 'market-detail', params: { id: m.id }, query: { mode: 'borrow' } })
+const go = (m) => router.push({ name: 'market-detail', params: { id: m.id } })
 </script>
 
 <template>

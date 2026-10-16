@@ -5,14 +5,15 @@ import { createRequire } from 'node:module'
 import { VanillaObligation, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, tokensOf } from '../src/config.js'
+import { LIVE, VAULTS, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
-import { getLive, reserveOf, farms, num } from './market.js'
+import { getLive, getVault, reserveOf, farms, num } from './market.js'
 
 const require = createRequire(import.meta.url)
 const { decodeUserState } = require('@kamino-finance/farms-sdk')
 
 const TTL_MS = 15_000
+const TOKEN_PROGRAM = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') // kVault shares are SPL Token
 const ATA_PROGRAM = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 const enc = getAddressEncoder()
 export const obligationType = () => new VanillaObligation(PROGRAM_ID)
@@ -71,7 +72,18 @@ async function readAccount(wallet) {
       positions[t.token_id] = { supplied, borrowed, maxWithdraw }
     }
   }
-  return { balances, positions, claimable }
+  return { balances, positions, claimable, vaults: await vaultPositions(owner) }
+}
+
+// The wallet's shares in each vault (one getMultipleAccounts) and what they're worth in the vault's token.
+async function vaultPositions(owner) {
+  const vaults = VAULTS.flatMap((v) => { try { return [{ v, live: getVault(v.id) }] } catch { return [] } })
+  const atas = await Promise.all(vaults.map(({ live }) => ataOf(owner, live.state.sharesMint, TOKEN_PROGRAM)))
+  const accounts = atas.length ? await fetchEncodedAccounts(rpc, atas) : []
+  return Object.fromEntries(vaults.map(({ v, live }, i) => {
+    const shares = tokenAmount(accounts[i]) / 10 ** Number(live.state.sharesMintDecimals)
+    return [v.id, { shares, value: shares * num(live.perShare) }]
+  }))
 }
 
 const cache = new Map() // wallet -> { at, value: Promise }

@@ -3,7 +3,7 @@
 // holds keys. First-time setup (Kamino user accounts) or oversized transactions come back in two steps: the client
 // sends the setup transaction, waits for it, then asks again and gets the action itself (`final: true`).
 import Decimal from 'decimal.js'
-import { KaminoAction, U64_MAX, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
+import { KaminoAction, KaminoVault, U64_MAX, obligationFarmStatePda, buildComputeBudgetIx } from '@kamino-finance/klend-sdk'
 import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
@@ -11,9 +11,10 @@ import {
   getBase64EncodedWireTransaction, fetchEncodedAccounts,
 } from '@solana/kit'
 import { createRequire } from 'node:module'
-import { marketById, tokensOf, tok } from '../src/config.js'
+import { marketById, vaultById, tokensOf, tok } from '../src/config.js'
 import { rpc } from './rpc.js'
-import { getLive, reserveOf, farms, refreshSoon } from './market.js'
+import { getLive, getVault, reserveOf, farms, refreshSoon, NONE } from './market.js'
+import { vaultClient } from './vault.js'
 import { obligationType, pendingRewards, ataOf } from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
 
@@ -25,7 +26,7 @@ const SPLIT_ABOVE = 1100 // leave wallet headroom (Phantom adds a guard instruct
 // Setup instructions that can run in their own transaction before the lending one.
 const SEPARABLE = /^(CreateUserAta(?!SOL)|CreateLiquidityUserAta|CreateCollateralUserAta|CreateAdditionalUserTokenAta|CreateAta|createAtasIxs|createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 const BOOTSTRAP = /^(createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
-export const KINDS = ['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate']
+export const KINDS = ['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate', 'vault-deposit', 'vault-withdraw']
 const BUILDERS = {
   deposit: (p) => KaminoAction.buildDepositTxns(p),
   withdraw: (p) => KaminoAction.buildWithdrawTxns(p),
@@ -199,8 +200,61 @@ export async function buildTx(req) {
   return built
 }
 
-async function build({ kind, wallet, market: marketId, token: tokenId, amount, all, borrower, preview }) {
+// ---- Earn vaults (kVaults): deposit the vault's token for shares, withdraw by redeeming shares ----
+const VAULT_SLIPPAGE = 0.005 // a deposit must mint at least 99.5% of the shares the current share value gives
+const VAULT_CU = 600_000 // deposit + invest refreshes every allocated reserve: more than the 200k default
+
+async function vaultAction(kind, owner, v, amount, all) {
+  const { kv, state, reserves, perShare, now } = getVault(v.id)
+  const signer = createNoopSigner(owner)
+  const luts = await fetchLuts(String(state.vaultLookupTable) === NONE ? [] : [state.vaultLookupTable])
+  const shareDp = Number(state.sharesMintDecimals)
+  if (kind === 'vault-deposit') {
+    // As the program prices it: share value including vested rewards, minus the crank funds taken from the deposit.
+    const minShares = vaultClient.estimateSharesFromTokens(state, new Decimal(amount), now, reserves, VAULT_SLIPPAGE * 10_000).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
+    const d = await vaultClient.depositIxs(signer, kv, new Decimal(amount), reserves, null, null, undefined, undefined, minShares)
+    const deposit = [buildComputeBudgetIx(VAULT_CU), ...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
+    // Then invest what the vault holds into its reserves, so deposits earn right away: Kamino's crank does this for
+    // vaults listed in its UI; until then this is the fallback. `invest` lets the program size each reserve's amount
+    // on-chain, after the deposit (investAllReservesIxs sizes it from the state before, and fails). The SDK only emits
+    // an invest when it sees tokens to move, so it is shown the vault as it is after the deposit: from the state
+    // before, a vault already on target would get none and the deposit would sit idle. Dropped if it doesn't fit or
+    // fails to simulate.
+    const after = Object.assign(Object.create(Object.getPrototypeOf(state)), state, {
+      tokenAvailable: state.tokenAvailable.add(new state.tokenAvailable.constructor(new Decimal(amount).mul(10 ** Number(state.tokenMintDecimals)).floor().toFixed())), // BN, as decoded
+    })
+    const kvAfter = KaminoVault.loadWithClientAndState(vaultClient, kv.address, after)
+    const invest = []
+    try {
+      for (const [a, r] of reserves) invest.push(...await vaultClient.investSingleReserveIxs(signer, kvAfter, { address: a, state: r.state }, reserves))
+    } catch (e) { console.warn('[vault] invest ixs', e?.message); invest.length = 0 }
+    if (invest.length) {
+      const both = await compile(owner, [...deposit, ...invest], luts)
+      if (both.size <= SPLIT_ABOVE) {
+        try { return { ...(await simulated(both)), final: true, invested: true } } catch (e) { console.warn('[vault] deposit + invest failed to simulate, deposit only:', e?.message) }
+      }
+    }
+    return { ...(await simulated(await compile(owner, deposit, luts))), final: true, invested: false }
+  }
+  // Withdraw: the shares worth `amount` (or all of them), capped at what the wallet holds.
+  const ata = await ataOf(owner, state.sharesMint, address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')) // shares are SPL Token
+  const [acc] = await fetchEncodedAccounts(rpc, [ata], { commitment: 'confirmed' })
+  const held = new Decimal(acc.exists ? Buffer.from(acc.data).readBigUInt64LE(64).toString() : 0).div(10 ** shareDp)
+  if (held.lte(0)) throw new UserError('You have no shares in this vault')
+  const wanted = all ? held : Decimal.min(held, new Decimal(amount).div(perShare.toString()).toDecimalPlaces(shareDp, Decimal.ROUND_UP))
+  const w = await vaultClient.withdrawIxs(signer, kv, wanted, now, reserves, null, null)
+  return { ...(await simulated(await compile(owner, [buildComputeBudgetIx(VAULT_CU), ...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs], luts))), final: true }
+}
+
+async function build({ kind, wallet, market: marketId, token: tokenId, amount, all, borrower, preview, vault: vaultId }) {
   const owner = address(wallet)
+  if (kind.startsWith('vault-')) {
+    const v = vaultById(vaultId)
+    if (!v) throw new UserError('Unknown vault')
+    if (!all && !(Number.isFinite(amount) && amount > 0)) throw new UserError('Invalid amount')
+    if (kind === 'vault-deposit' && all) throw new UserError('Invalid amount')
+    return vaultAction(kind, owner, v, amount, !!all)
+  }
   const m = marketById(marketId)
   if (!m?.kaminoMarket) throw new UserError('Unknown market')
   if (kind === 'claim') return claim(owner, m)

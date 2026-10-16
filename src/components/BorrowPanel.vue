@@ -168,7 +168,7 @@ async function submitRepay() {
       <button class="n-btn-block" :disabled="!canRepay" @click="submitRepay">Repay {{ loan.name }}</button>
       <div class="n-rule to-withdraw">
         <span>Looking to withdraw your collateral?</span>
-        <RouterLink :to="{ name: 'market-detail', params: { id: market.id }, query: { mode: 'lend', tab: 'withdraw', asset: withdrawAsset } }">Go to withdrawal section →</RouterLink>
+        <RouterLink :to="{ name: 'market-detail', params: { id: market.id }, query: { mode: 'withdraw', asset: withdrawAsset } }">Go to withdrawal section →</RouterLink>
       </div>
     </template>
 

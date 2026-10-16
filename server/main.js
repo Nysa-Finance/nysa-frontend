@@ -18,7 +18,7 @@ import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
-import { LIVE, marketById } from '../src/config.js'
+import { LIVE, VAULTS, marketById, vaultById } from '../src/config.js'
 
 if (!RPC_URL) {
   console.error('SOLANA_RPC is not set (see .env.example)')
@@ -129,7 +129,7 @@ const routes = [
     if (blocked(res, b.wallet, { failClosed: true })) return
     if (b.kind === 'liquidate' && isSanctioned(b.borrower)) return send(res, 403, BLOCKED_LOAN)
     try {
-      send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all, borrower: b.borrower, preview: !!b.preview }))
+      send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all, borrower: b.borrower, preview: !!b.preview, vault: b.vault }))
     } catch (e) {
       if (e instanceof UserError) throw e
       console.error('[tx] build failed', b.kind, e) // details stay in the logs (RPC errors can carry provider info)
@@ -167,14 +167,17 @@ const routes = [
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js).
-const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard'])
-const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/') || !!marketById(p.match(/^\/market\/([\w-]+)\/?$/)?.[1])
+// '/', '/lend' and '/market/:id' are old links the SPA redirects (to Earn, a vault or a borrow market page).
+const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard'])
+const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
+  || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
+  || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
 
 // Public pages for search engines; markets come from config.js, so a new live market is listed automatically.
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${['/', '/lend', '/borrow', '/analytics', '/liquidations', ...LIVE.map((m) => `/market/${m.id}`)].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
+${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
 </urlset>
 `
 
