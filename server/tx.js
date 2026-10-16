@@ -210,7 +210,8 @@ async function vaultAction(kind, owner, v, amount, all) {
   const luts = await fetchLuts(String(state.vaultLookupTable) === NONE ? [] : [state.vaultLookupTable])
   const shareDp = Number(state.sharesMintDecimals)
   if (kind === 'vault-deposit') {
-    const minShares = new Decimal(amount).div(perShare.toString()).mul(1 - VAULT_SLIPPAGE).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
+    // As the program prices it: share value including vested rewards, minus the crank funds taken from the deposit.
+    const minShares = vaultClient.estimateSharesFromTokens(state, new Decimal(amount), now, reserves, VAULT_SLIPPAGE * 10_000).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
     const d = await vaultClient.depositIxs(signer, kv, new Decimal(amount), reserves, null, null, undefined, undefined, minShares)
     const deposit = [buildComputeBudgetIx(VAULT_CU), ...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
     // Then invest what the vault holds into its reserves, so deposits earn right away: Kamino's crank does this for

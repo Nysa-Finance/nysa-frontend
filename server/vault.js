@@ -3,6 +3,7 @@
 // Which markets a vault is exposed to comes from its on-chain allocation, never from config.
 import { KaminoVaultClient, KaminoVault, getSingleReserve, DEFAULT_RECENT_SLOT_DURATION_MS } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
+import Decimal from 'decimal.js'
 import { LIVE, VAULTS, TOKENS, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
 
@@ -30,9 +31,19 @@ export async function readVault(v, markets, now, reserveMetrics) {
   ])
   const token = Object.values(TOKENS).find((t) => t.mint === String(state.tokenMint))
   const price = token ? reserveMetrics[token.token_id]?.price ?? 1 : 1
-  const total = n(holdings.totalAUMIncludingFees) - n(holdings.pendingFees)
-  const weights = new Map(vaultClient.getVaultAllocations(state))
   const dec = Number(state.tokenMintDecimals)
+  // Auto-compounding rewards: a fixed amount of the vault's token per second, paid into the vault (so into its share
+  // value) while the reward balance lasts. The program moves what has vested into the vault before any deposit,
+  // withdrawal or invest, so it already belongs to depositors: counted in the vault's value and share value here.
+  const ri = state.rewardInfo
+  const perSecond = Number(ri.rewardPerSecond) / 10 ** dec
+  const vested = Number(ri.lastIssuanceTs) > 0
+    ? Math.min(Math.max(Number(now.blockTime) - Number(ri.lastIssuanceTs), 0) * perSecond, Number(ri.rewardsAvailable) / 10 ** dec) : 0
+  const rewardsLeft = Number(ri.rewardsAvailable) / 10 ** dec - vested
+  const total = n(holdings.totalAUMIncludingFees) - n(holdings.pendingFees) + vested
+  const shares = Number(state.sharesIssued) / 10 ** Number(state.sharesMintDecimals)
+  const perShareNow = shares > 0 ? new Decimal(total).div(shares) : perShare
+  const weights = new Map(vaultClient.getVaultAllocations(state))
   const caps = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), String(x.tokenAllocationCap)]))
 
   // Exposure: each allocated reserve, its market (a LIVE market when it is one of ours) and that market's collateral.
@@ -57,16 +68,12 @@ export async function readVault(v, markets, now, reserveMetrics) {
   const exposure = LIVE.filter((m) => allocations.some((x) => x.market === m.kaminoMarket))
   // Utilization as Kamino shows it: the part of the vault's tokens that borrowers hold (uninvested tokens count as idle).
   const borrowed = reserveAddrs.reduce((s, a) => s + n(holdings.investedInReserves.get(a)) * reserves.get(a).calculateUtilizationRatio(), 0)
-  // Auto-compounding rewards: a fixed amount of the vault's token per second, paid into the vault (so into its share
-  // value) while the reward balance lasts. Shown as APY on top of the supply APY, as Kamino does.
-  const ri = state.rewardInfo
-  const rewardsLeft = Number(ri.rewardsAvailable) / 10 ** dec
-  const perSecond = Number(ri.rewardPerSecond) / 10 ** dec
+  // Rewards shown as APY on top of the supply APY, as Kamino does.
   // = klend-sdk's calculateVaultRewardsAprApy (not exported): yearly rewards / vault value, linear (a fixed amount, not a rate).
   const rewardsApy = rewardsLeft > 0 && total > 0 ? ((perSecond * SECONDS_PER_YEAR) / total) * 100 : 0
   // Oracles behind the vault's token price in its reserves (Scope feeds).
   const oracles = [...new Set(reserveAddrs.map((a) => String(reserves.get(a).state.config.tokenInfo.scopeConfiguration.priceFeed)))]
-  const live = { kv: KaminoVault.loadWithClientAndState(vaultClient, address(v.address), state), state, reserves, perShare, now }
+  const live = { kv: KaminoVault.loadWithClientAndState(vaultClient, address(v.address), state), state, reserves, perShare: perShareNow, now }
   return {
     live,
     view: {
@@ -80,10 +87,10 @@ export async function readVault(v, markets, now, reserveMetrics) {
       rewards: rewardsApy > 0 ? { symbol: token?.name ?? '', perWeek: perSecond * 604_800, left: rewardsLeft, daysLeft: rewardsLeft / perSecond / 86_400 } : null,
       borrowed,
       utilization: total > 0 ? (borrowed / total) * 100 : 0,
-      tokensPerShare: n(perShare),
+      tokensPerShare: n(perShareNow),
       total,
       totalUsd: total * price,
-      available: n(holdings.available),
+      available: n(holdings.available) + vested,
       invested: n(holdings.invested),
       bufferTarget: n(target.targetUnallocatedAmount), // tokens kept uninvested to serve withdrawals at once
       depositCap: Number(state.depositCap) / 10 ** Number(state.tokenMintDecimals),
