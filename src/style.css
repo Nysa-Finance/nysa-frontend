@@ -147,7 +147,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 
 /* ---------- page grids ---------- */
 .ln-grid { grid-template-columns: 1.8fr 1fr 1.4fr 1fr 1.2fr; }
-.bw-grid { grid-template-columns: 1.8fr 1fr 1.4fr 1.6fr; }
+.bw-grid { grid-template-columns: 1.6fr 1fr .8fr 1fr 1.3fr; }
 .dp-grid { grid-template-columns: 1.2fr 1.5fr 1fr 1.5fr; }
 .pl-grid { grid-template-columns: 1.1fr .9fr 1.2fr .9fr .6fr 1.4fr; }
 .toggle { margin-bottom: 22px; max-width: 380px; }
