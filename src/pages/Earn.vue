@@ -86,7 +86,7 @@ const go = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query:
 </template>
 
 <style scoped>
-.ea-grid { grid-template-columns: 1.8fr 1fr 1fr 1.1fr 1fr 1.1fr auto; }
+.ea-grid { grid-template-columns: 1.8fr 1fr 1fr 1.1fr 1fr 1.1fr 110px; } /* fixed last column: the header has no button to size it */
 .vault-id { display: flex; align-items: center; gap: 12px; }
 .name-col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .act { justify-content: flex-end; }
