@@ -81,7 +81,7 @@ share, utilization and APY; its **exposure** (the markets it is allocated to and
   buffer kept uninvested for instant withdrawals), capped per reserve. Kamino's bot syncs vaults to them about every
   15 minutes; the Exposure donut splits uninvested tokens into the buffer and what is awaiting sync.
 - `/earn`: vaults with network, infra (Kamino), APY (⚡ breakdown), exposure (collateral icons), Total Supply (collateral
-  + loan asset supplied in the exposure markets) and a Deposit button.
+  + loan asset supplied in the exposure markets); a row (a card on mobile) opens the vault.
 - `/earn/:id`: Exposure (allocation donut, `pieSlices`/`arcPath` in `src/logic.js`, and markets), Realized APY from the vault's
   share value, Market Updates of the vault and its exposure markets, Fees (management, performance, withdrawal) and
   Addresses (vault, admin, allocation admin, oracle); rewards boost card; Deposit / Withdraw panel (`VaultPanel.vue`).
