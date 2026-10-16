@@ -77,6 +77,9 @@ share, utilization and APY; its **exposure** (the markets it is allocated to and
 - APY = supply APY (invested share × each reserve's supply APY, `getVaultActualAPY`) + rewards APY: the vault's
   auto-compounding rewards (`rewardInfo`, paid per second into the vault while the funded balance lasts) over its AUM,
   as on Kamino. Utilization = Σ invested × reserve utilization / AUM.
+- Allocations are targets (`getVaultComputedReservesAllocation`): weights plus the unallocated weight (a liquidity
+  buffer kept uninvested for instant withdrawals), capped per reserve. Kamino's bot syncs vaults to them about every
+  15 minutes; the Exposure donut splits uninvested tokens into the buffer and what is awaiting sync.
 - `/earn`: vaults with network, infra (Kamino), APY (⚡ breakdown), exposure (collateral icons), Total Supply (collateral
   + loan asset supplied in the exposure markets) and a Deposit button.
 - `/earn/:id`: Exposure (allocation donut, `pieSlices`/`arcPath` in `src/logic.js`, and markets), Realized APY from the vault's

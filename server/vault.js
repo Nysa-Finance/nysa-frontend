@@ -8,6 +8,7 @@ import { rpc } from './rpc.js'
 
 export const vaultClient = new KaminoVaultClient(rpc, DEFAULT_RECENT_SLOT_DURATION_MS)
 const SECONDS_PER_YEAR = 365.242199 * 24 * 60 * 60 // as klend-sdk
+const U64_MAX = '18446744073709551615' // an allocation cap of u64::MAX = uncapped
 const n = (d) => (d == null ? 0 : Number(d.toString()))
 const tokenByReserve = new Map(Object.values(TOKENS).map((t) => [t.reserve, t]))
 
@@ -19,15 +20,20 @@ export async function readVault(v, markets, now, reserveMetrics) {
   const reserveAddrs = vaultClient.getVaultReserves(state)
   const loaded = [...markets.values()].flatMap((m) => [...m.reserves.values()])
   const reserves = new Map(await Promise.all(reserveAddrs.map(async (a) => [a, loaded.find((r) => r.address === a) ?? (await getSingleReserve(a, rpc, DEFAULT_RECENT_SLOT_DURATION_MS))])))
-  const [holdings, perShare, apy] = await Promise.all([
+  const [holdings, perShare, apy, target] = await Promise.all([
     vaultClient.getVaultHoldings(state, now, reserves, now),
     vaultClient.getTokensPerShareSingleVault(state, now, reserves, now),
     vaultClient.getVaultActualAPY(state, now, reserves), // invested share × each reserve's supply APY, like Kamino's
+    // Where the vault should be: weights (plus the unallocated weight, a liquidity buffer) and caps, as the on-chain
+    // invest computes them. Kamino's bot syncs the vault to it about every 15 minutes.
+    vaultClient.getVaultComputedReservesAllocation(state, now, reserves, now),
   ])
   const token = Object.values(TOKENS).find((t) => t.mint === String(state.tokenMint))
   const price = token ? reserveMetrics[token.token_id]?.price ?? 1 : 1
   const total = n(holdings.totalAUMIncludingFees) - n(holdings.pendingFees)
   const weights = new Map(vaultClient.getVaultAllocations(state))
+  const dec = Number(state.tokenMintDecimals)
+  const caps = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), String(x.tokenAllocationCap)]))
 
   // Exposure: each allocated reserve, its market (a LIVE market when it is one of ours) and that market's collateral.
   const allocations = reserveAddrs.map((a) => {
@@ -41,8 +47,10 @@ export async function readVault(v, markets, now, reserveMetrics) {
       marketName: m?.name ?? null,
       collateral: m?.collateral ?? [],
       weight: Number(weights.get(a)?.targetWeight ?? 0),
+      cap: caps.get(String(a)) === U64_MAX ? null : Number(caps.get(String(a))) / 10 ** dec, // tokens; null = uncapped
       invested,
       share: total > 0 ? (invested / total) * 100 : 0,
+      targetShare: total > 0 ? (n(target.targetReservesAllocation.get(a)) / total) * 100 : 0,
       supplyApy: (tokenByReserve.get(String(a)) && reserveMetrics[tokenByReserve.get(String(a)).token_id]?.supplyAPR) ?? r.totalSupplyAPY(now) * 100,
     }
   })
@@ -51,7 +59,6 @@ export async function readVault(v, markets, now, reserveMetrics) {
   const borrowed = reserveAddrs.reduce((s, a) => s + n(holdings.investedInReserves.get(a)) * reserves.get(a).calculateUtilizationRatio(), 0)
   // Auto-compounding rewards: a fixed amount of the vault's token per second, paid into the vault (so into its share
   // value) while the reward balance lasts. Shown as APY on top of the supply APY, as Kamino does.
-  const dec = Number(state.tokenMintDecimals)
   const ri = state.rewardInfo
   const rewardsLeft = Number(ri.rewardsAvailable) / 10 ** dec
   const perSecond = Number(ri.rewardPerSecond) / 10 ** dec
@@ -78,6 +85,7 @@ export async function readVault(v, markets, now, reserveMetrics) {
       totalUsd: total * price,
       available: n(holdings.available),
       invested: n(holdings.invested),
+      bufferTarget: n(target.targetUnallocatedAmount), // tokens kept uninvested to serve withdrawals at once
       depositCap: Number(state.depositCap) / 10 ** Number(state.tokenMintDecimals),
       minDeposit: Number(state.minDepositAmount) / 10 ** Number(state.tokenMintDecimals),
       // Charged on withdrawals and left in the vault (set on-chain by the curator).
