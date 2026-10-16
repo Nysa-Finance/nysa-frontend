@@ -57,6 +57,11 @@ const go = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query:
 .vault-id { display: flex; align-items: center; gap: 12px; }
 .name-col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .act { justify-content: flex-end; }
+/* Mobile: the whole card opens the vault, so no Deposit button; a little more air between rows. */
+@media (max-width: 860px) {
+  .act { display: none; }
+  .n-tr.ea-grid { gap: 12px; }
+}
 .name { font-weight: 600; }
 .hint { margin-top: 12px; color: var(--n-text-4); font-size: 12px; line-height: 1.6; }
 </style>
