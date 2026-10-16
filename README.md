@@ -73,13 +73,17 @@ Mobile browsers have no wallet extensions (`src/wallets.js`):
 ## Earn vaults
 Lending goes through Nysa-curated Kamino Earn vaults (kVaults), e.g. **RWA Prime** (`VAULTS` in `src/config.js`: address,
 URL id and description only). `server/vault.js` reads each vault with the market cache: allocations, holdings, value per
-share and APY; its **exposure** (the markets it is allocated to and their collateral) comes from the on-chain allocation.
-- `/earn`: vaults with APY, exposure (collateral icons) and Total Supply (collateral + loan asset supplied in the exposure markets).
+share, utilization and APY; its **exposure** (the markets it is allocated to and their collateral) comes from the on-chain allocation.
+- APY = supply APY (invested share × each reserve's supply APY, `getVaultActualAPY`) + rewards APY: the vault's
+  auto-compounding rewards (`rewardInfo`, paid per second into the vault while the funded balance lasts) over its AUM,
+  as on Kamino. Utilization = Σ invested × reserve utilization / AUM.
+- `/earn`: vaults with network, infra (Kamino), APY (⚡ breakdown), exposure (collateral icons), Total Supply (collateral
+  + loan asset supplied in the exposure markets) and a Deposit button.
 - `/earn/:id`: Exposure (allocation donut, `pieSlices`/`arcPath` in `src/logic.js`, and markets), Realized APY from the vault's
-  share value, Market Updates of the vault and its exposure markets; Deposit / Withdraw panel (`VaultPanel.vue`).
+  share value, Market Updates of the vault and its exposure markets, Fees (management, performance, withdrawal) and
+  Addresses (vault, admin, allocation admin, oracle); rewards boost card; Deposit / Withdraw panel (`VaultPanel.vue`).
 - Transactions `vault-deposit` (min shares out, then `invest` into the allocated reserves in the same transaction, sized
-  on-chain, as fallback for Kamino's crank) and `vault-withdraw` (shares worth the amount, or all). The withdrawal fee
-  set on-chain is shown in the panel.
+  on-chain, as fallback for Kamino's crank) and `vault-withdraw` (shares worth the amount, or all).
 - `/borrow/:id` is a market's borrow page (risk parameters, rate model, addresses, due diligence). `?mode=withdraw`
   withdraws collateral, or USDC lent to the market directly before the vaults (Portfolio links there).
 - Old links redirect: `/` and `/lend` → `/earn`, `/market/:id?mode=lend` → the vault, other `/market/:id` → `/borrow/:id`.

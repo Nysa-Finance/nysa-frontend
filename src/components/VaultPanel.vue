@@ -2,9 +2,9 @@
 // Deposit into / withdraw from an Earn vault (kVault). Amounts are in the vault's token; the backend turns a withdrawal
 // into shares and invests new deposits in the vault's markets (server/tx.js).
 import { ref, computed, watch } from 'vue'
-import { state, sendVaultAction, useTx } from '../store.js'
+import { state, sendVaultAction, useTx, vaultApyNote as apyNote } from '../store.js'
 import { tok } from '../config.js'
-import { pct, amt, usdFull, num, floorTo, coversAll } from '../logic.js'
+import { pct, amt, num, floorTo, coversAll } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({ vault: Object, live: Object, initialTab: String })
@@ -17,7 +17,6 @@ const on = computed(() => !!state.address)
 const position = computed(() => state.vaultPositions[props.vault.id]?.value ?? 0)
 const wallet = computed(() => state.balances[token.value.token_id] ?? 0)
 const available = computed(() => (tab.value === 'deposit' ? wallet.value : position.value))
-const price = computed(() => state.reserves[token.value.token_id]?.price ?? 1)
 const capRoom = computed(() => Math.max((props.live?.depositCap ?? Infinity) - (props.live?.total ?? 0), 0))
 
 const warning = computed(() => {
@@ -52,7 +51,10 @@ async function submit() {
       <button :class="{ on: tab === 'deposit' }" @click="tab = 'deposit'">Deposit</button>
       <button :class="{ on: tab === 'withdraw' }" @click="tab = 'withdraw'">Withdraw</button>
     </div>
-    <div class="n-kv" style="margin-bottom: 10px"><span class="k">Vault APY</span><span class="v accent">{{ live ? pct(live.apy) : '—' }}</span></div>
+    <div class="n-kv" style="margin-bottom: 10px">
+      <span class="k">Vault APY</span>
+      <span class="v accent">{{ live ? pct(live.apy) : '—' }}<span v-if="live?.rewardsApy" class="n-boost" :title="apyNote(live)" :aria-label="apyNote(live)">⚡</span></span>
+    </div>
     <div class="n-kv" style="margin-bottom: 10px"><span class="k">Your deposit</span><span class="v">{{ on ? `${amt(position)} ${token.name}` : '—' }}</span></div>
     <div class="n-kv" style="margin-bottom: 20px">
       <span class="k">{{ tab === 'deposit' ? 'Wallet balance' : 'Available to withdraw' }}</span>
@@ -63,11 +65,7 @@ async function submit() {
     <div class="n-quick" style="margin-bottom: 14px">
       <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
     </div>
-    <div class="n-kv" style="margin-bottom: 10px"><span class="k">Value</span><span class="v">{{ usdFull(num(amount) * price) }}</span></div>
-    <div v-if="live && (live.withdrawPenaltyPct || live.withdrawPenaltyFixed)" class="n-kv" style="margin-bottom: 18px">
-      <span class="k">Withdrawal fee</span><span class="v">{{ pct(live.withdrawPenaltyPct, 2) }}<template v-if="live.withdrawPenaltyFixed"> + {{ live.withdrawPenaltyFixed }} {{ token.name }}</template></span>
-    </div>
-    <div v-else style="margin-bottom: 8px" />
+    <div style="margin-bottom: 4px" />
     <p v-if="all && !warning" class="n-note" style="margin-bottom: 16px">Withdrawing in full: every share is redeemed.</p>
     <p v-if="warning" class="n-warn" style="margin-bottom: 16px">{{ warning }}</p>
     <button class="n-btn-block" :disabled="!canSubmit" @click="submit">{{ tab === 'deposit' ? 'Deposit' : 'Withdraw' }} {{ token.name }}</button>

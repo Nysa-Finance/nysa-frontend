@@ -2,7 +2,8 @@
 
 const ok = (v) => typeof v === 'number' && Number.isFinite(v)
 
-export const pct = (v, d = 2) => (ok(v) ? `${v.toFixed(d)}%` : '—')
+// Thousands get separators (an incentive APY on a tiny vault can reach 11,214.30%).
+export const pct = (v, d = 2) => (!ok(v) ? '—' : Math.abs(v) >= 1000 ? `${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}%` : `${v.toFixed(d)}%`)
 export const usd = (v) => {
   if (!ok(v)) return '—'
   const a = Math.abs(v)

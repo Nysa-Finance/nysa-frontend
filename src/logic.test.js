@@ -5,6 +5,7 @@ assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
 assert.equal(usd(NaN), '—')
 assert.equal(pct(3.0712), '3.07%')
+assert.equal(pct(11214.304957), '11,214.30%')
 assert.equal(compact(250000, 'USDY'), '250K USDY')
 
 const pts = [[0, 0], [90, 3.07], [100, 11.3]] // simplified curve

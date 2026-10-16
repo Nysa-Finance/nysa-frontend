@@ -7,6 +7,7 @@ import { LIVE, VAULTS, TOKENS, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
 
 export const vaultClient = new KaminoVaultClient(rpc, DEFAULT_RECENT_SLOT_DURATION_MS)
+const SECONDS_PER_YEAR = 365.242199 * 24 * 60 * 60 // as klend-sdk
 const n = (d) => (d == null ? 0 : Number(d.toString()))
 const tokenByReserve = new Map(Object.values(TOKENS).map((t) => [t.reserve, t]))
 
@@ -21,7 +22,7 @@ export async function readVault(v, markets, now, reserveMetrics) {
   const [holdings, perShare, apy] = await Promise.all([
     vaultClient.getVaultHoldings(state, now, reserves, now),
     vaultClient.getTokensPerShareSingleVault(state, now, reserves, now),
-    vaultClient.getVaultTheoreticalAPY(state, now, reserves),
+    vaultClient.getVaultActualAPY(state, now, reserves), // invested share × each reserve's supply APY, like Kamino's
   ])
   const token = Object.values(TOKENS).find((t) => t.mint === String(state.tokenMint))
   const price = token ? reserveMetrics[token.token_id]?.price ?? 1 : 1
@@ -46,6 +47,18 @@ export async function readVault(v, markets, now, reserveMetrics) {
     }
   })
   const exposure = LIVE.filter((m) => allocations.some((x) => x.market === m.kaminoMarket))
+  // Utilization as Kamino shows it: the part of the vault's tokens that borrowers hold (uninvested tokens count as idle).
+  const borrowed = reserveAddrs.reduce((s, a) => s + n(holdings.investedInReserves.get(a)) * reserves.get(a).calculateUtilizationRatio(), 0)
+  // Auto-compounding rewards: a fixed amount of the vault's token per second, paid into the vault (so into its share
+  // value) while the reward balance lasts. Shown as APY on top of the supply APY, as Kamino does.
+  const dec = Number(state.tokenMintDecimals)
+  const ri = state.rewardInfo
+  const rewardsLeft = Number(ri.rewardsAvailable) / 10 ** dec
+  const perSecond = Number(ri.rewardPerSecond) / 10 ** dec
+  // = klend-sdk's calculateVaultRewardsAprApy (not exported): yearly rewards / vault value, linear (a fixed amount, not a rate).
+  const rewardsApy = rewardsLeft > 0 && total > 0 ? ((perSecond * SECONDS_PER_YEAR) / total) * 100 : 0
+  // Oracles behind the vault's token price in its reserves (Scope feeds).
+  const oracles = [...new Set(reserveAddrs.map((a) => String(reserves.get(a).state.config.tokenInfo.scopeConfiguration.priceFeed)))]
   const live = { kv: KaminoVault.loadWithClientAndState(vaultClient, address(v.address), state), state, reserves, perShare, now }
   return {
     live,
@@ -54,7 +67,12 @@ export async function readVault(v, markets, now, reserveMetrics) {
       address: v.address,
       name: Buffer.from(state.name).toString('utf8').replace(/\0+$/, '') || v.name,
       tokenId: token?.token_id ?? null,
-      apy: n(apy.netAPY) * 100,
+      supplyApy: n(apy.netAPY) * 100,
+      rewardsApy,
+      apy: n(apy.netAPY) * 100 + rewardsApy,
+      rewards: rewardsApy > 0 ? { symbol: token?.name ?? '', perWeek: perSecond * 604_800, left: rewardsLeft, daysLeft: rewardsLeft / perSecond / 86_400 } : null,
+      borrowed,
+      utilization: total > 0 ? (borrowed / total) * 100 : 0,
       tokensPerShare: n(perShare),
       total,
       totalUsd: total * price,
@@ -69,6 +87,9 @@ export async function readVault(v, markets, now, reserveMetrics) {
       managementFee: Number(state.managementFeeBps) / 100,
       sharesMint: String(state.sharesMint),
       sharesDecimals: Number(state.sharesMintDecimals),
+      admin: String(state.vaultAdminAuthority),
+      allocationAdmin: String(state.allocationAdmin),
+      oracles,
       allocations,
       // Markets the vault is exposed to: their ids, collateral tokens, and everything supplied in them (collateral +
       // loan asset), which the Earn table shows as Total Supply.

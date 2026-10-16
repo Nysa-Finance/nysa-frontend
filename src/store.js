@@ -72,6 +72,9 @@ export const rewardAprOf = (id) => state.rewards[id]?.apr ?? 0
 export const boostNote = (id, supplyApy) =>
   `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(id))} ${state.rewards[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
 
+// Tooltip for a vault's boosted APY: "1.47% supply APY + 11,212.83% USDC rewards APY, auto-compounded".
+export const vaultApyNote = (v) => `${pct(v.supplyApy)} supply APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
+
 // Risk parameters of a collateral/liability pair. Governance changes them (Market Updates), so the live on-chain
 // values win; config.js only fills in until the first market update arrives.
 export function riskOf(pair) {
