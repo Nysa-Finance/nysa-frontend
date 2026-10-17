@@ -55,7 +55,9 @@ const D = 86400
 const hist = Array.from({ length: 41 }, (_, i) => ({ ts: i * D, rate: 1.0001 ** i }))
 const w30 = windowApy(hist, 30), w7 = windowApy(hist, 7)
 assert.ok(w30.full && w7.full && Math.abs(w30.spanDays - 30) < 1e-9)
-assert.ok(Math.abs(w30.apy - (1.0001 ** 365 - 1) * 100) < 1e-6)
+assert.ok(Math.abs(w30.apy - (1.0001 ** 30 - 1) * (365 / 30) * 100) < 1e-6)
+// A rewards-boosted day (+9.53%) annualizes to ~3,480%, not 10^15 %.
+assert.ok(Math.abs(realizedApy(1, 1.0953, 1) - 3478.45) < 1e-6)
 // 19-day-old reserve: "30D" falls back to since-launch and says so.
 const young = [{ ts: 0, rate: 1 }, { ts: 19 * D, rate: 1.001 }]
 assert.deepEqual([windowApy(young, 30).full, windowApy(young, 30).spanDays], [false, 19])

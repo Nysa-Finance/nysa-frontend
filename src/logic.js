@@ -139,7 +139,9 @@ export const amtDust = (v, d = 4) => (v > 0 && v < 10 ** -d ? `< ${(10 ** -d).to
 
 // ---- Realized APY (from the growth of one deposit share's value, i.e. liquidity per Kamino cToken) ----
 // points: [{ ts (unix sec), rate (liquidity per cToken) }], oldest first.
-export const realizedApy = (from, to, days) => (days > 0 && from > 0 ? ((to / from) ** (365 / days) - 1) * 100 : null)
+// Annualized linearly (growth × 365 / days), like the live APY's rewards part: compounding a short window of a
+// rewards-boosted vault (+9% in a day) gives absurd figures (10^15 %); for ordinary rates the two barely differ.
+export const realizedApy = (from, to, days) => (days > 0 && from > 0 ? (to / from - 1) * (365 / days) * 100 : null)
 
 // Realized APY over the last `days`, ending at the latest point. With shorter history it uses the oldest point
 // and says so (full=false), e.g. a 19-day-old reserve reports its "30D" as since-launch.

@@ -18,7 +18,7 @@ const lastTs = computed(() => recorded.value.at(-1)?.ts)
 // ---- chart ----
 const series = computed(() => dailyApySeries(recorded.value))
 const COLOR = '#EC008C'
-const H = 220, L = 48, R = 12, T = 10, B = 34
+const H = 220, R = 12, T = 10, B = 34
 const box = ref(null)
 const W = ref(600)
 // The chart only renders once history exists, so (re)attach the width observer whenever it appears.
@@ -27,8 +27,11 @@ watch(box, (el) => { ro.disconnect(); if (el) ro.observe(el) }, { flush: 'post' 
 onUnmounted(() => ro.disconnect())
 const t0 = computed(() => series.value[0]?.ts ?? 0)
 const t1 = computed(() => series.value.at(-1)?.ts ?? 1)
-const x = (ts) => L + (t1.value === t0.value ? 0.5 : (ts - t0.value) / (t1.value - t0.value)) * (W.value - L - R)
+const x = (ts) => L.value + (t1.value === t0.value ? 0.5 : (ts - t0.value) / (t1.value - t0.value)) * (W.value - L.value - R)
 const yAxis = computed(() => niceTicks(Math.max(...series.value.map((p) => p.apy), props.currentApy ?? 0, 0.1)))
+const tickLabel = (t) => `${t.toLocaleString('en-US', { maximumFractionDigits: 2 })}%`
+// Left margin sized to the longest axis label (11px text), so "8,000%" isn't cut off.
+const L = computed(() => Math.max(48, 14 + 6.5 * Math.max(...yAxis.value.ticks.map((t) => tickLabel(t).length))))
 const y = (v) => T + (1 - v / yAxis.value.top) * (H - T - B)
 const path = computed(() => series.value.map((p, i) => `${i ? 'L' : 'M'}${x(p.ts).toFixed(1)},${y(p.apy).toFixed(1)}`).join(''))
 const date = (ts) => new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
@@ -60,7 +63,7 @@ function onMove(e) {
     <div class="n-stat">
       <div class="k">Current APY</div>
       <div class="v sm accent">{{ pct(currentApy) }}</div>
-      <div class="s">live supply APY</div>
+      <div class="s">live APY</div>
     </div>
   </div>
 
@@ -73,9 +76,9 @@ function onMove(e) {
         <g font-size="11" fill="#8a8a8a" font-weight="300">
           <template v-for="t in yAxis.ticks" :key="'y' + t">
             <line :x1="L" :x2="W - R" :y1="y(t)" :y2="y(t)" stroke="#141414" />
-            <text :x="L - 8" :y="y(t) + 4" text-anchor="end">{{ +t.toFixed(2) }}%</text>
+            <text :x="L - 8" :y="y(t) + 4" text-anchor="end">{{ tickLabel(t) }}</text>
           </template>
-          <text v-for="p in xTicks" :key="'x' + p.ts" :x="x(p.ts)" :y="H - B + 16" :text-anchor="x(p.ts) > W - R - 30 ? 'end' : x(p.ts) < L + 30 ? 'start' : 'middle'">{{ date(p.ts) }}</text>
+          <text v-for="p in xTicks" :key="'x' + p.ts" :x="x(p.ts)" :y="H - B + 16" :text-anchor="x(p.ts) > W - R - 30 ? 'end' : x(p.ts) < L.value + 30 ? 'start' : 'middle'">{{ date(p.ts) }}</text>
         </g>
         <line :x1="L" :x2="W - R" :y1="H - B" :y2="H - B" stroke="#1a1a1a" />
         <path :d="path" fill="none" :stroke="COLOR" stroke-width="2" stroke-linejoin="round" />
