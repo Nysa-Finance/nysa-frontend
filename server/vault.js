@@ -1,13 +1,18 @@
 // Kamino Earn vaults (kVaults) curated by Nysa, e.g. "RWA Prime": a vault takes one token (USDC) and allocates it to
 // reserves of one or more Kamino markets, its exposure. Read with the market cache (market.js), every refresh.
 // Which markets a vault is exposed to comes from its on-chain allocation, never from config.
+import { createRequire } from 'node:module'
 import { KaminoVaultClient, KaminoVault, getSingleReserve, DEFAULT_RECENT_SLOT_DURATION_MS } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
 import Decimal from 'decimal.js'
 import { LIVE, VAULTS, TOKENS, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
 
+const require = createRequire(import.meta.url)
+const { fetchFarmState } = require('@kamino-finance/farms-sdk')
+
 export const vaultClient = new KaminoVaultClient(rpc, DEFAULT_RECENT_SLOT_DURATION_MS)
+const NONE = '11111111111111111111111111111111'
 const SECONDS_PER_YEAR = 365.242199 * 24 * 60 * 60 // as klend-sdk
 const U64_MAX = '18446744073709551615' // an allocation cap of u64::MAX = uncapped
 const n = (d) => (d == null ? 0 : Number(d.toString()))
@@ -73,7 +78,10 @@ export async function readVault(v, markets, now, reserveMetrics) {
   const rewardsApy = rewardsLeft > 0 && total > 0 ? ((perSecond * SECONDS_PER_YEAR) / total) * 100 : 0
   // Oracles behind the vault's token price in its reserves (Scope feeds).
   const oracles = [...new Set(reserveAddrs.map((a) => String(reserves.get(a).state.config.tokenInfo.scopeConfiguration.priceFeed)))]
-  const live = { kv: KaminoVault.loadWithClientAndState(vaultClient, address(v.address), state), state, reserves, perShare: perShareNow, now }
+  // The vault farm, where Kamino's UI stakes deposited shares: positions and withdrawals count (and unstake) them.
+  const farmAddr = String(state.vaultFarm)
+  const farm = farmAddr === NONE ? null : { address: farmAddr, state: (await fetchFarmState(rpc, address(farmAddr))).data }
+  const live = { kv: KaminoVault.loadWithClientAndState(vaultClient, address(v.address), state), state, reserves, perShare: perShareNow, now, farm }
   return {
     live,
     view: {

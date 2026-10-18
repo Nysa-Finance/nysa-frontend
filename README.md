@@ -32,7 +32,7 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 | `server/tx.js` | Builds deposit / withdraw / borrow / repay / claim with klend-sdk + farms-sdk, simulates, returns unsigned |
 | `server/relay.js` | Transactions built or relayed here: what `/api/tx/send` relays, which confirmations refresh the market |
 | `server/updates.js` | Market index: admin changes (Market Updates), liquidations and every obligation (address + owner), from chain history |
-| `server/analytics.js` | Open positions with health factor for the Analytics page |
+| `server/analytics.js` | Analytics page: open market positions with health factor, and each vault's depositors |
 | `server/snapshot.js` | Daily Farm Points + APY history snapshot |
 | `server/storage.js` | Files in `DATA_DIR` (atomic writes) |
 
@@ -89,6 +89,8 @@ share, utilization and APY; its **exposure** (the markets it is allocated to and
   on-chain, as fallback for Kamino's crank) and `vault-withdraw` (shares worth the amount, or all).
 - `/borrow/:id` is a market's borrow page (risk parameters, rate model, addresses, due diligence). `?mode=withdraw`
   withdraws collateral, or USDC lent to the market directly before the vaults (Portfolio links there).
+- Shares staked in the vault farm (Kamino's UI stakes deposits there) count everywhere: Portfolio, Farm Points,
+  Analytics (`vaultShares` in `server/account.js`), and `vault-withdraw` unstakes them in the same transaction.
 - Old links redirect: `/` and `/lend` → `/earn`, `/market/:id?mode=lend` → the vault, other `/market/:id` → `/borrow/:id`.
 Verified end to end on a Surfpool mainnet fork (deposit + invest, withdraw all).
 

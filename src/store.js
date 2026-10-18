@@ -420,7 +420,9 @@ export function loadMarketUpdates() {
 }
 
 // Every open position, riskiest first (hf null = no debt).
-export const loadPositions = () => api('/api/analytics').then((a) => a.positions)
+// Market positions (obligations) and each vault's holders ({ [vaultId]: [{ owner, wallet, staked }] } or null).
+export const loadAnalytics = () => api('/api/analytics')
+export const loadPositions = () => loadAnalytics().then((a) => a.positions)
 // Every liquidation in the live markets, newest first (decoded on-chain by the backend).
 export const loadLiquidations = () => api('/api/liquidations').then((a) => a.liquidations)
 
