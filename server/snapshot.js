@@ -5,13 +5,13 @@
 // Run once by hand: `docker compose exec app node server/snapshot.js`.
 import { pathToFileURL } from 'node:url'
 import { getCurrentLedgerInstant } from '@kamino-finance/klend-sdk'
-import { address, fetchEncodedAccounts } from '@solana/kit'
+import { address } from '@solana/kit'
 import { LIVE, VAULTS, TOKENS, tokensOf } from '../src/config.js'
 import { parsePoints, snapshotPoints, pointsCsv } from '../src/logic.js'
 import { rpc } from './rpc.js'
 import { loadMarket } from './market.js'
 import { readVault } from './vault.js'
-import { ataOf } from './account.js'
+import { vaultShares } from './account.js'
 import { refreshIndex } from './updates.js'
 import { read, write, POINTS, HISTORY } from './storage.js'
 
@@ -63,7 +63,8 @@ async function readMarkets(history) {
 }
 
 // A vault's share value for Realized APY (exactly 1 when the vault was created), and its depositors' shares in USD
-// added to their Farm Points balance. Depositors come from the transaction index (no getProgramAccounts).
+// (in the wallet and staked in the vault farm) added to their Farm Points balance. Depositors come from the
+// transaction index.
 async function readVaultDay(v, markets, now, ts, index, history, balances) {
   const { live, view } = await readVault(v, markets, now, {})
   const h = ((history.vaults ??= {})[v.id] ??= { inception: Number(live.state.creationTimestamp), points: [] })
@@ -72,14 +73,10 @@ async function readVaultDay(v, markets, now, ts, index, history, balances) {
   const reserve = token && markets.get(LIVE.find((m) => tokensOf(m).includes(token))?.kaminoMarket)?.getReserveByAddress(address(token.reserve))
   const price = reserve ? reserve.getOracleMarketPrice().toNumber() : 1
   const users = index.vaultUsers?.[v.address] ?? []
-  const tokenProgram = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') // shares are SPL Token
-  const atas = await Promise.all(users.map((u) => ataOf(address(u), live.state.sharesMint, tokenProgram)))
-  const accounts = atas.length ? await fetchEncodedAccounts(rpc, atas) : []
-  users.forEach((u, i) => {
-    const a = accounts[i]
-    const shares = a?.exists ? Number(Buffer.from(a.data).readBigUInt64LE(64)) / 10 ** Number(live.state.sharesMintDecimals) : 0
+  for (const [u, { wallet, staked }] of await vaultShares(live, users)) {
+    const shares = wallet + staked
     if (shares > 0) balances.set(u, (balances.get(u) ?? 0) + shares * Number(live.perShare.toString()) * price)
-  })
+  }
 }
 
 export async function runSnapshot() {

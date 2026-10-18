@@ -10,7 +10,7 @@ import { rpc } from './rpc.js'
 import { getLive, getVault, reserveOf, farms, num } from './market.js'
 
 const require = createRequire(import.meta.url)
-const { decodeUserState } = require('@kamino-finance/farms-sdk')
+const { decodeUserState, getUserStatePDA } = require('@kamino-finance/farms-sdk')
 
 const TTL_MS = 15_000
 const TOKEN_PROGRAM = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') // kVault shares are SPL Token
@@ -75,15 +75,29 @@ async function readAccount(wallet) {
   return { balances, positions, claimable, vaults: await vaultPositions(owner) }
 }
 
-// The wallet's shares in each vault (one getMultipleAccounts) and what they're worth in the vault's token.
+// Each owner's shares in a vault: in the wallet (shares ATA) and staked in the vault farm, where Kamino's UI puts
+// deposits (as klend-sdk counts them: the active stake). -> Map owner -> { wallet, staked } in shares.
+export async function vaultShares(live, owners, config) {
+  const dec = Number(live.state.sharesMintDecimals)
+  const atas = await Promise.all(owners.map((o) => ataOf(address(o), live.state.sharesMint, TOKEN_PROGRAM)))
+  const pdas = live.farm ? await Promise.all(owners.map((o) => getUserStatePDA(farms.getProgramID(), address(live.farm.address), address(o)))) : []
+  const keys = [...atas, ...pdas], accounts = []
+  for (let i = 0; i < keys.length; i += 100) accounts.push(...await fetchEncodedAccounts(rpc, keys.slice(i, i + 100), config)) // RPC limit
+  return new Map(owners.map((o, i) => {
+    const user = pdas.length && accounts[atas.length + i]?.exists ? decodeUserState(accounts[atas.length + i]).data : null
+    return [o, { wallet: tokenAmount(accounts[i]) / 10 ** dec, staked: user ? stakedShares(user, dec) : 0 }]
+  }))
+}
+// Farm stakes are WAD-scaled lamports (farms-sdk scaleDownWads).
+const stakedShares = (user, dec) => Number(BigInt(user.activeStakeScaled) / 10n ** 18n) / 10 ** dec
+
+// The wallet's shares in each vault (wallet + staked) and what they're worth in the vault's token.
 async function vaultPositions(owner) {
   const vaults = VAULTS.flatMap((v) => { try { return [{ v, live: getVault(v.id) }] } catch { return [] } })
-  const atas = await Promise.all(vaults.map(({ live }) => ataOf(owner, live.state.sharesMint, TOKEN_PROGRAM)))
-  const accounts = atas.length ? await fetchEncodedAccounts(rpc, atas) : []
-  return Object.fromEntries(vaults.map(({ v, live }, i) => {
-    const shares = tokenAmount(accounts[i]) / 10 ** Number(live.state.sharesMintDecimals)
-    return [v.id, { shares, value: shares * num(live.perShare) }]
-  }))
+  return Object.fromEntries(await Promise.all(vaults.map(async ({ v, live }) => {
+    const { wallet, staked } = (await vaultShares(live, [String(owner)])).get(String(owner))
+    return [v.id, { shares: wallet + staked, staked, value: (wallet + staked) * num(live.perShare) }]
+  })))
 }
 
 const cache = new Map() // wallet -> { at, value: Promise }

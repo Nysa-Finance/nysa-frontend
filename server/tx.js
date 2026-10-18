@@ -15,7 +15,7 @@ import { marketById, vaultById, tokensOf, tok } from '../src/config.js'
 import { rpc } from './rpc.js'
 import { getLive, getVault, reserveOf, farms, refreshSoon, NONE } from './market.js'
 import { vaultClient } from './vault.js'
-import { obligationType, pendingRewards, ataOf } from './account.js'
+import { obligationType, pendingRewards, ataOf, vaultShares } from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
 
 const require = createRequire(import.meta.url)
@@ -205,7 +205,8 @@ const VAULT_SLIPPAGE = 0.005 // a deposit must mint at least 99.5% of the shares
 const VAULT_CU = 600_000 // deposit + invest refreshes every allocated reserve: more than the 200k default
 
 async function vaultAction(kind, owner, v, amount, all) {
-  const { kv, state, reserves, perShare, now } = getVault(v.id)
+  const live = getVault(v.id)
+  const { kv, state, reserves, perShare, now, farm } = live
   const signer = createNoopSigner(owner)
   const luts = await fetchLuts(String(state.vaultLookupTable) === NONE ? [] : [state.vaultLookupTable])
   const shareDp = Number(state.sharesMintDecimals)
@@ -236,13 +237,13 @@ async function vaultAction(kind, owner, v, amount, all) {
     }
     return { ...(await simulated(await compile(owner, deposit, luts))), final: true, invested: false }
   }
-  // Withdraw: the shares worth `amount` (or all of them), capped at what the wallet holds.
-  const ata = await ataOf(owner, state.sharesMint, address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')) // shares are SPL Token
-  const [acc] = await fetchEncodedAccounts(rpc, [ata], { commitment: 'confirmed' })
-  const held = new Decimal(acc.exists ? Buffer.from(acc.data).readBigUInt64LE(64).toString() : 0).div(10 ** shareDp)
+  // Withdraw: the shares worth `amount` (or all of them), capped at what the wallet holds, in its wallet and staked in
+  // the vault farm (deposits made on Kamino's UI); klend-sdk unstakes what the wallet lacks in the same transaction.
+  const { wallet, staked } = (await vaultShares(live, [String(owner)], { commitment: 'confirmed' })).get(String(owner))
+  const held = new Decimal(wallet).add(staked).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
   if (held.lte(0)) throw new UserError('You have no shares in this vault')
   const wanted = all ? held : Decimal.min(held, new Decimal(amount).div(perShare.toString()).toDecimalPlaces(shareDp, Decimal.ROUND_UP))
-  const w = await vaultClient.withdrawIxs(signer, kv, wanted, now, reserves, null, null)
+  const w = await vaultClient.withdrawIxs(signer, kv, wanted, now, reserves, staked > 0 ? farm?.state ?? null : null, null)
   return { ...(await simulated(await compile(owner, [buildComputeBudgetIx(VAULT_CU), ...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs], luts))), final: true }
 }
 

@@ -13,7 +13,7 @@ import { RPC_URL, rpcCallsLastHour } from './rpc.js'
 import { getSnapshot, onSnapshot, refreshMarket } from './market.js'
 import { getAccount } from './account.js'
 import { buildTx, sendSigned, txStatus, liquidationInfo, KINDS, UserError } from './tx.js'
-import { getPositions } from './analytics.js'
+import { getPositions, getVaultHolders } from './analytics.js'
 import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
@@ -154,7 +154,11 @@ const routes = [
     if (limited(req, 'status', 120)) return send(res, 429, { error: 'Too many requests' })
     send(res, 200, await txStatus(signature))
   }],
-  ['GET', /^\/api\/analytics$/, async (req, res) => send(res, 200, { positions: await getPositions() }, { maxAge: 30 })],
+  ['GET', /^\/api\/analytics$/, async (req, res) => {
+    // Vault holders are optional: if that read fails, positions still show (and vice versa the request fails).
+    const [positions, vaults] = await Promise.all([getPositions(), getVaultHolders().catch((e) => { console.error('[analytics] vault holders', e?.message); return null })])
+    send(res, 200, { positions, vaults }, { maxAge: 30 })
+  }],
   ['GET', /^\/api\/market-updates$/, async (req, res) => send(res, 200, await marketUpdates(), { maxAge: 60 })],
   ['GET', /^\/api\/liquidations$/, async (req, res) => send(res, 200, await marketLiquidations(), { maxAge: 60 })],
   ['GET', /^\/api\/points$/, async (req, res) => send(res, 200, (await read(POINTS)) ?? EMPTY_POINTS, { type: 'text/csv; charset=utf-8', maxAge: 300 })],
