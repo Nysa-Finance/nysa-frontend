@@ -41,6 +41,7 @@ export const state = reactive({
   walletName: null,
   wallets: [], // detected Wallet Standard wallets
   connectOpen: false,
+  connectError: null, // shown when the connect window reopens (WalletConnect failed while Reown's modal was up)
   points: { board: null, error: null }, // Farm Points leaderboard
   // Phone wallets reached by deeplink (iOS): a transaction waiting for the user to approve it in the wallet app, or its
   // outcome after they come back. { status: 'ready'|'sending'|'success'|'error', label, wallet, url?, signature?, error? }

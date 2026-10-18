@@ -1,32 +1,28 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { renderSVG } from 'uqr'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { state, connectWallet, deeplinkWallets, connectDeeplink } from '../store.js'
 import { MWA_NAME as MWA } from '../wallets.js'
-import { wcState, cancelWalletConnect } from '../walletconnect.js'
 
 const emit = defineEmits(['close'])
 
 const busy = ref(null) // name of the wallet being connected
-const error = ref(null)
+const error = ref(state.connectError) // e.g. WalletConnect failed after this window had closed
+state.connectError = null
 
 async function connect(w) {
+  // WalletConnect opens Reown's own modal (QR code, wallet list): this window steps aside, and comes back on an error.
+  if (w.walletconnect) {
+    emit('close')
+    try { await connectWallet(w) } catch (e) { if (!/cancelled/i.test(e.message)) { state.connectError = e.message; state.connectOpen = true } }
+    return
+  }
   busy.value = w.name
   error.value = null
   try { await connectWallet(w) } catch (e) { error.value = e.message } finally { busy.value = null }
 }
 const onKey = (e) => e.key === 'Escape' && emit('close')
 onMounted(() => addEventListener('keydown', onKey))
-onUnmounted(() => { removeEventListener('keydown', onKey); if (wcState.uri) cancelWalletConnect() })
-
-// WalletConnect pairing: a QR code to scan with the wallet app (computer), or the link itself on a phone.
-const phone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-const qr = computed(() => (wcState.uri ? renderSVG(wcState.uri, { border: 1, pixelSize: 6, blackColor: '#0a0a0a', whiteColor: '#ffffff' }) : ''))
-const copied = ref(false)
-async function copyUri() {
-  try { await navigator.clipboard.writeText(wcState.uri); copied.value = true; setTimeout(() => (copied.value = false), 1500) } catch { /* no clipboard */ }
-}
-function backToList() { cancelWalletConnect(); busy.value = null }
+onUnmounted(() => removeEventListener('keydown', onKey))
 </script>
 
 <template>
@@ -40,18 +36,7 @@ function backToList() { cancelWalletConnect(); busy.value = null }
       </div>
       <p class="cm-sub">Connect a Solana wallet to continue.</p>
       <div class="cm-tabs single"><button class="cm-tab on">Solana</button></div>
-      <div v-if="wcState.uri" class="cm-wc">
-        <template v-if="!phone">
-          <div class="cm-qr" role="img" aria-label="WalletConnect QR code" v-html="qr" />
-          <p class="cm-wc-t">Scan with a Solana wallet app that supports WalletConnect</p>
-        </template>
-        <a v-else class="cm-wc-open" :href="wcState.uri">Open wallet app</a>
-        <div class="cm-wc-actions">
-          <button class="cm-link" @click="copyUri">{{ copied ? 'Link copied' : 'Copy link' }}</button>
-          <button class="cm-link" @click="backToList">← Other wallets</button>
-        </div>
-      </div>
-      <div v-else class="cm-list">
+      <div class="cm-list">
         <button v-for="w in state.wallets" :key="w.name" class="cm-wallet" :disabled="!!busy" @click="connect(w)">
           <!-- Android: Mobile Wallet Adapter opens whichever wallet app you pick (Phantom, Solflare, …) to approve -->
           <span v-if="w.name === MWA" class="cm-wallet-img cm-pair"><img src="/wallets/phantom.svg" alt="" /><img src="/wallets/solflare.svg" alt="" /></span>
@@ -104,12 +89,5 @@ function backToList() { cancelWalletConnect(); busy.value = null }
 .cm-error { margin-top: 18px; background: #f9407512; border: 1px solid rgba(249,64,117,.3); border-radius: 12px; padding: 12px 14px; color: var(--m2); }
 .cm-error-t { font-weight: 700; font-size: 13px; }
 .cm-error-m { font-size: 12px; margin-top: 2px; }
-.cm-wc { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 4px 0; }
-.cm-qr { width: 232px; height: 232px; padding: 8px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
-.cm-qr :deep(svg) { width: 100%; height: 100%; display: block; }
-.cm-wc-t { color: var(--mute); font-size: 13px; text-align: center; }
-.cm-wc-open { width: 100%; padding: 14px; border-radius: 14px; background: var(--grad); color: #fff; font-family: var(--display); font-weight: 600; text-align: center; }
-.cm-wc-actions { display: flex; gap: 18px; }
-.cm-link { color: var(--m1); font-size: 13px; font-family: var(--display); font-weight: 600; }
 .cm-foot { text-align: center; color: var(--faint); font-size: 11.5px; margin-top: 20px; font-family: var(--mono); }
 </style>
