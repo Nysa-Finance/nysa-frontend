@@ -81,7 +81,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
 
   <div v-if="on" class="n-banner fp-banner">
     <span v-if="points">Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span>
-    <span v-else>Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as supplied balance × time, snapshotted daily.</span>
+    <span v-else>Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as supplied balance × time, snapshotted every 12 hours.</span>
     <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'portfolio' })">View leaderboard</button>
   </div>
 

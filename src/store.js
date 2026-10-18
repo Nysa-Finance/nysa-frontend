@@ -405,7 +405,7 @@ export function loadPoints() {
 }
 export const myPoints = () => state.points.board?.rows.find((r) => r.address === state.address) ?? null
 
-// Daily reserve history for Realized APY (recorded by the daily snapshot). Loaded once per page view.
+// Reserve history for Realized APY (recorded by the snapshot every 12 hours). Loaded once per page view.
 let historyReq = null
 export function loadApyHistory() {
   historyReq ??= api('/api/apy-history').catch((e) => { historyReq = null; throw e })
