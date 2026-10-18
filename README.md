@@ -70,6 +70,18 @@ Mobile browsers have no wallet extensions (`src/wallets.js`):
   Compute Budget, System or Lighthouse (wallet guard) (`server/relay.js`, `server/relay.test.js`). Round trip covered by
   `src/wallets.test.js`.
 
+## WalletConnect
+Wallet apps that support WalletConnect for Solana (Trust Wallet, Exodus, OKX, Bitget, Ledger Live, …) connect from any
+device: a QR code on a computer, a link that opens the app on a phone (`src/walletconnect.js`, `ConnectModal.vue`).
+- Shown only when `WALLETCONNECT_PROJECT_ID` (`src/config.js`) is set: create a project on cloud.reown.com and, in its
+  settings, allow only `app.nysa.finance` (the id is public; the allowed domains stop others from using it).
+- `@walletconnect/universal-provider` (pinned) is loaded only when someone picks WalletConnect; telemetry is off. It is
+  wrapped as a Wallet Standard wallet, so the store treats it like the others; the session survives reloads.
+- Transactions are signed in the wallet app (`solana_signTransaction`) and sent by `POST /api/tx/send`, the same relay
+  as the iOS deeplink wallets. A wallet that returns only the signature gets it placed at its signer slot
+  (`withSignature`, tested in `src/wallets.test.js`).
+- CSP (Caddyfile): `wss://relay.walletconnect.org`, `verify.walletconnect.org/.com` and `rpc.walletconnect.org`.
+
 ## Earn vaults
 Lending goes through Nysa-curated Kamino Earn vaults (kVaults), e.g. **RWA Prime** (`VAULTS` in `src/config.js`: address,
 URL id and description only). `server/vault.js` reads each vault with the market cache: allocations, holdings, value per

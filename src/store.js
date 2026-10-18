@@ -6,12 +6,13 @@
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
-import { tok, tokensOf, vaultById } from './config.js'
+import { tok, tokensOf, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
 import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { event, skipNextPageview } from './analytics.js'
 import {
   isIOS, DEEPLINK_WALLETS, MWA_NAME, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
 } from './wallets.js'
+import { createWalletConnectWallet } from './walletconnect.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
 const WALLET_KEY = 'connectedWallet'
@@ -51,13 +52,16 @@ export const state = reactive({
 let wallet = null
 let account = null
 const usable = (w) => w.chains.includes(CHAIN) && 'standard:connect' in w.features && 'solana:signAndSendTransaction' in w.features
+// WalletConnect: wallet apps on another device (QR code) or on the phone; signed there, sent by our backend.
+const sendSigned = async (tx) => (await api('/api/tx/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tx, wallet: account.address }) })).signature
+const walletConnect = WALLETCONNECT_PROJECT_ID ? markRaw(createWalletConnectWallet(sendSigned)) : null
 function scanWallets() {
   const ws = getWallets().get().filter(usable)
-  state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom')].map(markRaw)
+  state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom'), ...(walletConnect ? [walletConnect] : [])].map(markRaw)
 }
 
 // iOS Safari has no wallet extensions: offer Phantom / Solflare through their deeplink protocol instead.
-export const deeplinkWallets = () => (isIOS && !state.wallets.length ? DEEPLINK_WALLETS : [])
+export const deeplinkWallets = () => (isIOS && !state.wallets.some((w) => !w.walletconnect) ? DEEPLINK_WALLETS : [])
 const deeplinkWallet = (name) => ({ name, deeplink: true })
 
 export function acceptTos() {
@@ -221,7 +225,7 @@ async function connectWith(w, silent) {
 export async function connectWallet(w) {
   await connectWith(w, false)
   // via: how the wallet was reached — browser extension, Android app (Mobile Wallet Adapter) or iOS app (deeplink)
-  event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : { wallet: w.name, via: 'extension' })
+  event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : w.walletconnect ? { wallet: 'WalletConnect', via: 'walletconnect' } : { wallet: w.name, via: 'extension' })
   state.connectOpen = false
 }
 

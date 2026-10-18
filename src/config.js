@@ -2,6 +2,9 @@
 // Live numbers, risk parameters and rate curves come from chain via the backend (server/market.js); the risk values
 // and IRM here are only shown until the first market update arrives (riskOf / irmOf in store.js).
 export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-of-service'
+// WalletConnect project id (Reown dashboard, cloud.reown.com). Public by design, it ships in the page; the project's
+// allowed domains on Reown are what stop others from using it. Empty = WalletConnect is not offered.
+export const WALLETCONNECT_PROJECT_ID = ''
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 

@@ -46,4 +46,21 @@ back(s.searchParams.get('redirect_link'), { errorCode: '4001', errorMessage: 'Us
 assert.deepEqual(readDeeplinkReturn(), { action: 'sign', error: 'User rejected the request' })
 assert.equal(readDeeplinkReturn(), null)
 
+// WalletConnect: a wallet that returns only the signature; we place it at our signer's slot, as a local signer would.
+{
+  const { withSignature } = await import('./wallets.js')
+  const kit = await import('@solana/kit')
+  const payer = await kit.generateKeyPairSigner(), other = await kit.generateKeyPairSigner()
+  const ix = { programAddress: kit.address('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'), accounts: [{ address: other.address, role: kit.AccountRole.READONLY_SIGNER }], data: new Uint8Array([104, 105]) }
+  const msg = kit.pipe(kit.createTransactionMessage({ version: 0 }), (m) => kit.setTransactionMessageFeePayer(payer.address, m),
+    (m) => kit.setTransactionMessageLifetimeUsingBlockhash({ blockhash: '11111111111111111111111111111111', lastValidBlockHeight: 0n }, m), (m) => kit.appendTransactionMessageInstructions([ix], m))
+  const unsigned = kit.compileTransaction(msg)
+  const wire = (t) => new Uint8Array(kit.getTransactionEncoder().encode(t))
+  for (const signer of [payer, other]) { // fee payer (slot 0) and a second signer (slot 1)
+    const signed = await kit.partiallySignTransaction([signer.keyPair], unsigned)
+    assert.deepEqual(withSignature(wire(unsigned), signer.address, signed.signatures[signer.address]), wire(signed))
+  }
+  assert.throws(() => withSignature(wire(unsigned), user, new Uint8Array(64)), /does not need a signature/)
+}
+
 console.log('wallets ok')
