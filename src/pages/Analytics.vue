@@ -77,7 +77,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <div class="n-stat">
       <div class="k">Total value locked</div>
       <div class="v"><span v-if="state.loaded">{{ usd(tvl) }}</span><span v-else class="n-skel" /></div>
-      <div class="s">{{ reserves.length }} reserves{{ vaultCashUsd > 0 ? ` + ${usd(vaultCashUsd)} in vaults` : '' }}</div>
+      <div class="s">{{ reserves.length }} reserves{{ vaultCashUsd >= 0.005 ? ` + ${usd(vaultCashUsd)} in vaults` : '' }}</div>
     </div>
     <div class="n-stat">
       <div class="k">Total borrowed</div>
@@ -178,7 +178,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
           <div class="n-cell n-num" data-label="Share of vault">{{ pct(h.share, 1) }}</div>
         </div>
       </div>
-      <p class="hint">Read on-chain: every holder of the vault's shares, including shares staked in the vault farm (deposits made on Kamino's interface).</p>
+      <p class="hint">Depositors and their shares are read on-chain, including shares staked in the vault farm (deposits made on Kamino's interface).</p>
     </Section>
 
     <Section title="Positions">
