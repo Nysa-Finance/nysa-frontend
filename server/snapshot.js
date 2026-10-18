@@ -1,4 +1,4 @@
-// Daily snapshot (00:00 UTC, scheduled by server/main.js), from one fresh read of the Nysa Kamino market(s) and vaults:
+// Snapshot every 12 hours (00:00 and 12:00 UTC, scheduled by server/main.js), from one fresh read of the Nysa Kamino market(s) and vaults:
 // 1. Farm Points: accrue supplied USD × days per wallet ("supplied" = USDC lent + USDY collateral + Earn vault shares).
 // 2. History for Realized APY: value of one deposit share, per reserve (liquidity per cToken) and per vault (tokens
 //    per share), with APYs and utilization.
