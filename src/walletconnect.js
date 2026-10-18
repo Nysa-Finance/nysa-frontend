@@ -83,7 +83,12 @@ export function createWalletConnectWallet(send) {
           try {
             const session = await Promise.race([approved, uriShown.then(() => approved), cancelled])
             const accounts = accountsOf(session)
-            if (!accounts.length) { await p.disconnect().catch(() => {}); throw new Error('The wallet did not share a Solana account') }
+            if (!accounts.length) {
+              // e.g. a phone camera opened MetaMask, which approves with its Ethereum accounts only.
+              const wallet = session?.peer?.metadata?.name || 'The wallet'
+              await p.disconnect().catch(() => {})
+              throw new Error(`${wallet} connected without a Solana account. Use a wallet app with Solana (e.g. Trust Wallet) and scan the QR code from inside that app, not with the phone camera.`)
+            }
             return { accounts }
           } catch (e) {
             p.abortPairingAttempt?.()
