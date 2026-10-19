@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { KaminoVaultClient, KaminoVault, getSingleReserve, DEFAULT_RECENT_SLOT_DURATION_MS } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, VAULTS, TOKENS, tokensOf } from '../src/config.js'
+import { LIVE, VAULTS, TOKENS } from '../src/config.js'
 import { rpc, NONE } from './rpc.js'
 
 const require = createRequire(import.meta.url)
@@ -113,11 +113,9 @@ export async function readVault(v, markets, now, reserveMetrics) {
       allocationAdmin: String(state.allocationAdmin),
       oracles,
       allocations,
-      // Markets the vault is exposed to: their ids, collateral tokens, and everything supplied in them (collateral +
-      // loan asset), which the Earn table shows as Total Supply.
+      // Markets the vault is exposed to: their ids and collateral tokens (the Earn table's Exposure icons).
       exposureMarkets: exposure.map((m) => m.id),
       exposureTokens: [...new Set(exposure.flatMap((m) => m.collateral))],
-      exposureSupplyUsd: exposure.flatMap(tokensOf).reduce((s, t) => s + (reserveMetrics[t.token_id]?.supplyUsd ?? 0), 0),
     },
   }
 }
