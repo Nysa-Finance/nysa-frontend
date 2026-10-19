@@ -6,9 +6,16 @@ import { MWA_NAME as MWA } from '../wallets.js'
 const emit = defineEmits(['close'])
 
 const busy = ref(null) // name of the wallet being connected
-const error = ref(null)
+const error = ref(state.connectError) // e.g. WalletConnect failed after this window had closed
+state.connectError = null
 
 async function connect(w) {
+  // WalletConnect opens Reown's own modal (QR code, wallet list): this window steps aside, and comes back on an error.
+  if (w.walletconnect) {
+    emit('close')
+    try { await connectWallet(w) } catch (e) { if (!/cancelled/i.test(e.message)) { state.connectError = e.message; state.connectOpen = true } }
+    return
+  }
   busy.value = w.name
   error.value = null
   try { await connectWallet(w) } catch (e) { error.value = e.message } finally { busy.value = null }
