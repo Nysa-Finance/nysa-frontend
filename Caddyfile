@@ -14,6 +14,8 @@ http://{$DOMAIN} {
 	header {
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'nonce-{http.request.uuid}'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self' https://analytics.nysa.finance ws://localhost:*; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Same as frame-ancestors 'none', for browsers that predate CSP Level 2.
+		X-Frame-Options "DENY"
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
