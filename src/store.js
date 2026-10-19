@@ -6,7 +6,7 @@
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
-import { tok, tokensOf, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
+import { tok, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
 import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { event, skipNextPageview } from './analytics.js'
 import {
@@ -108,15 +108,6 @@ export function rowOf(id) {
   const r = state.reserves[id]
   if (!r) return null
   return { reserve: r, walletBalance: state.balances[id] ?? 0, ...(state.positions[id] ?? { supplied: 0, borrowed: 0, maxWithdraw: 0 }) }
-}
-
-export function marketSummary(m) {
-  let s = 0, b = 0
-  for (const t of tokensOf(m)) {
-    s += state.reserves[t.token_id]?.supplyUsd ?? 0
-    b += state.reserves[t.token_id]?.borrowUsd ?? 0
-  }
-  return { totalSuppliedUsd: state.loaded ? s : null, totalBorrowedUsd: state.loaded ? b : null }
 }
 
 // ---- market: pushed by the backend; polled from /api/market while the stream is down or refused ----
