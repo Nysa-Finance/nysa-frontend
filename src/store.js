@@ -180,6 +180,7 @@ export async function loadAccount(fresh = false) {
     const a = await api(`/api/account/${addr}${fresh ? '?fresh' : ''}`)
     if (state.address !== addr) return // switched wallet meanwhile
     state.balances = a.balances
+    state.sol = a.sol ?? null
     state.positions = a.positions
     state.claimable = a.claimable
     state.vaultPositions = a.vaults ?? {}
@@ -196,6 +197,7 @@ function setAccount(w, acc) {
   state.address = acc?.address ?? null
   state.walletName = acc ? w.name : null
   state.balances = {}
+  state.sol = null
   state.positions = {}
   state.claimable = {}
   state.vaultPositions = {}
@@ -314,6 +316,8 @@ async function resumeDeeplink(ret) {
 // First-time setup comes back as a separate transaction (final: false): send it, wait, then ask for the action.
 async function runAction(params) {
   if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
+  // No SOL at all: every transaction would fail (fees are paid in SOL). Say so before building one.
+  if (state.sol === 0) throw new Error('This wallet has no SOL for Solana network fees: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.')
   if (wallet.deeplink) {
     // The page leaves for the wallet app from the handoff card; this promise only settles if the user cancels.
     await deeplinkStep(params)

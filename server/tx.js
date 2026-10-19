@@ -99,12 +99,18 @@ const LIQ_SLIPPAGE = 0.01 // the built liquidation must pay out at least 99% of 
 async function simulated(compiled) {
   if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
   const { value } = await rpc.simulateTransaction(compiled.tx, { encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true }).send()
-  if (value.err) simulationError(value.logs ?? [])
+  if (value.err) simulationError(value.logs ?? [], value.err)
   const used = Number(value.unitsConsumed ?? 0)
   const { withLimit, ...tuned } = used > 0 ? await compiled.withLimit(cuWithMargin(used)) : compiled
   return tuned
 }
-function simulationError(logs) {
+// The wallet pays network fees and new accounts' rent in SOL, even for a USDC action: without SOL the simulation fails
+// before any program runs (no log to show), or when creating the first token account ("insufficient lamports").
+const NO_SOL = 'This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.'
+const NO_SOL_ERRORS = ['AccountNotFound', 'InsufficientFundsForFee', 'InsufficientFundsForRent']
+function simulationError(logs, err) {
+  const code = typeof err === 'string' ? err : Object.keys(err ?? {})[0]
+  if (NO_SOL_ERRORS.includes(code) || logs.some((l) => /insufficient lamports/i.test(l))) throw new UserError(NO_SOL)
   if (logs.some((l) => /ObligationHealthy|healthy and cannot be liquidated/i.test(l))) throw new UserError('This loan is healthy again (or was just liquidated), so it can\'t be liquidated right now.')
   const hint = [...logs].reverse().find((l) => /Error Message|failed|insufficient/i.test(l))
   throw new UserError(`Simulation failed${hint ? ': ' + hint.replace(/^Program log: /, '') : ''}`)
@@ -117,7 +123,7 @@ async function simulatedBalances(compiled, accounts) {
     encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true,
     accounts: { addresses: accounts, encoding: 'base64' },
   }).send()
-  if (value.err) simulationError(value.logs ?? [])
+  if (value.err) simulationError(value.logs ?? [], value.err)
   return value.accounts.map((a) => (a ? Buffer.from(a.data[0], 'base64').readBigUInt64LE(64) : 0n))
 }
 
