@@ -7,7 +7,7 @@ import { getBase58Encoder } from '@solana/kit'
 import { WALLETCONNECT_PROJECT_ID } from './config.js'
 import { withSignature } from './wallets.js'
 
-export const WC_NAME = 'WalletConnect'
+const WC_NAME = 'WalletConnect'
 const CHAIN = 'solana:mainnet' // Wallet Standard id, as the store uses
 // Solana mainnet in WalletConnect (CAIP-2): the genesis hash, and the truncated id some wallets still use.
 const SOLANA_IDS = ['solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp', 'solana:4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZ']
@@ -61,7 +61,6 @@ export function createWalletConnectWallet(send) {
     icon: '/wallets/walletconnect.svg',
     walletconnect: true,
     chains: [CHAIN],
-    get accounts() { return [] },
     features: {
       'standard:connect': {
         // silent: only restore a session saved by the library (page reload); never open the modal.

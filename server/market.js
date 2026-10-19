@@ -8,7 +8,7 @@ import {
 import { address } from '@solana/kit'
 import { LIVE, tokensOf } from '../src/config.js'
 import { rewardApr, short } from '../src/logic.js'
-import { rpc } from './rpc.js'
+import { rpc, NONE } from './rpc.js'
 import { createRefresher } from './refresh.js'
 import { readVaults } from './vault.js'
 
@@ -18,7 +18,6 @@ const { Farms, fetchFarmState } = require('@kamino-finance/farms-sdk')
 export const REFRESH_MS = 60_000 // how stale market data may get without activity; confirmed txs refresh sooner
 const SOON_MS = 2_000 // after a confirmed transaction
 const SOON_GAP_MS = 10_000 // post-transaction reads at most this often, however many confirmations come in
-export const NONE = '11111111111111111111111111111111'
 export const num = (v) => (v == null ? 0 : typeof v === 'number' ? v : v.toNumber())
 export const farms = new Farms(rpc)
 

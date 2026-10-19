@@ -11,9 +11,11 @@ export function rpcCallsLastHour() {
   return calls.length
 }
 
+export const NONE = '11111111111111111111111111111111' // the default (empty) Solana address: an unset field
+
 // Retries HTTP 429 with exponential backoff: rate-limited plans throttle the bursts klend-sdk makes.
-export function createRpc(url = RPC_URL) {
-  const transport = createDefaultRpcTransport({ url })
+function createRpc() {
+  const transport = createDefaultRpcTransport({ url: RPC_URL })
   return createSolanaRpcFromTransport(async (req) => {
     for (let i = 0; ; i++) {
       calls.push(Date.now())

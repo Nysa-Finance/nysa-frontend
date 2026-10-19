@@ -6,13 +6,12 @@ import { KaminoVaultClient, KaminoVault, getSingleReserve, DEFAULT_RECENT_SLOT_D
 import { address } from '@solana/kit'
 import Decimal from 'decimal.js'
 import { LIVE, VAULTS, TOKENS, tokensOf } from '../src/config.js'
-import { rpc } from './rpc.js'
+import { rpc, NONE } from './rpc.js'
 
 const require = createRequire(import.meta.url)
 const { fetchFarmState } = require('@kamino-finance/farms-sdk')
 
 export const vaultClient = new KaminoVaultClient(rpc, DEFAULT_RECENT_SLOT_DURATION_MS)
-const NONE = '11111111111111111111111111111111'
 const SECONDS_PER_YEAR = 365.242199 * 24 * 60 * 60 // as klend-sdk
 const U64_MAX = '18446744073709551615' // an allocation cap of u64::MAX = uncapped
 const n = (d) => (d == null ? 0 : Number(d.toString()))

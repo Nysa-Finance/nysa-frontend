@@ -12,8 +12,8 @@ import {
 } from '@solana/kit'
 import { createRequire } from 'node:module'
 import { LIVE, marketById, vaultById, tokensOf, tok } from '../src/config.js'
-import { rpc } from './rpc.js'
-import { getLive, getVault, reserveOf, farms, refreshSoon, NONE } from './market.js'
+import { rpc, NONE } from './rpc.js'
+import { getLive, getVault, reserveOf, farms, refreshSoon } from './market.js'
 import { vaultClient } from './vault.js'
 import { obligationType, pendingRewards, ataOf, vaultShares } from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
@@ -177,7 +177,7 @@ export async function liquidationInfo(m, borrower) {
   const ob = await market.getObligationByWallet(address(borrower), obligationType())
   return liquidationLimits(market, ob, reserveOf(market, debt), debt, coll)
 }
-export function liquidationLimits(market, ob, repay, debt, coll) {
+function liquidationLimits(market, ob, repay, debt, coll) {
   const pos = ob?.getBorrowByReserve(repay.address)
   if (!pos || pos.amount.lte(0)) throw new UserError('This wallet has no open loan in this market')
   const s = ob.refreshedStats, ms = market.state
