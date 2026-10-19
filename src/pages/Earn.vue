@@ -1,6 +1,6 @@
 <script setup>
-// Earn: Nysa's Kamino vaults. Exposure = collateral of the markets a vault is allocated to; Total Supply = everything
-// supplied in those markets (collateral + loan asset), both read on-chain (server/vault.js).
+// Earn: Nysa's Kamino vaults. Exposure = collateral of the markets a vault is allocated to; Total Deposits = everything
+// in the vault (invested in those markets or waiting in the vault), both read on-chain (server/vault.js).
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, vaultApyNote } from '../store.js'
@@ -21,7 +21,7 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
     <p class="n-sub">Deposit into curated vaults and earn yield from loans backed by tokenized real-world assets</p>
   </div>
   <div class="n-table ea-table">
-    <div class="n-thead ea-grid"><div>Vault</div><div>Network</div><div>Infra</div><div>APY</div><div>Exposure</div><div>Total Supply</div></div>
+    <div class="n-thead ea-grid"><div>Vault</div><div>Network</div><div>Infra</div><div>APY</div><div>Exposure</div><div>Total Deposits</div></div>
     <template v-if="state.loaded">
       <div v-for="x in rows" :key="x.v.id" class="n-tr click ea-grid" @click="go(x.v)">
         <div class="n-cell n-asset" data-label="Vault">
@@ -41,7 +41,7 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
             <TokenIcon v-for="t in x.live?.exposureTokens ?? []" :key="t" :token="tok(t)" size="sm" />
           </div>
         </div>
-        <div class="n-cell n-num" data-label="Total Supply">{{ x.live ? usd(x.live.exposureSupplyUsd) : '—' }}</div>
+        <div class="n-cell n-num" data-label="Total Deposits">{{ x.live ? usd(x.live.totalUsd) : '—' }}</div>
       </div>
       <div v-if="!rows.length" class="n-empty">No vaults are live yet.</div>
     </template>
@@ -73,14 +73,14 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
               <TokenIcon v-for="t in x.live?.exposureTokens ?? []" :key="t" :token="tok(t)" size="sm" />
             </div>
           </div>
-          <div class="ea-row"><span class="k">Total Supply</span><span class="n-num">{{ x.live ? usd(x.live.exposureSupplyUsd) : '—' }}</span></div>
+          <div class="ea-row"><span class="k">Total Deposits</span><span class="n-num">{{ x.live ? usd(x.live.totalUsd) : '—' }}</span></div>
         </div>
       </div>
       <div v-if="!rows.length" class="n-empty">No vaults are live yet.</div>
     </template>
     <div v-else class="ea-card"><span class="n-skel" /></div>
   </div>
-  <p class="hint">Total Supply: collateral and loan asset supplied in the markets the vault is allocated to.</p>
+  <p class="hint">Total Deposits: everything in the vault, invested in its markets or waiting in the vault.</p>
   <FarmPointsModal v-if="pointsOpen" @close="pointsOpen = false" />
 </template>
 
