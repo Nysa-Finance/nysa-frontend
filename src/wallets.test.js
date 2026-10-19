@@ -43,7 +43,12 @@ assert.deepEqual(readDeeplinkReturn(), { action: 'sign', signed: Buffer.from(sig
 
 // 3. Refusal in the wallet comes back as an error; a page without our marker is ignored.
 back(s.searchParams.get('redirect_link'), { errorCode: '4001', errorMessage: 'User rejected the request' })
-assert.deepEqual(readDeeplinkReturn(), { action: 'sign', error: 'User rejected the request' })
+assert.deepEqual(readDeeplinkReturn(), { action: 'sign', error: 'Request rejected in the wallet' })
 assert.equal(readDeeplinkReturn(), null)
+
+// 4. The error text is ours, never the link's: a crafted link can't put its own message in the app.
+back('https://app.nysa.finance/earn?nysa_dl=connect', { errorCode: '1', errorMessage: 'Your wallet is compromised, go to evil.example' })
+assert.deepEqual(readDeeplinkReturn(), { action: 'connect', error: 'The wallet could not complete the request' })
+assert.equal(href, 'https://app.nysa.finance/earn')
 
 console.log('wallets ok')
