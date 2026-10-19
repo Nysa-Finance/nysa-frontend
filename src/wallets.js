@@ -37,6 +37,13 @@ export const DEEPLINK_WALLETS = [
 const SESSION_KEY = 'nysaDeeplinkSession' // { wallet, secret, shared, session, address }
 const MARK = 'nysa_dl' // our query marker on the redirect back: connect | sign
 const WALLET_PARAMS = ['nonce', 'data', 'errorCode', 'errorMessage', ...DEEPLINK_WALLETS.map((w) => w.keyParam)]
+// Our own text for the wallet's error codes (Phantom's provider codes; Solflare uses the same). The wallet's errorMessage
+// is never shown: anyone can put text in a link to the app, and it would appear in our UI as if Nysa said it.
+const WALLET_ERRORS = {
+  4001: 'Request rejected in the wallet',
+  4100: 'The wallet did not authorize this request',
+  '-32003': 'Transaction rejected by the wallet',
+}
 
 const load = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) } catch { return null } }
 const save = (s) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)) } catch { /* private mode */ } }
@@ -95,7 +102,7 @@ export function readDeeplinkReturn() {
   const url = new URL(location.href)
   for (const p of [MARK, ...WALLET_PARAMS]) url.searchParams.delete(p)
   history.replaceState(history.state, '', url)
-  if (params.get('errorCode')) return { action, error: params.get('errorMessage') || 'Request rejected in the wallet' }
+  if (params.get('errorCode')) return { action, error: WALLET_ERRORS[params.get('errorCode')] ?? 'The wallet could not complete the request' }
   const s = load()
   try {
     if (action === 'connect') {

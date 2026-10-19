@@ -2,7 +2,7 @@
 // - serves the Vite build (dist/) with SPA fallback;
 // - JSON API under /api (market, account, transactions, analytics, points, history, market updates, liquidations, health);
 // - pushes market updates to browsers over Server-Sent Events (/api/events);
-// - runs the daily snapshot at 00:00 UTC.
+// - runs the snapshot every 12 hours (00:00 and 12:00 UTC).
 // The browser never calls the Solana RPC: it reads from here and only uses the wallet to sign and send.
 import http from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -235,13 +235,15 @@ http.createServer(async (req, res) => {
 refreshMarket() // first read now, then every REFRESH_MS (market.js)
 startScreening() // OFAC sanctions list: saved copy now, fresh download daily
 
-// Daily snapshot at 00:00 UTC. A missed run (e.g. restart at midnight) is harmless: the next one accrues the whole gap.
+// Snapshot every 12 hours, at 00:00 and 12:00 UTC (epoch multiples of 12 h). A missed run (e.g. a restart at that
+// minute) is harmless: the next one accrues the whole gap.
+const SNAPSHOT_EVERY_MS = 12 * 3_600_000
 function scheduleSnapshot() {
-  const now = new Date()
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  const now = Date.now()
+  const next = (Math.floor(now / SNAPSHOT_EVERY_MS) + 1) * SNAPSHOT_EVERY_MS
   setTimeout(() => runSnapshot()
     .then((r) => console.log('[snapshot] done', r))
     .catch((e) => console.error('[snapshot] failed', e))
-    .finally(scheduleSnapshot), next - now.getTime())
+    .finally(scheduleSnapshot), next - now)
 }
 scheduleSnapshot()
