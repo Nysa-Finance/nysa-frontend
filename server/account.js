@@ -45,6 +45,7 @@ export function pendingRewards(farmStates, userStates) {
 async function readAccount(wallet) {
   const owner = address(wallet)
   const balances = {}, positions = {}, claimable = {}
+  let sol = 0
   for (const m of LIVE) {
     const { market, now, farms: farmStates } = getLive(m)
     const tokens = tokensOf(m)
@@ -53,7 +54,9 @@ async function readAccount(wallet) {
     const atas = await Promise.all(tokens.map((t) => ataOf(owner, address(t.mint), reserveOf(market, t).getLiquidityTokenProgram())))
     const farmAddrs = ob ? [...farmStates.keys()] : []
     const userPdas = await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress)))
-    const accounts = await fetchEncodedAccounts(rpc, [...atas, ...userPdas])
+    const accounts = await fetchEncodedAccounts(rpc, [...atas, ...userPdas, owner])
+    const self = accounts.at(-1) // the wallet itself: its SOL pays every transaction's fees
+    sol = self.exists ? Number(self.lamports) / 1e9 : 0
     tokens.forEach((t, i) => (balances[t.token_id] = tokenAmount(accounts[i]) / 10 ** t.decimals))
     const users = farmAddrs.map((f, i) => {
       const acc = accounts[atas.length + i]
@@ -72,7 +75,7 @@ async function readAccount(wallet) {
       positions[t.token_id] = { supplied, borrowed, maxWithdraw }
     }
   }
-  return { balances, positions, claimable, vaults: await vaultPositions(owner) }
+  return { balances, positions, claimable, sol, vaults: await vaultPositions(owner) }
 }
 
 // Each owner's shares in a vault: in the wallet (shares ATA) and staked in the vault farm, where Kamino's UI puts
