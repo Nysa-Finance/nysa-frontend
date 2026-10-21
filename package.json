@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node src/logic.test.js && node src/wallets.test.js && node server/updates.test.js && node server/screening.test.js && node server/relay.test.js && node server/refresh.test.js && node vendor/bigint-buffer/test.js",
+    "test:e2e": "node e2e/fork.test.js",
     "server": "node --env-file-if-exists=.env server/main.js"
   },
   "dependencies": {

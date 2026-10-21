@@ -7,7 +7,15 @@ npm install
 npm run dev     # http://localhost:5173, /api proxied to the deployed backend (API_TARGET to override)
 npm run server  # backend on :3000 (needs SOLANA_RPC in .env)
 npm test        # formatter, lending/rewards math and instruction-decoding checks
+npm run test:e2e  # transactions landed on a local mainnet fork (needs surfpool), ~1-2 min
 ```
+
+`npm run test:e2e` (`e2e/fork.test.js`) starts a Surfpool fork of mainnet, funds throwaway wallets and lands every
+transaction the backend builds against the real Kamino market and vault: supply, borrow, repay all, withdraw all;
+vault deposit and withdraw all; withdraw of shares staked in the vault farm; the no-SOL message. It checks balances
+and that each transaction keeps our compute limit and priority fee. Run it before merging changes to `server/tx.js`,
+`server/vault.js` or `server/account.js`. It is not in CI: it depends on live mainnet state and the public RPC
+(`E2E_UPSTREAM_RPC` to use another one). Install Surfpool with `brew install txtx/taps/surfpool`.
 
 ## Architecture
 The browser never talks to the Solana RPC. The backend (`server/`) does every on-chain read and builds transactions;
@@ -106,7 +114,7 @@ share, utilization and APY; its **exposure** (the markets it is allocated to and
 - Shares staked in the vault farm (Kamino's UI stakes deposits there) count everywhere: Portfolio, Farm Points,
   Analytics (`vaultShares` in `server/account.js`), and `vault-withdraw` unstakes them in the same transaction.
 - Old links redirect: `/` and `/lend` → `/earn`, `/market/:id?mode=lend` → the vault, other `/market/:id` → `/borrow/:id`.
-Verified end to end on a Surfpool mainnet fork (deposit + invest, withdraw all).
+Covered by `npm run test:e2e` (deposit + invest, withdraw all, staked shares).
 
 ## Supply rewards (boosted APY)
 The USDC reserve's Kamino collateral farm pays USDC incentives. `server/market.js` reads the farm with the market and
