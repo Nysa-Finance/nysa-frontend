@@ -5,14 +5,15 @@ import { createRequire } from 'node:module'
 import { VanillaObligation, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, tokensOf } from '../src/config.js'
+import { LIVE, VAULTS, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
-import { getLive, reserveOf, farms, num } from './market.js'
+import { getLive, getVault, reserveOf, farms, num } from './market.js'
 
 const require = createRequire(import.meta.url)
-const { decodeUserState } = require('@kamino-finance/farms-sdk')
+const { decodeUserState, getUserStatePDA } = require('@kamino-finance/farms-sdk')
 
 const TTL_MS = 15_000
+const TOKEN_PROGRAM = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA') // kVault shares are SPL Token
 const ATA_PROGRAM = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 const enc = getAddressEncoder()
 export const obligationType = () => new VanillaObligation(PROGRAM_ID)
@@ -44,6 +45,7 @@ export function pendingRewards(farmStates, userStates) {
 async function readAccount(wallet) {
   const owner = address(wallet)
   const balances = {}, positions = {}, claimable = {}
+  let sol = 0
   for (const m of LIVE) {
     const { market, now, farms: farmStates } = getLive(m)
     const tokens = tokensOf(m)
@@ -52,7 +54,9 @@ async function readAccount(wallet) {
     const atas = await Promise.all(tokens.map((t) => ataOf(owner, address(t.mint), reserveOf(market, t).getLiquidityTokenProgram())))
     const farmAddrs = ob ? [...farmStates.keys()] : []
     const userPdas = await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress)))
-    const accounts = await fetchEncodedAccounts(rpc, [...atas, ...userPdas])
+    const accounts = await fetchEncodedAccounts(rpc, [...atas, ...userPdas, owner])
+    const self = accounts.at(-1) // the wallet itself: its SOL pays every transaction's fees
+    sol = self.exists ? Number(self.lamports) / 1e9 : 0
     tokens.forEach((t, i) => (balances[t.token_id] = tokenAmount(accounts[i]) / 10 ** t.decimals))
     const users = farmAddrs.map((f, i) => {
       const acc = accounts[atas.length + i]
@@ -71,7 +75,32 @@ async function readAccount(wallet) {
       positions[t.token_id] = { supplied, borrowed, maxWithdraw }
     }
   }
-  return { balances, positions, claimable }
+  return { balances, positions, claimable, sol, vaults: await vaultPositions(owner) }
+}
+
+// Each owner's shares in a vault: in the wallet (shares ATA) and staked in the vault farm, where Kamino's UI puts
+// deposits (as klend-sdk counts them: the active stake). -> Map owner -> { wallet, staked } in shares.
+export async function vaultShares(live, owners, config) {
+  const dec = Number(live.state.sharesMintDecimals)
+  const atas = await Promise.all(owners.map((o) => ataOf(address(o), live.state.sharesMint, TOKEN_PROGRAM)))
+  const pdas = live.farm ? await Promise.all(owners.map((o) => getUserStatePDA(farms.getProgramID(), address(live.farm.address), address(o)))) : []
+  const keys = [...atas, ...pdas], accounts = []
+  for (let i = 0; i < keys.length; i += 100) accounts.push(...await fetchEncodedAccounts(rpc, keys.slice(i, i + 100), config)) // RPC limit
+  return new Map(owners.map((o, i) => {
+    const user = pdas.length && accounts[atas.length + i]?.exists ? decodeUserState(accounts[atas.length + i]).data : null
+    return [o, { wallet: tokenAmount(accounts[i]) / 10 ** dec, staked: user ? stakedShares(user, dec) : 0 }]
+  }))
+}
+// Farm stakes are WAD-scaled lamports (farms-sdk scaleDownWads).
+const stakedShares = (user, dec) => Number(BigInt(user.activeStakeScaled) / 10n ** 18n) / 10 ** dec
+
+// The wallet's shares in each vault (wallet + staked) and what they're worth in the vault's token.
+async function vaultPositions(owner) {
+  const vaults = VAULTS.flatMap((v) => { try { return [{ v, live: getVault(v.id) }] } catch { return [] } })
+  return Object.fromEntries(await Promise.all(vaults.map(async ({ v, live }) => {
+    const { wallet, staked } = (await vaultShares(live, [String(owner)])).get(String(owner))
+    return [v.id, { shares: wallet + staked, staked, value: (wallet + staked) * num(live.perShare) }]
+  })))
 }
 
 const cache = new Map() // wallet -> { at, value: Promise }

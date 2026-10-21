@@ -7,7 +7,15 @@ npm install
 npm run dev     # http://localhost:5173, /api proxied to the deployed backend (API_TARGET to override)
 npm run server  # backend on :3000 (needs SOLANA_RPC in .env)
 npm test        # formatter, lending/rewards math and instruction-decoding checks
+npm run test:e2e  # transactions landed on a local mainnet fork (needs surfpool), ~1-2 min
 ```
+
+`npm run test:e2e` (`e2e/fork.test.js`) starts a Surfpool fork of mainnet, funds throwaway wallets and lands every
+transaction the backend builds against the real Kamino market and vault: supply, borrow, repay all, withdraw all;
+vault deposit and withdraw all; withdraw of shares staked in the vault farm; the no-SOL message. It checks balances
+and that each transaction keeps our compute limit and priority fee. Run it before merging changes to `server/tx.js`,
+`server/vault.js` or `server/account.js`. It is not in CI: it depends on live mainnet state and the public RPC
+(`E2E_UPSTREAM_RPC` to use another one). Install Surfpool with `brew install txtx/taps/surfpool`.
 
 ## Architecture
 The browser never talks to the Solana RPC. The backend (`server/`) does every on-chain read and builds transactions;
@@ -24,7 +32,7 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 
 | Module | Role |
 |---|---|
-| `server/main.js` | HTTP server: static `dist/`, API routes, SSE, per-IP rate limits, daily snapshot schedule |
+| `server/main.js` | HTTP server: static `dist/`, API routes, SSE, per-IP rate limits, snapshot schedule (every 12 h) |
 | `server/rpc.js` | The single RPC client (429 backoff, call counter for `/api/health`) |
 | `server/market.js` | Market cache: reserves, oracle prices, risk params, rate curves, reward farms (`/api/market`, `/api/events`) |
 | `server/refresh.js` | Market cache timer: every 60s, sooner after our transactions confirm (never postponed, at most every 10s) |
@@ -32,7 +40,7 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 | `server/tx.js` | Builds deposit / withdraw / borrow / repay / claim with klend-sdk + farms-sdk, simulates, returns unsigned |
 | `server/relay.js` | Transactions built or relayed here: what `/api/tx/send` relays, which confirmations refresh the market |
 | `server/updates.js` | Market index: admin changes (Market Updates), liquidations and every obligation (address + owner), from chain history |
-| `server/analytics.js` | Open positions with health factor for the Analytics page |
+| `server/analytics.js` | Analytics page: open market positions with health factor, and each vault's depositors |
 | `server/snapshot.js` | Daily Farm Points + APY history snapshot |
 | `server/storage.js` | Files in `DATA_DIR` (atomic writes) |
 
@@ -70,6 +78,44 @@ Mobile browsers have no wallet extensions (`src/wallets.js`):
   Compute Budget, System or Lighthouse (wallet guard) (`server/relay.js`, `server/relay.test.js`). Round trip covered by
   `src/wallets.test.js`.
 
+## WalletConnect
+Wallet apps that support WalletConnect for Solana (Trust Wallet, Exodus, OKX, Bitget, Ledger Live, …) connect from any
+device (`src/walletconnect.js`): Reown's AppKit modal shows the QR code and the list of 160+ wallets (on a phone it opens
+the chosen app), as on Kamino.
+- Shown only when `WALLETCONNECT_PROJECT_ID` (`src/config.js`) is set (Reown project; allowed domain `app.nysa.finance`).
+- The connection is ours (`manualWCControl`): one `@walletconnect/universal-provider`, the same version AppKit uses (both
+  pinned), wrapped as a Wallet Standard wallet so the store treats it like the others; the session survives reloads.
+  Both Solana mainnet ids are accepted (the genesis hash and the truncated one some wallets still use). Loaded only
+  when someone picks WalletConnect; telemetry and AppKit analytics off (its `pulse` beacon is blocked by the CSP).
+- Transactions are signed in the wallet app (`solana_signTransaction`) and sent by `POST /api/tx/send`, the same relay
+  as the iOS deeplink wallets. A wallet that returns only the signature gets it placed at its signer slot
+  (`withSignature`, tested in `src/wallets.test.js`).
+- CSP (Caddyfile): WalletConnect relay/verify/rpc, `api.web3modal.org` (wallet list, icons as `blob:`), `fonts.reown.com`.
+
+## Earn vaults
+Lending goes through Nysa-curated Kamino Earn vaults (kVaults), e.g. **RWA Prime** (`VAULTS` in `src/config.js`: address,
+URL id and description only). `server/vault.js` reads each vault with the market cache: allocations, holdings, value per
+share, utilization and APY; its **exposure** (the markets it is allocated to and their collateral) comes from the on-chain allocation.
+- APY = supply APY (invested share × each reserve's supply APY, `getVaultActualAPY`) + rewards APY: the vault's
+  auto-compounding rewards (`rewardInfo`, paid per second into the vault while the funded balance lasts) over its AUM,
+  as on Kamino. Utilization = Σ invested × reserve utilization / AUM.
+- Allocations are targets (`getVaultComputedReservesAllocation`): weights plus the unallocated weight (a liquidity
+  buffer kept uninvested for instant withdrawals), capped per reserve. Kamino's bot syncs vaults to them about every
+  15 minutes; the Exposure donut splits uninvested tokens into the buffer and what is awaiting sync.
+- `/earn`: vaults with network, infra (Kamino), APY (⚡ breakdown), exposure (collateral icons), Total Deposits (the
+  vault's AUM: invested in its markets or waiting in the vault); a row (a card on mobile) opens the vault.
+- `/earn/:id`: Exposure (allocation donut, `pieSlices`/`arcPath` in `src/logic.js`, and markets), Realized APY from the vault's
+  share value, Market Updates of the vault and its exposure markets, Fees (management, performance, withdrawal) and
+  Addresses (vault, admin, allocation admin, oracle); rewards boost card; Deposit / Withdraw panel (`VaultPanel.vue`).
+- Transactions `vault-deposit` (min shares out, then `invest` into the allocated reserves in the same transaction, sized
+  on-chain, as fallback for Kamino's crank) and `vault-withdraw` (shares worth the amount, or all).
+- `/borrow/:id` is a market's borrow page (risk parameters, rate model, addresses, due diligence). `?mode=withdraw`
+  withdraws collateral, or USDC lent to the market directly before the vaults (Portfolio links there).
+- Shares staked in the vault farm (Kamino's UI stakes deposits there) count everywhere: Portfolio, Farm Points,
+  Analytics (`vaultShares` in `server/account.js`), and `vault-withdraw` unstakes them in the same transaction.
+- Old links redirect: `/` and `/lend` → `/earn`, `/market/:id?mode=lend` → the vault, other `/market/:id` → `/borrow/:id`.
+Covered by `npm run test:e2e` (deposit + invest, withdraw all, staked shares).
+
 ## Supply rewards (boosted APY)
 The USDC reserve's Kamino collateral farm pays USDC incentives. `server/market.js` reads the farm with the market and
 returns each token's reward APR (yearly emission value over the staked value; shown as APR because rewards don't compound).
@@ -77,21 +123,24 @@ The Lend table, asset data and Lend panel show supply APY + rewards APR; the mar
 wallet's unclaimed rewards (`kind: 'claim'`, one transaction harvesting every pending reward).
 
 ## Farm Points
-Points accrue as **supplied USD × days**: each daily snapshot adds `last_supplied_usd × days since last snapshot` to every wallet's total,
-then records its current deposits (USDC lent + USDY collateral) in the Nysa Kamino market. Logic: `snapshotPoints` in `src/logic.js` (tested).
-Only wallets with deposits in the Nysa market(s) listed in `src/config.js` (`LIVE`) are tracked. Run a snapshot by hand:
+Points accrue as **supplied USD × days**: each snapshot (every 12 hours, 00:00 and 12:00 UTC) adds `last_supplied_usd × days since last snapshot` to every wallet's total,
+then records its current deposits (USDC lent + USDY collateral) in the Nysa Kamino market and its Earn vault shares (valued
+at the vault's share value; depositors found by the market index). Logic: `snapshotPoints` in `src/logic.js` (tested).
+Only wallets with deposits in the Nysa market(s) and vaults listed in `src/config.js` are tracked. Run a snapshot by hand:
 `docker compose exec app node server/snapshot.js`.
 
 ## Realized APY
-The daily snapshot also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
-utilization to `market-history/history.json`, plus the reserve's creation time (share value is exactly 1 then).
-The market page shows 30D / 7D realized APY (share-value growth over the window, annualised) next to the live APY, and a daily chart.
+Each snapshot also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
+utilization to `market-history/history.json`, plus the reserve's creation time (share value is exactly 1 then); and per
+Earn vault, its tokens per share (`vaults` in that file). The vault page shows 30D / 7D realized APY (share-value growth over the window, annualised) next to the live APY, and a daily chart.
 Math: `realizedApy` / `windowApy` / `dailyApySeries` in `src/logic.js` (tested).
 
 ## Market Updates
 `/api/market-updates` lists admin changes to the market and its reserves (LTVs, rate curve, oracles, caps, status, market settings…),
-decoded from Kamino Lend instructions (`updateReserveConfig`, `updateLendingMarket`, `initReserve`, … incl. CPI/multisig calls) using
-klend-sdk's generated layouts. It indexes incrementally into `market-history/index-v3.json`: each refresh fetches only
+decoded from Kamino Lend instructions (`updateReserveConfig`, `updateLendingMarket`, `initReserve`, … incl. CPI/multisig calls), and
+to the Earn vaults (allocations, fees, caps, admin, farm… from kVault instructions), using klend-sdk's generated layouts. Each
+update has a `source` (market or vault address): the vault page shows the vault's and its exposure markets', the borrow page
+the market's. It indexes incrementally into `market-history/index-v4.json`: each refresh fetches only
 transactions newer than the last one seen. Values are formatted at index time; after changing a formatter, delete that file to re-index.
 Decoding is covered by `server/updates.test.js`.
 

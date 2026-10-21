@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { state, disconnect } from '../store.js'
 import { explorer } from '../config.js'
 import { short } from '../logic.js'
@@ -8,12 +9,13 @@ import WalletHandoff from './WalletHandoff.vue'
 import BlockedWallet from './BlockedWallet.vue'
 
 const tabs = [
-  { to: '/', label: 'Markets', icon: '/app/icon-markets.png' },
-  { to: '/lend', label: 'Lend', icon: '/app/icon-lend.png' },
+  { to: '/earn', label: 'Earn', icon: '/app/icon-lend.png' },
   { to: '/borrow', label: 'Borrow', icon: '/app/icon-borrow.png' },
   { to: '/portfolio', label: 'Portfolio', icon: '/app/icon-portfolio.png' },
 ]
 const menu = ref(false)
+const route = useRoute()
+const active = (t) => route.path === t.to || route.path.startsWith(`${t.to}/`) // a vault or market page keeps its tab lit
 </script>
 
 <template>
@@ -22,7 +24,7 @@ const menu = ref(false)
     <header class="n-nav">
       <RouterLink to="/" class="n-brand"><img src="/app/logo.png" alt="" /><span>nysa</span></RouterLink>
       <nav class="n-tabs">
-        <RouterLink v-for="t in tabs" :key="t.to" :to="t.to" class="n-tab"><img :src="t.icon" alt="" />{{ t.label }}</RouterLink>
+        <RouterLink v-for="t in tabs" :key="t.to" :to="t.to" class="n-tab" :class="{ on: active(t) }"><img :src="t.icon" alt="" />{{ t.label }}</RouterLink>
       </nav>
       <div class="n-nav-right">
         <span class="n-pill net"><span class="n-dot" />Solana</span>

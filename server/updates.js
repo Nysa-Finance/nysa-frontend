@@ -1,16 +1,20 @@
-// Market index: admin changes to the Nysa Kamino market and its reserves (LTVs, rate curve, oracles, caps…), decoded
-// from on-chain transactions, every liquidation, plus the addresses (and owners) of every position (obligation).
+// Market index: admin changes to the Nysa Kamino market and its reserves (LTVs, rate curve, oracles, caps…) and to the
+// Earn vaults (allocations, fees, limits, admin), decoded from on-chain transactions; every liquidation; the addresses
+// (and owners) of every position (obligation); and every wallet that deposited into a vault (Farm Points).
+// Each update carries its `source`: the market or vault address it belongs to.
 // Indexed incrementally into DATA_DIR: each refresh only fetches transactions newer than the last one seen.
 // The position list replaces getProgramAccounts, which rate-limited RPC plans refuse (Alchemy free).
 import { createRequire } from 'node:module'
 import { address, getBase58Decoder, getBase58Encoder } from '@solana/kit'
 import { rpc as client } from './rpc.js'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, VAULTS, TOKENS } from '../src/config.js'
+import { getVault } from './market.js'
 import { compact, usd, dur, short } from '../src/logic.js'
 import { read, write, INDEX } from './storage.js'
 
 const require = createRequire(import.meta.url)
 const KLEND = 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'
+const KVAULT = 'KvauGMspG5k6rtzrqqn7WNn3oZdyKqLKwK2XWQ8FLjd'
 
 // Kamino admin instructions (Anchor discriminator → name + args layout), from klend-sdk's generated code.
 const ADMIN = {
@@ -55,7 +59,12 @@ const text = (v) => v.toString('utf8').replace(/\0+$/, '')
 const addr = (v) => short(getBase58Decoder().decode(v.subarray(0, 32)), 4, 4)
 const secs = (n) => dur(Number(n))
 const chain = (v) => [0, 2, 4, 6].map((i) => v.readUInt16LE(i)).filter((x) => x !== 0xffff).join(' → ') || 'none'
-const amount = (n, t) => (n === MAX64 ? 'unlimited' : t ? compact(Number(n) / 10 ** t.decimals, t.name) : String(n))
+const amount = (n, t) => {
+  if (n === MAX64) return 'unlimited'
+  if (!t) return String(n)
+  const v = Number(n) / 10 ** t.decimals
+  return v > 0 && v < 1 ? `${+v.toPrecision(3)} ${t.name}` : compact(v, t.name) // small minimums stay visible (0.001 USDC)
+}
 function curve(v) {
   const pts = []
   for (let i = 0; i + 8 <= v.length; i += 8) {
@@ -176,9 +185,63 @@ export function liquidation(accounts, moves, owners = {}) {
   }
 }
 
+// ---- Earn vault (kVault) instructions ----
+const kv = (name) => require(`@kamino-finance/klend-sdk/dist/@codegen/kvault/instructions/${name}.js`)
+const VAULT_ADMIN = {
+  initVault: 'Vault created',
+  updateVaultConfig: null, // described per field
+  updateReserveAllocation: 'Allocation', updateReserveAllocationV2: 'Allocation',
+  removeAllocation: 'Allocation removed',
+  updateAdmin: 'Vault admin transferred',
+  addUpdateWhitelistedReserve: 'Reserve whitelist updated',
+  withdrawPendingFees: 'Fees withdrawn', giveUpPendingFees: 'Pending fees waived',
+  updateSharesMetadata: 'Shares name/symbol updated',
+}
+const VAULT_DEPOSITS = ['deposit', 'depositWithMinSharesOut', 'buy', 'buyWithMinSharesOut'] // accounts[0] = user
+const VIXS = Object.fromEntries([...Object.keys(VAULT_ADMIN), ...VAULT_DEPOSITS].map((name) => [Buffer.from(kv(name).DISCRIMINATOR).toString('hex'), { name, layout: kv(name).layout }]))
+const bool = (v) => (v[0] ? 'on' : 'off')
+// updateVaultConfig fields: [label, value formatter(bytes, vault token)].
+const VAULT_FIELDS = {
+  PerformanceFeeBps: ['Performance fee', (v) => bps(u64(v))],
+  ManagementFeeBps: ['Management fee', (v) => bps(u64(v))],
+  DepositCap: ['Deposit cap', (v, t) => amount(u64(v), t)],
+  MinDepositAmount: ['Min deposit', (v, t) => amount(u64(v), t)],
+  MinWithdrawAmount: ['Min withdrawal', (v, t) => amount(u64(v), t)],
+  MinInvestAmount: ['Min invest amount', (v, t) => amount(u64(v), t)],
+  MinInvestDelaySlots: ['Min invest delay', (v) => `${u64(v)} slots`],
+  CrankFundFeePerReserve: ['Crank fee per reserve', (v) => `${u64(v)} lamport${u64(v) === 1n ? '' : 's'}`],
+  UnallocatedWeight: ['Unallocated weight', (v) => String(u64(v))],
+  UnallocatedTokensCap: ['Unallocated cap', (v, t) => amount(u64(v), t)],
+  WithdrawalPenaltyBps: ['Withdrawal penalty', (v) => bps(u64(v))],
+  WithdrawalPenaltyLamports: ['Withdrawal penalty (fixed)', (v, t) => amount(u64(v), t)],
+  PendingVaultAdmin: ['Vault admin transfer proposed', addr],
+  AllocationAdmin: ['Allocation admin', addr],
+  Farm: ['Rewards farm', addr],
+  FirstLossCapitalFarm: ['First-loss capital farm', addr],
+  LookupTable: ['Lookup table', addr],
+  Name: ['Vault name', text],
+  AllowAllocationsInWhitelistedReservesOnly: ['Allocations only in whitelisted reserves', bool],
+  AllowInvestInWhitelistedReservesOnly: ['Invest only in whitelisted reserves', bool],
+}
+
+// { action, value } for one decoded vault admin instruction; `reserveToken`: the allocated reserve's token, if any.
+export function describeVault(name, args, vaultToken, reserveToken) {
+  if (name === 'updateVaultConfig') {
+    const kind = Object.keys(args.entry ?? {})[0] ?? 'config'
+    const [label, fmt] = VAULT_FIELDS[kind] ?? [humanize(kind)]
+    return { action: label, value: fmt ? safe(() => fmt(Buffer.from(args.data), vaultToken)) : null }
+  }
+  if (name.startsWith('updateReserveAllocation')) {
+    return { action: 'Allocation', value: `weight ${args.weight}${args.cap != null ? `, cap ${amount(BigInt(String(args.cap)), reserveToken)}` : ''}` }
+  }
+  return { action: VAULT_ADMIN[name], value: null }
+}
+
 // ---- indexing ----
 
-async function indexNew(rpc, marketAddr, state) {
+// src: { address, vault?: { name, token } }: a market (Kamino Lend instructions) or a vault (kVault instructions).
+async function indexNew(rpc, src, state) {
+  const marketAddr = src.address
   const b58 = getBase58Encoder()
   const sigs = []
   for (let before; ;) {
@@ -211,6 +274,7 @@ async function indexNew(rpc, marketAddr, state) {
         })
       })
       all.forEach(({ ix, calls }, k) => {
+        if (src.vault) return indexVaultIx(src, state, seen, sig, t, k, ix, keys, b58)
         if (keys[ix.programIdIndex] !== KLEND) return
         const data = Buffer.from(b58.encode(ix.data))
         const def = IXS[data.subarray(0, 8).toString('hex')]
@@ -234,7 +298,7 @@ async function indexNew(rpc, marketAddr, state) {
         let args = {}
         try { args = def.layout.decode(data.subarray(8)) } catch { /* keep generic description */ }
         state.updates.push({
-          id, sig, ts: Number(t.blockTime),
+          id, sig, ts: Number(t.blockTime), source: marketAddr,
           target: token ? `${token.name} reserve` : 'Market',
           ...describe(def.name, args, token),
         })
@@ -245,13 +309,45 @@ async function indexNew(rpc, marketAddr, state) {
   return true
 }
 
-// Bring the index up to date and return it:
-// { lastSig, updates, liquidations, obligations: { [market]: [address] }, owners: { [obligation]: wallet } }.
-// Also used by the daily snapshot to find every position without getProgramAccounts.
+// A vault instruction: an admin change (listed with the vault as source) or a deposit (its wallet is remembered).
+function indexVaultIx(src, state, seen, sig, t, k, ix, keys, b58) {
+  if (keys[ix.programIdIndex] !== KVAULT) return
+  const data = Buffer.from(b58.encode(ix.data))
+  const def = VIXS[data.subarray(0, 8).toString('hex')]
+  const accounts = ix.accounts.map((a) => keys[a])
+  if (!def || !accounts.includes(src.address)) return
+  if (VAULT_DEPOSITS.includes(def.name)) {
+    const users = (state.vaultUsers[src.address] ??= [])
+    if (!users.includes(accounts[0])) users.push(accounts[0])
+    return
+  }
+  const id = `${sig}:${k}`
+  if (seen.has(id)) return
+  seen.add(id)
+  // Only allocation-type changes are about a reserve; config changes may list reserves too but apply to the vault.
+  const reserve = def.name === 'updateVaultConfig' ? null : accounts.find((a) => RESERVES.has(a))
+  let args = {}
+  try { args = def.layout.decode(data.subarray(8)) } catch { /* keep generic description */ }
+  state.updates.push({
+    id, sig, ts: Number(t.blockTime), source: src.address,
+    target: reserve ? `${src.vault.name} → ${RESERVES.get(reserve).name} reserve` : `${src.vault.name} vault`,
+    ...describeVault(def.name, args, src.vault.token, reserve && RESERVES.get(reserve)),
+  })
+}
+
+// The vault's token (for amounts in its updates), from the live cache when this process has it (the server).
+function vaultToken(v) {
+  try { return Object.values(TOKENS).find((t) => t.mint === String(getVault(v.id).state.tokenMint)) } catch { return null }
+}
+
+// Bring the index up to date and return it: { lastSig, updates, liquidations, obligations: { [market]: [address] },
+// owners: { [obligation]: wallet }, vaultUsers: { [vault]: [wallet] } }.
+// Also used by the snapshot (every 12 hours) to find every position and vault depositor without getProgramAccounts.
 export async function refreshIndex(rpc) {
-  const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, ...JSON.parse((await read(INDEX)) ?? '{}') }
+  const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, vaultUsers: {}, ...JSON.parse((await read(INDEX)) ?? '{}') }
   let changed = false
-  for (const m of LIVE) changed = (await indexNew(rpc, m.kaminoMarket, state)) || changed
+  for (const m of LIVE) changed = (await indexNew(rpc, { address: m.kaminoMarket }, state)) || changed
+  for (const v of VAULTS) changed = (await indexNew(rpc, { address: v.address, vault: { name: v.name, token: vaultToken(v) } }, state)) || changed
   if (changed) await write(INDEX, JSON.stringify(state))
   return state
 }

@@ -2,7 +2,8 @@
 
 const ok = (v) => typeof v === 'number' && Number.isFinite(v)
 
-export const pct = (v, d = 2) => (ok(v) ? `${v.toFixed(d)}%` : '—')
+// Thousands get separators (an incentive APY on a tiny vault can reach 11,214.30%).
+export const pct = (v, d = 2) => (!ok(v) ? '—' : Math.abs(v) >= 1000 ? `${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}%` : `${v.toFixed(d)}%`)
 export const usd = (v) => {
   if (!ok(v)) return '—'
   const a = Math.abs(v)
@@ -138,7 +139,9 @@ export const amtDust = (v, d = 4) => (v > 0 && v < 10 ** -d ? `< ${(10 ** -d).to
 
 // ---- Realized APY (from the growth of one deposit share's value, i.e. liquidity per Kamino cToken) ----
 // points: [{ ts (unix sec), rate (liquidity per cToken) }], oldest first.
-export const realizedApy = (from, to, days) => (days > 0 && from > 0 ? ((to / from) ** (365 / days) - 1) * 100 : null)
+// Annualized linearly (growth × 365 / days), like the live APY's rewards part: compounding a short window of a
+// rewards-boosted vault (+9% in a day) gives absurd figures (10^15 %); for ordinary rates the two barely differ.
+export const realizedApy = (from, to, days) => (days > 0 && from > 0 ? (to / from - 1) * (365 / days) * 100 : null)
 
 // Realized APY over the last `days`, ending at the latest point. With shorter history it uses the oldest point
 // and says so (full=false), e.g. a 19-day-old reserve reports its "30D" as since-launch.
@@ -175,4 +178,26 @@ export const rewardApr = (perSecond, rewardPrice, stakedUsd) => (stakedUsd > 0 ?
 export function liquidationBonusRange(minPct = 0, maxPct, liqLtvPct) {
   const room = 100 - liqLtvPct
   return { low: Math.min(minPct, maxPct, room), high: Math.min(maxPct, Math.max(minPct, room / 2)) }
+}
+
+// Pie chart: each value's share (%) and its arc in radians, clockwise from 12 o'clock. Negative values count as 0.
+export function pieSlices(values) {
+  const total = values.reduce((s, v) => s + Math.max(v, 0), 0)
+  let at = 0
+  return values.map((v) => {
+    const share = total > 0 ? Math.max(v, 0) / total : 0
+    const start = at
+    at += share * 2 * Math.PI
+    return { share: share * 100, start, end: at }
+  })
+}
+
+// SVG path of a donut slice (outer radius r, inner radius ri) between two angles from pieSlices. A whole circle, or
+// one within ~0.02% of it, is drawn as two half arcs: an SVG arc whose ends round to the same point isn't drawn at all.
+const FULL = 2 * Math.PI - 1e-3
+export function arcPath(cx, cy, r, ri, start, end) {
+  if (end - start >= FULL) return arcPath(cx, cy, r, ri, start, start + Math.PI) + arcPath(cx, cy, r, ri, start + Math.PI, start + 2 * Math.PI - 1e-2)
+  const pt = (rad, a) => `${(cx + rad * Math.sin(a)).toFixed(2)},${(cy - rad * Math.cos(a)).toFixed(2)}`
+  const large = end - start > Math.PI ? 1 : 0
+  return `M${pt(r, start)}A${r},${r} 0 ${large} 1 ${pt(r, end)}L${pt(ri, end)}A${ri},${ri} 0 ${large} 0 ${pt(ri, start)}Z`
 }

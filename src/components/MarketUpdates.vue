@@ -29,7 +29,7 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
   <button v-if="updates && updates.length > 10" class="n-btn-sm ghost mu-more" @click="all = !all">
     {{ all ? 'Show latest 10' : `Show all ${updates.length} updates` }}
   </button>
-  <p class="hint">Configuration changes signed by the market's admin, decoded from Kamino Lend transactions on Solana.</p>
+  <p class="hint">Configuration changes signed by the admin, decoded from Kamino transactions on Solana.</p>
 </template>
 
 <style scoped>

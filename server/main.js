@@ -2,7 +2,7 @@
 // - serves the Vite build (dist/) with SPA fallback;
 // - JSON API under /api (market, account, transactions, analytics, points, history, market updates, liquidations, health);
 // - pushes market updates to browsers over Server-Sent Events (/api/events);
-// - runs the daily snapshot at 00:00 UTC.
+// - runs the snapshot every 12 hours (00:00 and 12:00 UTC).
 // The browser never calls the Solana RPC: it reads from here and only uses the wallet to sign and send.
 import http from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -13,12 +13,12 @@ import { RPC_URL, rpcCallsLastHour } from './rpc.js'
 import { getSnapshot, onSnapshot, refreshMarket } from './market.js'
 import { getAccount } from './account.js'
 import { buildTx, sendSigned, txStatus, liquidationInfo, KINDS, UserError } from './tx.js'
-import { getPositions } from './analytics.js'
+import { getPositions, getVaultHolders } from './analytics.js'
 import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
-import { LIVE, marketById } from '../src/config.js'
+import { LIVE, VAULTS, marketById, vaultById } from '../src/config.js'
 
 if (!RPC_URL) {
   console.error('SOLANA_RPC is not set (see .env.example)')
@@ -129,7 +129,7 @@ const routes = [
     if (blocked(res, b.wallet, { failClosed: true })) return
     if (b.kind === 'liquidate' && isSanctioned(b.borrower)) return send(res, 403, BLOCKED_LOAN)
     try {
-      send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all, borrower: b.borrower, preview: !!b.preview }))
+      send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all, borrower: b.borrower, preview: !!b.preview, vault: b.vault }))
     } catch (e) {
       if (e instanceof UserError) throw e
       console.error('[tx] build failed', b.kind, e) // details stay in the logs (RPC errors can carry provider info)
@@ -154,7 +154,11 @@ const routes = [
     if (limited(req, 'status', 120)) return send(res, 429, { error: 'Too many requests' })
     send(res, 200, await txStatus(signature))
   }],
-  ['GET', /^\/api\/analytics$/, async (req, res) => send(res, 200, { positions: await getPositions() }, { maxAge: 30 })],
+  ['GET', /^\/api\/analytics$/, async (req, res) => {
+    // Vault holders are optional: if that read fails, positions still show (and vice versa the request fails).
+    const [positions, vaults] = await Promise.all([getPositions(), getVaultHolders().catch((e) => { console.error('[analytics] vault holders', e?.message); return null })])
+    send(res, 200, { positions, vaults }, { maxAge: 30 })
+  }],
   ['GET', /^\/api\/market-updates$/, async (req, res) => send(res, 200, await marketUpdates(), { maxAge: 60 })],
   ['GET', /^\/api\/liquidations$/, async (req, res) => send(res, 200, await marketLiquidations(), { maxAge: 60 })],
   ['GET', /^\/api\/points$/, async (req, res) => send(res, 200, (await read(POINTS)) ?? EMPTY_POINTS, { type: 'text/csv; charset=utf-8', maxAge: 300 })],
@@ -167,14 +171,17 @@ const routes = [
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js).
-const APP_ROUTES = new Set(['/', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard'])
-const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/') || !!marketById(p.match(/^\/market\/([\w-]+)\/?$/)?.[1])
+// '/', '/lend' and '/market/:id' are old links the SPA redirects (to Earn, a vault or a borrow market page).
+const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard'])
+const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
+  || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
+  || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
 
 // Public pages for search engines; markets come from config.js, so a new live market is listed automatically.
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${['/', '/lend', '/borrow', '/analytics', '/liquidations', ...LIVE.map((m) => `/market/${m.id}`)].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
+${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
 </urlset>
 `
 
@@ -228,13 +235,15 @@ http.createServer(async (req, res) => {
 refreshMarket() // first read now, then every REFRESH_MS (market.js)
 startScreening() // OFAC sanctions list: saved copy now, fresh download daily
 
-// Daily snapshot at 00:00 UTC. A missed run (e.g. restart at midnight) is harmless: the next one accrues the whole gap.
+// Snapshot every 12 hours, at 00:00 and 12:00 UTC (epoch multiples of 12 h). A missed run (e.g. a restart at that
+// minute) is harmless: the next one accrues the whole gap.
+const SNAPSHOT_EVERY_MS = 12 * 3_600_000
 function scheduleSnapshot() {
-  const now = new Date()
-  const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)
+  const now = Date.now()
+  const next = (Math.floor(now / SNAPSHOT_EVERY_MS) + 1) * SNAPSHOT_EVERY_MS
   setTimeout(() => runSnapshot()
     .then((r) => console.log('[snapshot] done', r))
     .catch((e) => console.error('[snapshot] failed', e))
-    .finally(scheduleSnapshot), next - now.getTime())
+    .finally(scheduleSnapshot), next - now)
 }
 scheduleSnapshot()

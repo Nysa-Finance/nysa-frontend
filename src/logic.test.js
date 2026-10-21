@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange, pieSlices, arcPath } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
 assert.equal(usd(NaN), '—')
 assert.equal(pct(3.0712), '3.07%')
+assert.equal(pct(11214.304957), '11,214.30%')
 assert.equal(compact(250000, 'USDY'), '250K USDY')
 
 const pts = [[0, 0], [90, 3.07], [100, 11.3]] // simplified curve
@@ -54,7 +55,9 @@ const D = 86400
 const hist = Array.from({ length: 41 }, (_, i) => ({ ts: i * D, rate: 1.0001 ** i }))
 const w30 = windowApy(hist, 30), w7 = windowApy(hist, 7)
 assert.ok(w30.full && w7.full && Math.abs(w30.spanDays - 30) < 1e-9)
-assert.ok(Math.abs(w30.apy - (1.0001 ** 365 - 1) * 100) < 1e-6)
+assert.ok(Math.abs(w30.apy - (1.0001 ** 30 - 1) * (365 / 30) * 100) < 1e-6)
+// A rewards-boosted day (+9.53%) annualizes to ~3,480%, not 10^15 %.
+assert.ok(Math.abs(realizedApy(1, 1.0953, 1) - 3478.45) < 1e-6)
 // 19-day-old reserve: "30D" falls back to since-launch and says so.
 const young = [{ ts: 0, rate: 1 }, { ts: 19 * D, rate: 1.001 }]
 assert.deepEqual([windowApy(young, 30).full, windowApy(young, 30).spanDays], [false, 19])
@@ -88,4 +91,15 @@ assert.equal(rewardApr(1, 1, 0), 0) // nothing staked
 assert.deepEqual(liquidationBonusRange(2, 5, 95), { low: 2, high: 2.5 })
 assert.deepEqual(liquidationBonusRange(2, 5, 80), { low: 2, high: 5 }) // wide band: the max is reachable
 assert.deepEqual(liquidationBonusRange(4, 5, 95), { low: 4, high: 4 })
+// Vault allocation pie: shares and arcs; a single allocation fills the circle.
+const slices = pieSlices([75, 25, -5])
+assert.deepEqual(slices.map((x) => x.share), [75, 25, 0])
+assert.equal(slices[0].start, 0)
+assert.ok(Math.abs(slices[0].end - 1.5 * Math.PI) < 1e-9 && Math.abs(slices[1].end - 2 * Math.PI) < 1e-9)
+assert.deepEqual(pieSlices([0, 0]).map((x) => x.share), [0, 0]) // nothing allocated yet
+assert.equal(arcPath(50, 50, 40, 25, 0, Math.PI / 2), 'M50.00,10.00A40,40 0 0 1 90.00,50.00L75.00,50.00A25,25 0 0 0 50.00,25.00Z')
+assert.equal((arcPath(50, 50, 40, 25, 0, 2 * Math.PI).match(/M/g) ?? []).length, 2) // full circle: two halves
+// 99.99998% (all invested but a few micro-USDC): drawn as a full circle, not as an arc whose ends coincide.
+const nearFull = pieSlices([4.5546, 0.000001])[0]
+assert.equal((arcPath(50, 50, 40, 25, nearFull.start, nearFull.end).match(/M/g) ?? []).length, 2)
 console.log('logic ok')

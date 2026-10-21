@@ -6,12 +6,13 @@
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
-import { tok, tokensOf } from './config.js'
+import { tok, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
 import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { event, skipNextPageview } from './analytics.js'
 import {
   isIOS, DEEPLINK_WALLETS, MWA_NAME, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
 } from './wallets.js'
+import { createWalletConnectWallet } from './walletconnect.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
 const WALLET_KEY = 'connectedWallet'
@@ -35,9 +36,12 @@ export const state = reactive({
   balances: {}, // token_id -> units in wallet
   positions: {}, // token_id -> { supplied, borrowed, maxWithdraw } units
   claimable: {}, // market id -> [{ symbol, amount }] unclaimed rewards of the connected wallet
+  vaults: {}, // vault id -> Earn vault metrics, allocations and exposure (live from chain, server/vault.js)
+  vaultPositions: {}, // vault id -> { shares, value } of the connected wallet
   walletName: null,
   wallets: [], // detected Wallet Standard wallets
   connectOpen: false,
+  connectError: null, // shown when the connect window reopens (WalletConnect failed while Reown's modal was up)
   points: { board: null, error: null }, // Farm Points leaderboard
   // Phone wallets reached by deeplink (iOS): a transaction waiting for the user to approve it in the wallet app, or its
   // outcome after they come back. { status: 'ready'|'sending'|'success'|'error', label, wallet, url?, signature?, error? }
@@ -49,13 +53,16 @@ export const state = reactive({
 let wallet = null
 let account = null
 const usable = (w) => w.chains.includes(CHAIN) && 'standard:connect' in w.features && 'solana:signAndSendTransaction' in w.features
+// WalletConnect: wallet apps on another device (QR code) or on the phone; signed there, sent by our backend.
+const sendSigned = async (tx) => (await api('/api/tx/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tx, wallet: account.address }) })).signature
+const walletConnect = WALLETCONNECT_PROJECT_ID ? markRaw(createWalletConnectWallet(sendSigned)) : null
 function scanWallets() {
   const ws = getWallets().get().filter(usable)
-  state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom')].map(markRaw)
+  state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom'), ...(walletConnect ? [walletConnect] : [])].map(markRaw)
 }
 
 // iOS Safari has no wallet extensions: offer Phantom / Solflare through their deeplink protocol instead.
-export const deeplinkWallets = () => (isIOS && !state.wallets.length ? DEEPLINK_WALLETS : [])
+export const deeplinkWallets = () => (isIOS && !state.wallets.some((w) => !w.walletconnect) ? DEEPLINK_WALLETS : [])
 const deeplinkWallet = (name) => ({ name, deeplink: true })
 
 export function acceptTos() {
@@ -69,6 +76,9 @@ export const rewardAprOf = (id) => state.rewards[id]?.apr ?? 0
 // Tooltip for a boosted APY, e.g. "3.10% supply APY + 12.00% USDC rewards APR".
 export const boostNote = (id, supplyApy) =>
   `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(id))} ${state.rewards[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
+
+// Tooltip for a vault's boosted APY: "1.47% supply APY + 11,212.83% USDC rewards APY, auto-compounded".
+export const vaultApyNote = (v) => `${pct(v.supplyApy)} supply APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
 
 // Risk parameters of a collateral/liability pair. Governance changes them (Market Updates), so the live on-chain
 // values win; config.js only fills in until the first market update arrives.
@@ -100,15 +110,6 @@ export function rowOf(id) {
   return { reserve: r, walletBalance: state.balances[id] ?? 0, ...(state.positions[id] ?? { supplied: 0, borrowed: 0, maxWithdraw: 0 }) }
 }
 
-export function marketSummary(m) {
-  let s = 0, b = 0
-  for (const t of tokensOf(m)) {
-    s += state.reserves[t.token_id]?.supplyUsd ?? 0
-    b += state.reserves[t.token_id]?.borrowUsd ?? 0
-  }
-  return { totalSuppliedUsd: state.loaded ? s : null, totalBorrowedUsd: state.loaded ? b : null }
-}
-
 // ---- market: pushed by the backend; polled from /api/market while the stream is down or refused ----
 const MARKET_POLL_MS = 30_000
 const STREAM_RETRY_MS = 60_000 // after the server refused the stream (too many connections), try it again this often
@@ -117,6 +118,7 @@ function showMarket(s) {
   if (s.updatedAt < marketAt) return
   marketAt = s.updatedAt
   state.reserves = s.reserves
+  state.vaults = s.vaults ?? {}
   state.rewards = s.rewards
   state.loaded = true
   state.loading = false
@@ -178,8 +180,10 @@ export async function loadAccount(fresh = false) {
     const a = await api(`/api/account/${addr}${fresh ? '?fresh' : ''}`)
     if (state.address !== addr) return // switched wallet meanwhile
     state.balances = a.balances
+    state.sol = a.sol ?? null
     state.positions = a.positions
     state.claimable = a.claimable
+    state.vaultPositions = a.vaults ?? {}
     state.walletError = null
   } catch (e) {
     console.error('[account]', e)
@@ -193,8 +197,10 @@ function setAccount(w, acc) {
   state.address = acc?.address ?? null
   state.walletName = acc ? w.name : null
   state.balances = {}
+  state.sol = null
   state.positions = {}
   state.claimable = {}
+  state.vaultPositions = {}
   state.walletError = null
   if (acc) loadAccount()
 }
@@ -213,7 +219,7 @@ async function connectWith(w, silent) {
 export async function connectWallet(w) {
   await connectWith(w, false)
   // via: how the wallet was reached — browser extension, Android app (Mobile Wallet Adapter) or iOS app (deeplink)
-  event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : { wallet: w.name, via: 'extension' })
+  event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : w.walletconnect ? { wallet: 'WalletConnect', via: 'walletconnect' } : { wallet: w.name, via: 'extension' })
   state.connectOpen = false
 }
 
@@ -254,10 +260,11 @@ async function confirmed(signature) {
 
 const buildTx = (params) => api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: account.address }) })
 
-const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate' }
-const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.token ? ` ${tok(p.token).name}` : ''}`
+const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate', 'vault-deposit': 'Deposit', 'vault-withdraw': 'Withdraw' }
+const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.vault ? ` ${vaultById(p.vault)?.name ?? ''}` : p.token ? ` ${tok(p.token).name}` : ''}`
 function trackSuccess(p) {
   if (p.kind === 'claim') event('Rewards claimed', { market: p.market })
+  else if (p.kind.startsWith('vault-')) event(p.kind === 'vault-deposit' ? 'Vault deposit' : 'Vault withdraw', { vault: p.vault })
   else if (p.kind === 'liquidate') event('Liquidation', { market: p.market })
   else if (p.token) event(p.kind[0].toUpperCase() + p.kind.slice(1), { token: tok(p.token).name })
 }
@@ -309,6 +316,8 @@ async function resumeDeeplink(ret) {
 // First-time setup comes back as a separate transaction (final: false): send it, wait, then ask for the action.
 async function runAction(params) {
   if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
+  // No SOL at all: every transaction would fail (fees are paid in SOL). Say so before building one.
+  if (state.sol === 0) throw new Error('This wallet has no SOL for Solana network fees: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.')
   if (wallet.deeplink) {
     // The page leaves for the wallet app from the handoff card; this promise only settles if the user cancels.
     await deeplinkStep(params)
@@ -334,6 +343,19 @@ export async function sendKaminoAction(kind, { market, token, amount, all }) {
     const params = { kind, market: market.id, token: token.token_id, amount, all }
     const sig = await runAction(params)
     trackSuccess(params) // Deposit | Withdraw | Borrow | Repay
+    return sig
+  } catch (e) {
+    event('Transaction failed', { action: kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
+    throw e
+  }
+}
+
+// Earn vault: deposit the vault's token for shares, or withdraw `amount` of it (all: every share). Confirmed signature.
+export async function sendVaultAction(kind, vault, { amount, all }) {
+  const params = { kind, vault: vault.id, amount, all }
+  try {
+    const sig = await runAction(params)
+    trackSuccess(params)
     return sig
   } catch (e) {
     event('Transaction failed', { action: kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
@@ -383,7 +405,7 @@ export function loadPoints() {
 }
 export const myPoints = () => state.points.board?.rows.find((r) => r.address === state.address) ?? null
 
-// Daily reserve history for Realized APY (recorded by the daily snapshot). Loaded once per page view.
+// Reserve history for Realized APY (recorded by the snapshot every 12 hours). Loaded once per page view.
 let historyReq = null
 export function loadApyHistory() {
   historyReq ??= api('/api/apy-history').catch((e) => { historyReq = null; throw e })
@@ -398,7 +420,9 @@ export function loadMarketUpdates() {
 }
 
 // Every open position, riskiest first (hf null = no debt).
-export const loadPositions = () => api('/api/analytics').then((a) => a.positions)
+// Market positions (obligations) and each vault's holders ({ [vaultId]: [{ owner, wallet, staked }] } or null).
+export const loadAnalytics = () => api('/api/analytics')
+export const loadPositions = () => loadAnalytics().then((a) => a.positions)
 // Every liquidation in the live markets, newest first (decoded on-chain by the backend).
 export const loadLiquidations = () => api('/api/liquidations').then((a) => a.liquidations)
 
