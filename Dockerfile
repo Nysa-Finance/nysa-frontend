@@ -1,6 +1,6 @@
 # Nysa frontend + backend for the VPS deploy (see docker-compose.yml, README "VPS deploy").
 # The RPC key is only read at runtime by the backend (SOLANA_RPC); nothing secret goes into the browser bundle.
-FROM node:26.11.1-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0 AS build
+FROM node:26.12.1-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY vendor ./vendor
@@ -8,7 +8,7 @@ RUN npm ci
 COPY . .
 RUN npm test && npm run build && npm prune --omit=dev
 
-FROM node:26.11.1-slim@sha256:193fe51b64e77981119c98c2002c9e32a70e2f006fb4d25068ce0558998917f0
+FROM node:26.12.1-slim@sha256:36793bcbb160a6a16cede1e62b93f84e26b78a972a8a4c0b879c1c12f22761ec
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
 COPY --from=build /app/package.json ./
