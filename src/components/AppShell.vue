@@ -33,7 +33,7 @@ const active = (t) => route.path === t.to || route.path.startsWith(`${t.to}/`) /
           <button class="n-pill" @click="menu = !menu"><span class="n-dot" />{{ short(state.address) }}</button>
           <div v-if="menu" class="n-menu" @click="menu = false">
             <RouterLink to="/portfolio">Portfolio</RouterLink>
-            <a :href="explorer(state.address)" target="_blank" rel="noopener noreferrer">View on Solscan ↗</a>
+            <a :href="explorer(state.address)" target="_blank" rel="noopener noreferrer">View on Solscan ↗&#xFE0E;</a>
             <button @click="disconnect">Disconnect</button>
           </div>
         </template>

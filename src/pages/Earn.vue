@@ -55,7 +55,7 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
           <div class="vault-id">
             <TokenIcon v-if="x.live?.tokenId" :token="tok(x.live.tokenId)" />
             <div class="name-col">
-              <span class="name">{{ x.live?.name ?? x.v.name }} <span class="arrow">↗</span></span>
+              <span class="name">{{ x.live?.name ?? x.v.name }} <span class="arrow">↗&#xFE0E;</span></span>
               <button v-if="x.v.farmPoints" type="button" class="n-farm-points" title="View the Farm Points leaderboard" @click.stop="pointsOpen = true">Farm Points</button>
             </div>
           </div>

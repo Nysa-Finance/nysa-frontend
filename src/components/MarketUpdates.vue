@@ -22,7 +22,7 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
       </div>
       <div class="n-cell" data-label="Applied to"><span class="n-chip">{{ u.target }}</span></div>
       <div class="n-cell" data-label="Transaction">
-        <a class="mu-link" :href="txUrl(u.sig)" target="_blank" rel="noopener noreferrer">{{ u.sig.slice(0, 4) }}…{{ u.sig.slice(-4) }} ↗</a>
+        <a class="mu-link" :href="txUrl(u.sig)" target="_blank" rel="noopener noreferrer">{{ u.sig.slice(0, 4) }}…{{ u.sig.slice(-4) }} ↗&#xFE0E;</a>
       </div>
     </div>
   </div>

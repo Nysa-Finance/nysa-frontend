@@ -14,7 +14,7 @@ defineEmits(['dismiss'])
     </ol>
     <p v-if="tx.error" class="tx-msg">{{ tx.error }}</p>
     <div v-if="tx.status !== 'running' || tx.signature" class="tx-foot">
-      <a v-if="tx.signature" :href="txUrl(tx.signature)" target="_blank" rel="noopener noreferrer">View transaction ↗</a>
+      <a v-if="tx.signature" :href="txUrl(tx.signature)" target="_blank" rel="noopener noreferrer">View transaction ↗&#xFE0E;</a>
       <button v-if="tx.status !== 'running'" class="tx-x" @click="$emit('dismiss')">Dismiss</button>
     </div>
   </div>

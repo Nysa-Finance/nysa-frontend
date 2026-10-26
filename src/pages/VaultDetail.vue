@@ -113,7 +113,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
           <div class="n-table">
             <div v-for="row in addresses" :key="row.label" class="addr-row">
               <span class="addr-k">{{ row.label }}<span v-if="row.note" class="addr-note">{{ row.note }}</span></span>
-              <a class="addr-link" :href="explorer(row.address)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ row.address }}</span><span class="addr-short">{{ short(row.address, 6, 6) }}</span><span class="ext">↗</span></a>
+              <a class="addr-link" :href="explorer(row.address)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ row.address }}</span><span class="addr-short">{{ short(row.address, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
             </div>
           </div>
         </Section>
