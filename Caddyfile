@@ -13,7 +13,12 @@ http://{$DOMAIN} {
 	# Not the live market stream: compression would buffer Server-Sent Events.
 	@compressible not path /api/events
 	encode @compressible zstd gzip
-	reverse_proxy app:3000
+	# During a deploy the app container is swapped: keep retrying it for up to 20 s instead of answering 502, so requests
+	# just wait (only connection failures are retried: a request the app received is never sent twice).
+	reverse_proxy app:3000 {
+		lb_try_duration 20s
+		lb_try_interval 250ms
+	}
 	header {
 		Content-Security-Policy "default-src 'self'; script-src 'self' 'nonce-{http.request.uuid}'; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.reown.com; img-src 'self' data: blob: https://api.web3modal.org; connect-src 'self' https://analytics.nysa.finance ws://localhost:* wss://relay.walletconnect.org https://verify.walletconnect.org https://verify.walletconnect.com https://rpc.walletconnect.org https://api.web3modal.org; frame-src 'self' https://verify.walletconnect.org https://verify.walletconnect.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"

@@ -58,6 +58,12 @@ Liquidating a sanctioned borrower's loan is refused too. The liquidation bonus s
 actually get (`liquidationBonusRange` in `src/logic.js`), not the configured maximum. Docker images (by digest) and GitHub
 Actions (by commit) are pinned; Dependabot proposes updates as pull requests.
 
+Deploys without errors: `scripts/deploy.sh` builds the new image while the old container serves, then swaps them.
+Meanwhile Caddy retries the app for up to 20 s instead of answering 502 (`lb_try_duration`), the new backend listens
+only once it has the market and the saved sanctions list, and the old one drains on SIGTERM (ends the market streams,
+finishes requests in flight, exits within 8 s). Measured under load on a local swap: 20× 502, 6× 503 and 6× "still
+loading" before, none after (slowest response 2 s). A tunnel or Caddy update still drops connections for a few seconds.
+
 ## Transactions
 `POST /api/tx` builds the action against the market cache with a fresh read of the wallet's obligation, simulates it
 (a failing transaction comes back as a readable error and is never sent) and returns it unsigned. A first deposit also
