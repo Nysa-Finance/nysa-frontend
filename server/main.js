@@ -209,7 +209,7 @@ async function serveStatic(pathname, res) {
   res.end(body)
 }
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   try {
     const { pathname } = new URL(req.url, 'http://localhost')
     if (pathname.startsWith('/api/')) {
@@ -230,10 +230,25 @@ http.createServer(async (req, res) => {
     if (!res.headersSent) send(res, 500, { error: 'Internal error' })
     else res.end()
   }
-}).listen(PORT, () => console.log(`nysa listening on :${PORT}`))
+})
 
-refreshMarket() // first read now, then every REFRESH_MS (market.js)
-startScreening() // OFAC sanctions list: saved copy now, fresh download daily
+// Deploys swap containers (docker compose up): Caddy holds requests while none answers (lb_try_duration, Caddyfile), so
+// the new one only starts listening once it has the market (first read, then every REFRESH_MS: market.js) and the saved
+// sanctions list (then a fresh download daily: screening.js), or after READY_TIMEOUT_MS if the RPC is slow: nobody gets
+// "still loading" or "screening is starting up".
+const READY_TIMEOUT_MS = 15_000
+await Promise.race([Promise.all([refreshMarket(), startScreening()]), new Promise((r) => setTimeout(r, READY_TIMEOUT_MS))])
+server.listen(PORT, () => console.log(`nysa listening on :${PORT}`))
+
+// Docker stops the old container with SIGTERM (node is PID 1, which ignores it unless handled: Docker would wait 10 s,
+// then kill it). Stop taking connections, end the market streams (browsers reconnect, through Caddy, to the new one),
+// let requests in flight finish, then exit; forced after 8 s, before Docker's kill.
+process.once('SIGTERM', () => {
+  console.log('[server] SIGTERM: draining')
+  server.close(() => process.exit(0))
+  for (const c of clients) c.end()
+  setTimeout(() => process.exit(0), 8_000).unref()
+})
 
 // Snapshot every 12 hours, at 00:00 and 12:00 UTC (epoch multiples of 12 h). A missed run (e.g. a restart at that
 // minute) is harmless: the next one accrues the whole gap.
