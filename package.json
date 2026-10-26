@@ -34,10 +34,11 @@
   },
   "overrides": {
     "uuid": "^11.1.1",
-    "toml": "^4.3.0",
+    "toml": "^5.0.1",
     "jayson": "^5.0.0",
     "bigint-buffer": "file:./vendor/bigint-buffer",
     "react-native": "file:./vendor/no-react-native",
-    "@react-native-async-storage/async-storage": "file:./vendor/no-async-storage"
+    "@react-native-async-storage/async-storage": "file:./vendor/no-async-storage",
+    "zod": "^4.6.7"
   }
 }
