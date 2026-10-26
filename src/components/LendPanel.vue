@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, rewardAprOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, usdFull, num, floorTo, coversAll } from '../logic.js'
+import { pct, amt, usdFull, num, floorTo, coversAll, underLimit } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 // withdrawOnly: only the Withdraw tab (the market page, for collateral and deposits made before the Earn vaults).
@@ -17,7 +17,12 @@ const row = computed(() => rowOf(token.value.token_id))
 const on = computed(() => !!state.address)
 
 const supplied = computed(() => row.value?.supplied ?? 0)
-const available = computed(() => (tab.value === 'lend' ? row.value?.walletBalance ?? 0 : row.value?.maxWithdraw ?? 0))
+// Withdraw: all of it when nothing borrowed holds it back; when the loan does, Kamino's limit less LIMIT_MARGIN.
+const maxWithdraw = computed(() => {
+  const max = row.value?.maxWithdraw ?? 0
+  return coversAll(max, supplied.value, token.value.decimals) ? max : underLimit(max, token.value.decimals)
+})
+const available = computed(() => (tab.value === 'lend' ? row.value?.walletBalance ?? 0 : maxWithdraw.value))
 const value = computed(() => num(amount.value) * priceOf(token.value.token_id))
 // Room left under the reserve's deposit limit (live from chain).
 const capRoom = computed(() => Math.max((row.value?.reserve.supplyCap ?? Infinity) - (row.value?.reserve.totalSupplied ?? 0), 0))
@@ -73,7 +78,7 @@ async function submit() {
       <span class="v">{{ on ? `${amt(available)} ${token.name}` : '—' }}</span>
     </div>
     <div class="n-label">Amount</div>
-    <input v-model="amount" class="n-input" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
+    <input v-model="amount" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
     <div class="n-quick" style="margin-bottom: 14px">
       <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
     </div>

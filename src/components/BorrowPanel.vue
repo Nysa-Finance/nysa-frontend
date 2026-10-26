@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, riskOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, amtDust, usdFull, num, borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan } from '../logic.js'
+import { pct, amt, amtDust, usdFull, num, borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan, underLimit } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({ market: Object, collateralTokens: Array, loanTokens: Array, initialTab: String, initialAsset: String })
@@ -39,14 +39,20 @@ const collateral = computed(() =>
 )
 const collUsd = computed(() => collateral.value.reduce((s, c) => s + c.usd, 0))
 const maxLtv = computed(() => weightedLtv(collateral.value))
-const capacity = computed(() => borrowCapacity(collateral.value, debtUsd.value, loanPrice.value, liquidity.value))
+// Kamino's own limit for this position (server/account.js); our estimate when collateral is being added in the same
+// step. Kept LIMIT_MARGIN under it: the program re-checks at the transaction's block.
+const capacity = computed(() => {
+  const kamino = loanRow.value?.maxBorrow
+  const max = !num(deposit.value) && kamino != null ? Math.min(kamino, liquidity.value) : borrowCapacity(collateral.value, debtUsd.value, loanPrice.value, liquidity.value)
+  return underLimit(max, loan.value.decimals)
+})
 const borrowUsd = computed(() => num(borrowAmt.value) * loanPrice.value)
 const ltv = computed(() => (collUsd.value > 0 ? ((debtUsd.value + borrowUsd.value) / collUsd.value) * 100 : 0))
 
 function setLtv(target) {
   if (collUsd.value <= 0 || loanPrice.value <= 0) return
   const units = Math.max((collUsd.value * target) / 100 - debtUsd.value, 0) / loanPrice.value
-  const v = floorTo(Math.min(units, liquidity.value), loan.value.decimals)
+  const v = floorTo(Math.min(units, capacity.value), loan.value.decimals)
   borrowAmt.value = v > 0 ? String(v) : ''
 }
 
@@ -119,7 +125,7 @@ async function submitRepay() {
       <select v-model="collId" class="n-select" style="margin-bottom: 10px">
         <option v-for="t in collateralTokens" :key="t.token_id" :value="t.token_id">{{ t.name }}</option>
       </select>
-      <input v-model="deposit" class="n-input" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00" :disabled="!on" style="margin-bottom: 8px" />
+      <input v-model="deposit" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 8px" />
       <div class="n-kv" style="margin-bottom: 22px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(collRow?.walletBalance ?? 0)} ${coll.name}` : '—' }}</span></div>
 
       <div class="n-rule" style="padding-top: 20px">
@@ -138,7 +144,7 @@ async function submitRepay() {
         <div class="n-kv" style="margin-bottom: 10px"><span class="k">Available liquidity</span><span class="v">{{ amt(liquidity) }} {{ loan.name }}</span></div>
         <div class="n-kv" style="margin-bottom: 18px"><span class="k">Max you can borrow</span><span class="v">{{ on ? `${amt(capacity)} ${loan.name}` : '—' }}</span></div>
         <div class="n-label">Amount</div>
-        <input v-model="borrowAmt" class="n-input" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00" :disabled="!on" style="margin-bottom: 14px" />
+        <input v-model="borrowAmt" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 14px" />
         <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(borrowUsd) }}</span></div>
         <p v-if="borrowWarning" class="n-warn" style="margin-bottom: 16px">{{ borrowWarning }}</p>
         <button class="n-btn-block" :disabled="!canBorrow" @click="submitBorrow">{{ num(deposit) > 0 ? 'Supply & borrow' : 'Borrow' }} {{ loan.name }}</button>
@@ -154,7 +160,7 @@ async function submitRepay() {
       <div class="n-kv" style="margin-bottom: 10px"><span class="k">Outstanding debt</span><span class="v">{{ on ? `${amtDust(debt)} ${loan.name}` : '—' }}</span></div>
       <div class="n-kv" style="margin-bottom: 20px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(loanRow?.walletBalance ?? 0)} ${loan.name}` : '—' }}</span></div>
       <div class="n-label">Amount</div>
-      <input v-model="repayAmt" class="n-input" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
+      <input v-model="repayAmt" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
       <div class="n-quick" style="margin-bottom: 18px">
         <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on || debt <= 0" @click="quickRepay(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
       </div>

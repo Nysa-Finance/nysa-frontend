@@ -3,7 +3,7 @@
 // holds keys. First-time setup (Kamino user accounts) or oversized transactions come back in two steps: the client
 // sends the setup transaction, waits for it, then asks again and gets the action itself (`final: true`).
 import Decimal from 'decimal.js'
-import { KaminoAction, KaminoVault, U64_MAX, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
+import { KaminoAction, KaminoVault, U64_MAX, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
@@ -12,13 +12,15 @@ import {
 } from '@solana/kit'
 import { createRequire } from 'node:module'
 import { LIVE, marketById, vaultById, tokensOf, tok } from '../src/config.js'
+import { floorTo } from '../src/logic.js'
 import { rpc, NONE } from './rpc.js'
 import { getLive, getVault, reserveOf, farms, refreshSoon } from './market.js'
 import { vaultClient } from './vault.js'
-import { obligationType, pendingRewards, ataOf, vaultShares } from './account.js'
+import { obligationType, pendingRewards, ataOf, vaultShares, maxOf } from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
 
 const require = createRequire(import.meta.url)
+const klendErrors = require('@kamino-finance/klend-sdk/dist/@codegen/klend/errors/custom.js')
 const { decodeUserState } = require('@kamino-finance/farms-sdk')
 
 const MAX_TX_BYTES = 1232
@@ -108,10 +110,24 @@ async function simulated(compiled) {
 // before any program runs (no log to show), or when creating the first token account ("insufficient lamports").
 const NO_SOL = 'This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.'
 const NO_SOL_ERRORS = ['AccountNotFound', 'InsufficientFundsForFee', 'InsufficientFundsForRent']
+// Kamino lending errors users hit, in plain words; any other klend error shows its SDK message.
+const KLEND_ERRORS = {
+  6008: 'There isn\'t enough liquidity in this market for that amount right now.',
+  6011: 'That\'s more than you can withdraw right now: your loan needs this collateral. Try a smaller amount.',
+  6013: 'That\'s above your borrow limit right now (prices and interest move every block). Try a slightly smaller amount.',
+  6093: 'That would bring your loan closer to liquidation than Kamino allows. Try a smaller amount.',
+  6119: 'That would make your loan liquidatable. Try a smaller amount.',
+}
 function simulationError(logs, err) {
   const code = typeof err === 'string' ? err : Object.keys(err ?? {})[0]
   if (NO_SOL_ERRORS.includes(code) || logs.some((l) => /insufficient lamports/i.test(l))) throw new UserError(NO_SOL)
   if (logs.some((l) => /ObligationHealthy|healthy and cannot be liquidated/i.test(l))) throw new UserError('This loan is healthy again (or was just liquidated), so it can\'t be liquidated right now.')
+  const failed = [...logs].reverse().find((l) => / failed: custom program error: 0x/.test(l))
+  if (failed?.startsWith(`Program ${PROGRAM_ID} `)) {
+    const n = parseInt(failed.split('0x')[1], 16)
+    const msg = KLEND_ERRORS[n] ?? klendErrors.fromCode(n)?.msg
+    if (msg) throw new UserError(msg)
+  }
   const hint = [...logs].reverse().find((l) => /Error Message|failed|insufficient/i.test(l))
   throw new UserError(`Simulation failed${hint ? ': ' + hint.replace(/^Program log: /, '') : ''}`)
 }
@@ -135,6 +151,13 @@ async function lending(kind, owner, m, t, amount, all) {
   const reserve = reserveOf(market, t)
   const ob = await market.getObligationByWallet(owner, obligationType())
   if (kind !== 'deposit' && !ob) throw new UserError('No Kamino position found for this wallet in this market')
+  if (!all && (kind === 'borrow' || kind === 'withdraw')) {
+    const max = maxOf(kind, ob, market, reserve, now)
+    if (max != null && amount > max) {
+      const fits = `${floorTo(max, t.decimals)} ${t.name}`
+      throw new UserError(kind === 'borrow' ? `That's above your borrow limit: you can borrow up to ${fits} right now.` : `That's more than you can withdraw right now: up to ${fits}.`)
+    }
+  }
   const base = all ? U64_MAX : new Decimal(amount).mul(new Decimal(10).pow(reserve.stats.decimals)).floor().toFixed()
   const axn = await BUILDERS[kind]({
     kaminoMarket: market, amount: base, reserveAddress: reserve.address, owner: createNoopSigner(owner),

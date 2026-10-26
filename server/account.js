@@ -18,6 +18,15 @@ const ATA_PROGRAM = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 const enc = getAddressEncoder()
 export const obligationType = () => new VanillaObligation(PROGRAM_ID)
 
+// What the obligation can borrow / withdraw of a reserve, in token units, as Kamino computes it at `now`: the panels'
+// limits, and checked before building (tx.js) to say what fits instead of failing the simulation. null if unknown.
+export function maxOf(kind, ob, market, reserve, now) {
+  try {
+    const f = num(reserve.getMintFactor()) || 1
+    return num(kind === 'borrow' ? ob.getMaxBorrowAmount(market, reserve.address, now, false) : ob.getMaxWithdrawAmount(market, reserve.address, now).maxWithdrawAmount) / f
+  } catch { return null }
+}
+
 export async function ataOf(owner, mint, tokenProgram) {
   const [ata] = await getProgramDerivedAddress({ programAddress: ATA_PROGRAM, seeds: [enc.encode(owner), enc.encode(tokenProgram), enc.encode(mint)] })
   return ata
@@ -68,11 +77,9 @@ async function readAccount(wallet) {
       const f = num(r.getMintFactor()) || 1
       const supplied = ob ? num(ob.getDepositByReserve(r.address)?.amount) / f : 0
       const borrowed = ob ? num(ob.getBorrowByReserve(r.address)?.amount) / f : 0
-      let maxWithdraw = supplied
-      if (ob && supplied > 0) {
-        try { maxWithdraw = Math.min(num(ob.getMaxWithdrawAmount(market, r.address, now).maxWithdrawAmount) / f, supplied) } catch { /* keep supplied */ }
-      }
-      positions[t.token_id] = { supplied, borrowed, maxWithdraw }
+      const maxWithdraw = ob && supplied > 0 ? Math.min(maxOf('withdraw', ob, market, r, now) ?? supplied, supplied) : supplied
+      const maxBorrow = ob && m.loans.includes(t.token_id) ? maxOf('borrow', ob, market, r, now) : null
+      positions[t.token_id] = { supplied, borrowed, maxWithdraw, maxBorrow }
     }
   }
   return { balances, positions, claimable, sol, vaults: await vaultPositions(owner) }

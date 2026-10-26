@@ -92,7 +92,7 @@ async function submit() {
       <p v-if="infoError" class="n-warn">{{ infoError }}</p>
 
       <div class="n-label">Repay ({{ debt.name }})</div>
-      <input v-model="amount" class="n-input" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00"
+      <input v-model="amount" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"
         :disabled="!on || !info?.liquidatable || info?.fullOnly" />
       <div class="lq-row">
         <span>Wallet: {{ on ? `${amt(balance, 2)} ${debt.name}` : '—' }}</span>

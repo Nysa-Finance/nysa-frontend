@@ -22,8 +22,9 @@ export const compact = (v, unit) => {
   return unit ? `${n} ${unit}` : n
 }
 export const short = (s, a = 4, b = 4) => (s && s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s)
+// An amount typed by the user: "," or "." as the decimal separator (phone keyboards), anything else invalid → 0.
 export const num = (s) => {
-  const n = Number(s)
+  const n = Number(String(s ?? '').trim().replace(',', '.'))
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
@@ -114,6 +115,10 @@ export function dur(sec) {
 }
 
 // Round a token amount to its decimals without ever exceeding (floor) or undershooting (ceil) the true value.
+// Kamino re-checks borrow and withdraw limits at the transaction's block (fresh prices, accrued interest): offered maxima
+// stay this fraction under the computed limit, so a max amount still fits when it lands.
+export const LIMIT_MARGIN = 0.001
+export const underLimit = (max, d) => floorTo(max * (1 - LIMIT_MARGIN), d)
 export const floorTo = (v, d) => (v > 0 ? Math.floor(v * 10 ** d + 1e-9) / 10 ** d : 0)
 export const ceilTo = (v, d) => (v > 0 ? Math.ceil(v * 10 ** d - 1e-9) / 10 ** d : 0)
 // True when paying `amount` would leave less than one smallest unit of `total` behind (i.e. it means "all of it").

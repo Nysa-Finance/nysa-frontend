@@ -50,6 +50,7 @@ const { buildTx, txStatus } = await import('../server/tx.js')
 const { vaultClient } = await import('../server/vault.js')
 const { getAccount } = await import('../server/account.js')
 const { TOKENS, VAULTS } = await import('../src/config.js')
+const { underLimit } = await import('../src/logic.js')
 const USDY = TOKENS['svm-usdy'], USDC = TOKENS['svm-usdc'], MARKET = 'sol-usdy-usdc', VAULT = VAULTS[0].id
 
 // Oracle prices stop updating in a fork: give each reserve a long max price age, or Kamino refuses the stale prices.
@@ -124,6 +125,24 @@ console.log('Market: supply USDY, borrow USDC, repay, withdraw')
   a = await account(w)
   assert.equal(a.positions['svm-usdy'].supplied, 0, 'USDY supplied after withdraw all')
   close(a.balances['svm-usdy'], 100, 1e-5, 'wallet USDY after withdraw all')
+}
+
+console.log('Market limits: up to Kamino\'s max (less the UI margin) lands, above it gets a clear message')
+{
+  const w = await wallet({ usdy: 100, usdc: 10 })
+  await act(w, { kind: 'deposit', market: MARKET, token: 'svm-usdy', amount: 50 })
+  const { maxBorrow } = (await account(w)).positions['svm-usdc']
+  assert.ok(maxBorrow > 0, 'maxBorrow from Kamino')
+  await assert.rejects(buildTx({ kind: 'borrow', market: MARKET, token: 'svm-usdc', amount: maxBorrow * 1.001, wallet: w.addr }), /above your borrow limit: you can borrow up to/)
+  console.log(`  ✓ borrow above the max (${maxBorrow}) refused with the max`)
+  await act(w, { kind: 'borrow', market: MARKET, token: 'svm-usdc', amount: underLimit(maxBorrow, USDC.decimals) })
+  await act(w, { kind: 'repay', market: MARKET, token: 'svm-usdc', all: true })
+  await act(w, { kind: 'borrow', market: MARKET, token: 'svm-usdc', amount: 20 })
+  const { maxWithdraw, supplied } = (await account(w)).positions['svm-usdy']
+  assert.ok(maxWithdraw > 0 && maxWithdraw < supplied, `maxWithdraw ${maxWithdraw} limited by the loan`)
+  await assert.rejects(buildTx({ kind: 'withdraw', market: MARKET, token: 'svm-usdy', amount: maxWithdraw * 1.001, wallet: w.addr }), /more than you can withdraw right now: up to/)
+  console.log(`  ✓ withdraw above the max (${maxWithdraw}) refused with the max`)
+  await act(w, { kind: 'withdraw', market: MARKET, token: 'svm-usdy', amount: underLimit(maxWithdraw, USDY.decimals) })
 }
 
 console.log('Vault: deposit, withdraw all')

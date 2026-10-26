@@ -61,7 +61,7 @@ async function submit() {
       <span class="v">{{ on ? `${amt(available)} ${token.name}` : '—' }}</span>
     </div>
     <div class="n-label">Amount ({{ token.name }})</div>
-    <input v-model="amount" class="n-input" type="number" inputmode="decimal" min="0" step="any" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
+    <input v-model="amount" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
     <div class="n-quick" style="margin-bottom: 14px">
       <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
     </div>
