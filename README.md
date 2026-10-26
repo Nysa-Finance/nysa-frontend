@@ -64,6 +64,13 @@ Actions (by commit) are pinned; Dependabot proposes updates as pull requests.
 creates the user's Kamino accounts: that setup comes back first (`final: false`); the client sends it, waits for
 confirmation, then asks again for the action itself.
 
+Borrow and withdraw limits are Kamino's own (`maxOf` in `server/account.js`: `getMaxBorrowAmount`,
+`getMaxWithdrawAmount`). The panels offer them 0.1% lower (`LIMIT_MARGIN` in `src/logic.js`), since the program
+re-checks at the transaction's block with fresh prices and accrued interest. An amount above the limit gets a message
+with what fits, before any simulation. Kamino errors from a simulation come back in plain words (`KLEND_ERRORS` in
+`server/tx.js`). Amount fields accept `,` or `.` as the decimal separator. A 502/503/504 (the backend restarting during
+a deploy) is retried once, except `/api/tx/send`.
+
 ## Wallets on phones
 Mobile browsers have no wallet extensions (`src/wallets.js`):
 - **Android (Chrome)**: Solana's Mobile Wallet Adapter (`@solana-mobile/wallet-standard-mobile`, loaded only on Android)

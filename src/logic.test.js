@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange, pieSlices, arcPath } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange, pieSlices, arcPath, num, underLimit } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -102,4 +102,12 @@ assert.equal((arcPath(50, 50, 40, 25, 0, 2 * Math.PI).match(/M/g) ?? []).length,
 // 99.99998% (all invested but a few micro-USDC): drawn as a full circle, not as an arc whose ends coincide.
 const nearFull = pieSlices([4.5546, 0.000001])[0]
 assert.equal((arcPath(50, 50, 40, 25, nearFull.start, nearFull.end).match(/M/g) ?? []).length, 2)
+// Typed amounts: comma or dot as the decimal separator; anything ambiguous or invalid is 0 (no amount).
+assert.equal(num('586,985732'), 586.985732)
+assert.equal(num(' 0.5 '), 0.5)
+for (const bad of ['1.000,5', '1,000.5', 'abc', '-3', '', null]) assert.equal(num(bad), 0, String(bad))
+// Offered maxima stay LIMIT_MARGIN (0.1%) under Kamino's limit, floored to the token's decimals.
+assert.equal(underLimit(0.836779, 6), 0.835942)
+assert.equal(underLimit(1000, 6), 999)
+assert.equal(underLimit(0, 6), 0)
 console.log('logic ok')

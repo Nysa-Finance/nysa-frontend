@@ -158,11 +158,18 @@ function listenMarket() {
 }
 
 // ---- connected wallet ----
+// 502/503/504: the backend is not answering, e.g. restarting during a deploy (a few seconds). Asked once more, except
+// for sending a signed transaction, which is never sent twice.
+const UNREACHABLE = [502, 503, 504]
 async function api(path, init) {
-  const res = await fetch(path, init)
+  let res = await fetch(path, init)
+  if (UNREACHABLE.includes(res.status) && path !== '/api/tx/send') {
+    await new Promise((r) => setTimeout(r, 2500))
+    res = await fetch(path, init)
+  }
   const body = await res.json().catch(() => ({}))
   if (res.status === 403 && body.blocked) refuseWallet()
-  if (!res.ok) throw new Error(body.error ?? `Server responded ${res.status}`)
+  if (!res.ok) throw new Error(body.error ?? (UNREACHABLE.includes(res.status) ? 'Nysa\'s server is not reachable right now, please try again in a few seconds.' : `Server responded ${res.status}`))
   return body
 }
 
