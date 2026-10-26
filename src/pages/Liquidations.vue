@@ -77,7 +77,7 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
         <div v-else-if="loans === null" class="n-empty">Open loans are temporarily unavailable.</div>
         <div v-else-if="!loans.length" class="n-empty">No open loans in this market right now.</div>
         <div v-for="p in loans ?? []" :key="p.owner" class="n-tr sm lo-grid">
-          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗</a></div>
+          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗&#xFE0E;</a></div>
           <div class="n-cell n-num" data-label="Collateral">${{ amt(p.deposits, 2) }}</div>
           <div class="n-cell n-num" data-label="Debt">${{ amt(p.debt, 2) }}</div>
           <div class="n-cell n-num" data-label="Health factor" :style="{ color: hfColor(p.hf), fontWeight: 600 }">{{ hfText(p.hf) }}</div>
@@ -101,11 +101,11 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
         <div v-else-if="!history.length" class="n-empty">No liquidations so far. Every liquidation in this market will appear here, with its transaction.</div>
         <div v-for="l in history ?? []" :key="l.id" class="n-tr sm lh-grid">
           <div class="n-cell n-muted n-num" data-label="Date">{{ when(l.ts) }}</div>
-          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(l.owner ?? l.obligation)" target="_blank" rel="noopener noreferrer">{{ short(l.owner ?? l.obligation, 6) }} ↗</a></div>
+          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(l.owner ?? l.obligation)" target="_blank" rel="noopener noreferrer">{{ short(l.owner ?? l.obligation, 6) }} ↗&#xFE0E;</a></div>
           <div class="n-cell n-num" data-label="Debt repaid">{{ l.repaid == null ? '—' : `${amt(l.repaid, 2)} ${l.repaidToken}` }}</div>
           <div class="n-cell n-num" data-label="Collateral seized">{{ l.seized == null ? '—' : `${amt(l.seized, 2)} ${l.seizedToken}` }}</div>
-          <div class="n-cell" data-label="Liquidator"><a class="sub-link mono" :href="explorer(l.liquidator)" target="_blank" rel="noopener noreferrer">{{ short(l.liquidator, 4) }} ↗</a></div>
-          <div class="n-cell" data-label="Transaction"><a class="sub-link mono" :href="txUrl(l.sig)" target="_blank" rel="noopener noreferrer">{{ short(l.sig, 4) }} ↗</a></div>
+          <div class="n-cell" data-label="Liquidator"><a class="sub-link mono" :href="explorer(l.liquidator)" target="_blank" rel="noopener noreferrer">{{ short(l.liquidator, 4) }} ↗&#xFE0E;</a></div>
+          <div class="n-cell" data-label="Transaction"><a class="sub-link mono" :href="txUrl(l.sig)" target="_blank" rel="noopener noreferrer">{{ short(l.sig, 4) }} ↗&#xFE0E;</a></div>
         </div>
       </div>
       <p class="hint">Decoded from Kamino Lend liquidation transactions on Solana.</p>

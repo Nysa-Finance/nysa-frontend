@@ -129,16 +129,16 @@ function openDd() {
           <div class="n-table">
             <div class="addr-row">
               <span class="addr-k">Vault ID</span>
-              <a class="addr-link" :href="explorer(m.kaminoMarket)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ m.kaminoMarket }}</span><span class="addr-short">{{ short(m.kaminoMarket, 6, 6) }}</span><span class="ext">↗</span></a>
+              <a class="addr-link" :href="explorer(m.kaminoMarket)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ m.kaminoMarket }}</span><span class="addr-short">{{ short(m.kaminoMarket, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
             </div>
             <template v-for="t in [...loans, ...collateral]" :key="t.token_id">
               <div class="addr-row">
                 <span class="addr-k">{{ t.name }} Address</span>
-                <a class="addr-link" :href="explorer(t.mint)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ t.mint }}</span><span class="addr-short">{{ short(t.mint, 6, 6) }}</span><span class="ext">↗</span></a>
+                <a class="addr-link" :href="explorer(t.mint)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ t.mint }}</span><span class="addr-short">{{ short(t.mint, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
               </div>
               <div class="addr-row">
                 <span class="addr-k">{{ t.name }} Price Feed<span class="addr-note">{{ t.feedNote }}</span></span>
-                <a class="addr-link" :href="explorer(t.priceFeed)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ t.priceFeed }}</span><span class="addr-short">{{ short(t.priceFeed, 6, 6) }}</span><span class="ext">↗</span></a>
+                <a class="addr-link" :href="explorer(t.priceFeed)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ t.priceFeed }}</span><span class="addr-short">{{ short(t.priceFeed, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
               </div>
             </template>
           </div>
@@ -150,7 +150,7 @@ function openDd() {
           <dl class="dd-list">
             <template v-for="row in m.dueDiligence.rows" :key="row.label">
               <dt>{{ row.label }}</dt>
-              <dd><a v-if="row.href" class="addr-link" :href="row.href" target="_blank" rel="noopener noreferrer">{{ row.value }} <span class="ext">↗</span></a><template v-else>{{ row.value }}</template></dd>
+              <dd><a v-if="row.href" class="addr-link" :href="row.href" target="_blank" rel="noopener noreferrer">{{ row.value }} <span class="ext">↗&#xFE0E;</span></a><template v-else>{{ row.value }}</template></dd>
             </template>
           </dl>
         </Section>

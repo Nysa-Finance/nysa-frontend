@@ -18,7 +18,7 @@ import { txUrl } from '../config.js'
     <template v-else>
       <div class="ho-msg">{{ state.handoff.status === 'success' ? 'Confirmed.' : state.handoff.error }}</div>
       <div class="ho-actions">
-        <a v-if="state.handoff.signature" class="ho-link" :href="txUrl(state.handoff.signature)" target="_blank" rel="noopener noreferrer">View transaction ↗</a>
+        <a v-if="state.handoff.signature" class="ho-link" :href="txUrl(state.handoff.signature)" target="_blank" rel="noopener noreferrer">View transaction ↗&#xFE0E;</a>
         <button class="ho-link" @click="dismissHandoff">Dismiss</button>
       </div>
     </template>
