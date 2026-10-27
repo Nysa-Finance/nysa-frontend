@@ -342,7 +342,7 @@ function vaultToken(v) {
 
 // Bring the index up to date and return it: { lastSig, updates, liquidations, obligations: { [market]: [address] },
 // owners: { [obligation]: wallet }, vaultUsers: { [vault]: [wallet] } }.
-// Also used by the snapshot (every 12 hours) to find every position and vault depositor without getProgramAccounts.
+// Also used by the snapshot (every hour, through freshIndex) to find every position and vault depositor without getProgramAccounts.
 export async function refreshIndex(rpc) {
   const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, vaultUsers: {}, ...JSON.parse((await read(INDEX)) ?? '{}') }
   let changed = false

@@ -32,7 +32,7 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 
 | Module | Role |
 |---|---|
-| `server/main.js` | HTTP server: static `dist/`, API routes, SSE, per-IP rate limits, snapshot schedule (every 12 h) |
+| `server/main.js` | HTTP server: static `dist/`, API routes, SSE, per-IP rate limits, snapshot schedule (hourly, random minute) |
 | `server/rpc.js` | The single RPC client (429 backoff, call counter for `/api/health`) |
 | `server/market.js` | Market cache: reserves, oracle prices, risk params, rate curves, reward farms (`/api/market`, `/api/events`) |
 | `server/refresh.js` | Market cache timer: every 60s, sooner after our transactions confirm (never postponed, at most every 10s) |
@@ -136,14 +136,16 @@ The Lend table, asset data and Lend panel show supply APY + rewards APR; the mar
 wallet's unclaimed rewards (`kind: 'claim'`, one transaction harvesting every pending reward).
 
 ## Farm Points
-Points accrue as **supplied USD × days**: each snapshot (every 12 hours, 00:00 and 12:00 UTC) adds `last_supplied_usd × days since last snapshot` to every wallet's total,
+Points accrue as **supplied USD × days**: each snapshot (every hour, at a random minute) adds `min(last_supplied_usd, supplied now) × days since last snapshot` to every wallet's total,
 then records its current deposits (USDC lent + USDY collateral) in the Nysa Kamino market and its Earn vault shares (valued
-at the vault's share value; depositors found by the market index). Logic: `snapshotPoints` in `src/logic.js` (tested).
+at the vault's share value; depositors found by the market index). Only what stayed in for the whole interval counts, and
+the minute is unpredictable, so depositing just before a snapshot and withdrawing right after earns nothing. Logic:
+`snapshotPoints` in `src/logic.js` (tested).
 Only wallets with deposits in the Nysa market(s) and vaults listed in `src/config.js` are tracked. Run a snapshot by hand:
 `docker compose exec app node server/snapshot.js`.
 
 ## Realized APY
-Each snapshot also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
+The first snapshot of each 12-hour UTC block also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
 utilization to `market-history/history.json`, plus the reserve's creation time (share value is exactly 1 then); and per
 Earn vault, its tokens per share (`vaults` in that file). The vault page shows 30D / 7D realized APY (share-value growth over the window, annualised) next to the live APY, and a daily chart.
 Math: `realizedApy` / `windowApy` / `dailyApySeries` in `src/logic.js` (tested).

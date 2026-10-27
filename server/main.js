@@ -2,7 +2,7 @@
 // - serves the Vite build (dist/) with SPA fallback;
 // - JSON API under /api (market, account, transactions, analytics, points, history, market updates, liquidations, health);
 // - pushes market updates to browsers over Server-Sent Events (/api/events);
-// - runs the snapshot every 12 hours (00:00 and 12:00 UTC).
+// - runs the snapshot every hour, at a random minute.
 // The browser never calls the Solana RPC: it reads from here and only uses the wallet to sign and send.
 import http from 'node:http'
 import { readFile } from 'node:fs/promises'
@@ -250,12 +250,12 @@ process.once('SIGTERM', () => {
   setTimeout(() => process.exit(0), 8_000).unref()
 })
 
-// Snapshot every 12 hours, at 00:00 and 12:00 UTC (epoch multiples of 12 h). A missed run (e.g. a restart at that
-// minute) is harmless: the next one accrues the whole gap.
-const SNAPSHOT_EVERY_MS = 12 * 3_600_000
+// Snapshot every hour, at a random minute of the next hour: nobody can time a deposit to be in only when it runs.
+// A missed run (e.g. a restart at that minute) is harmless: the next one accrues the whole gap.
+const HOUR_MS = 3_600_000
 function scheduleSnapshot() {
   const now = Date.now()
-  const next = (Math.floor(now / SNAPSHOT_EVERY_MS) + 1) * SNAPSHOT_EVERY_MS
+  const next = (Math.floor(now / HOUR_MS) + 1) * HOUR_MS + Math.floor(Math.random() * HOUR_MS)
   setTimeout(() => runSnapshot()
     .then((r) => console.log('[snapshot] done', r))
     .catch((e) => console.error('[snapshot] failed', e))

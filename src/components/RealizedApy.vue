@@ -94,7 +94,7 @@ function onMove(e) {
       </div>
     </div>
     <div v-else class="n-empty ra-empty">
-      History is being collected: a snapshot runs every 12 hours (00:00 and 12:00 UTC), the chart shows one point per day.
+      History is being collected: it is recorded twice a day (once between 00:00 and 12:00 UTC, once after), the chart shows one point per day.
     </div>
   </div>
   <p class="hint">
