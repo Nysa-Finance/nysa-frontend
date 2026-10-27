@@ -89,12 +89,14 @@ export function ago(ts, now = Date.now()) {
   return h < 48 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`
 }
 
-// One Farm Points snapshot: points accrue as supplied USD × days, using the balance seen at the previous snapshot.
-// prev: rows from parsePoints; balances: Map(owner -> supplied USD now).
+// One Farm Points snapshot: points accrue as supplied USD × days, on the lower of the balances seen at the previous
+// snapshot and now: only what stayed in for the whole interval counts, so depositing just before a snapshot and
+// withdrawing right after earns nothing. prev: rows from parsePoints; balances: Map(owner -> supplied USD now).
 export function snapshotPoints(prev, balances, nowSec) {
   const rows = new Map(prev.map((r) => {
     const days = Number.isFinite(r.ts) ? Math.max(nowSec - r.ts, 0) / 86400 : 0
-    return [r.address, { address: r.address, points: r.points + (r.supplied || 0) * days, supplied: balances.get(r.address) ?? 0, ts: nowSec }]
+    const now = balances.get(r.address) ?? 0
+    return [r.address, { address: r.address, points: r.points + Math.min(r.supplied || 0, now) * days, supplied: now, ts: nowSec }]
   }))
   for (const [address, usd] of balances) if (!rows.has(address)) rows.set(address, { address, points: 0, supplied: usd, ts: nowSec })
   return [...rows.values()]
