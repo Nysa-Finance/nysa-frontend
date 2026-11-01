@@ -7,6 +7,7 @@ services:
     environment: # only what the app needs (not the tunnel or Plausible secrets)
       SOLANA_RPC: ${SOLANA_RPC:-}
       VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:-} # old name, still accepted
+      SOLANA_RPC_FALLBACK: ${SOLANA_RPC_FALLBACK:-} # empty = public mainnet RPC
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
