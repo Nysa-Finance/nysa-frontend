@@ -1,6 +1,6 @@
 <script setup>
 // Realized APY for one lendable asset: 30D / 7D realized (from the growth of a deposit share's value, recorded
-// daily) + the live APY, and a daily realized-APY chart styled like the interest-rate chart.
+// daily) + the live APY, and a daily realized-APY chart (last 7 or 30 days) styled like the interest-rate chart.
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { pct, ago, windowApy, dailyApySeries, niceTicks } from '../logic.js'
 
@@ -16,7 +16,10 @@ const sub = (w, n) => !w ? 'collecting data' : w.from === props.history?.incepti
 const lastTs = computed(() => recorded.value.at(-1)?.ts)
 
 // ---- chart ----
-const series = computed(() => dailyApySeries(recorded.value))
+const RANGES = [7, 30]
+const range = ref(30) // days shown on the chart
+const daily = computed(() => dailyApySeries(recorded.value))
+const series = computed(() => daily.value.filter((p) => p.ts > daily.value.at(-1).ts - range.value * 86400))
 const COLOR = '#EC008C'
 const H = 220, R = 12, T = 10, B = 34
 const box = ref(null)
@@ -70,6 +73,9 @@ function onMove(e) {
   <div class="ra-chart">
     <div class="legend">
       <span><i class="line" :style="{ background: COLOR }" />Daily realized APY · {{ token.name }}</span>
+      <div class="n-seg range" role="group" aria-label="Chart range">
+        <button v-for="d in RANGES" :key="d" :class="{ on: range === d }" :aria-pressed="range === d" @click="range = d; hover = null">{{ d }}D</button>
+      </div>
     </div>
     <div v-if="series.length" ref="box" class="canvas" @pointermove="onMove" @pointerleave="hover = null">
       <svg :width="W" :height="H" role="img" :aria-label="`Daily realized APY for ${token.name}`">
@@ -106,7 +112,9 @@ function onMove(e) {
 .ra-stats { grid-template-columns: repeat(3, 1fr); }
 .n-stat .v.sm { font-size: 22px; }
 .ra-chart { margin-top: 18px; border: 1px solid var(--n-line); border-radius: 4px; padding: 18px 20px 14px; background: #000; }
-.legend { display: flex; gap: 20px; font-size: 12px; color: var(--n-text-3); margin-bottom: 14px; }
+.legend { display: flex; align-items: center; gap: 20px; font-size: 12px; color: var(--n-text-3); margin-bottom: 14px; }
+.range { margin-left: auto; gap: 6px; }
+.range button { flex: none; padding: 4px 12px; font-size: 12px; }
 .legend span { display: inline-flex; align-items: center; gap: 8px; }
 .line { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
 .canvas { position: relative; height: 220px; touch-action: pan-y; }
