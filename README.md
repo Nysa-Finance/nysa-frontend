@@ -144,6 +144,16 @@ the minute is unpredictable, so depositing just before a snapshot and withdrawin
 Only wallets with deposits in the Nysa market(s) and vaults listed in `src/config.js` are tracked. Run a snapshot by hand:
 `docker compose exec app node server/snapshot.js`.
 
+Backup: `.github/workflows/points-backup.yml` copies `/api/points` to Cloudflare R2 every 6 hours: `farm-points/latest.csv`
+plus a dated copy per change (`farm-points/YYYY/MM/DD/HHMMSSZ.csv`). The run fails, and GitHub emails it, if the site is
+down or the total points went down (the last good copy is kept). Setup: an R2 bucket and an R2 API token with Object Read &
+Write on that bucket only; in the repo settings, secrets `R2_ENDPOINT` (the bucket's S3 API URL without the bucket name:
+`https://<account id>.eu.r2.cloudflarestorage.com` for an EU bucket), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and
+variable `R2_BUCKET`. To restore: download `latest.csv` (Cloudflare dashboard → R2 → bucket → farm-points), copy it to the
+VPS project directory, then
+`docker compose exec -T app sh -c 'cat > /data/farm-points/points_state.csv' < latest.csv`.
+An older copy loses no accrual: the next snapshot credits the whole gap since its `last_snapshot_ts` (on the lower balance).
+
 ## Realized APY
 The first snapshot of each 12-hour UTC block also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
 utilization to `market-history/history.json`, plus the reserve's creation time (share value is exactly 1 then); and per
