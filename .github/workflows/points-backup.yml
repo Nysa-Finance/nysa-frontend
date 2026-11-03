@@ -1,15 +1,18 @@
-# Every 6 hours, copies the live Farm Points CSV (public: /api/points) to Cloudflare R2, so the points survive losing the
-# VPS: farm-points/latest.csv plus a dated copy per change (farm-points/YYYY/MM/DD/HHMMSSZ.csv). Fails (GitHub emails
-# the failure) if the site is down or if the total points went down: points only grow, so a smaller total means lost
+# Every 6 hours, copies the Farm Points CSV from the VPS to Cloudflare R2, so the points survive losing the VPS:
+# farm-points/latest.csv plus a dated copy per change (farm-points/YYYY/MM/DD/HHMMSSZ.csv). Fails (GitHub emails the
+# failure) if the VPS can't be reached or if the total points went down: points only grow, so a smaller total means lost
 # data, and the last good copy is kept. Needs secrets R2_ENDPOINT (the bucket's S3 API URL without the bucket name, e.g.
 # https://<account id>.eu.r2.cloudflarestorage.com for an EU bucket), R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and the
 # variable R2_BUCKET (an R2 API token with Object Read & Write on that bucket only).
+# The CSV is read over SSH, not from /api/points: Cloudflare's Bot Fight Mode answers datacenter IPs (Actions runners)
+# with 403. VPS_POINTS_SSH_KEY is a key that can only run that read (forced command in the deploy user's authorized_keys,
+# README "Farm Points"); VPS_HOST and VPS_KNOWN_HOSTS are the deploy workflow's.
 name: Farm Points backup
 on:
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:
-permissions: {} # nothing from the repo: only the R2 credentials
+permissions: {} # nothing from the repo: only the SSH key and the R2 credentials
 concurrency:
   group: points-backup
 jobs:
@@ -24,11 +27,21 @@ jobs:
       AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
       ENDPOINT: ${{ secrets.R2_ENDPOINT }}
       BUCKET: ${{ vars.R2_BUCKET }}
+      SSH_KEY: ${{ secrets.VPS_POINTS_SSH_KEY }}
+      KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+      HOST: ${{ secrets.VPS_HOST }}
     steps:
       - name: Back up to R2
         run: |
           cd "$RUNNER_TEMP"
-          curl -fsS --retry 3 --retry-delay 30 -m 30 https://app.nysa.finance/api/points -o new.csv
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/points && chmod 600 ~/.ssh/points
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          for i in 1 2 3; do # the VPS answers with the CSV whatever the command (forced command)
+            ssh -i ~/.ssh/points -o BatchMode=yes -o ConnectTimeout=30 "deploy@$HOST" > new.csv && break
+            [ "$i" = 3 ] && { echo '::error::cannot read the Farm Points from the VPS'; exit 1; }
+            sleep 30
+          done
           head -1 new.csv | grep -qx 'address,cumulative_points,last_supplied_usd,last_snapshot_ts'
           [ "$(wc -l < new.csv)" -ge 2 ] || { echo '::error::no wallets in the CSV'; exit 1; }
           s3() { aws --endpoint-url "$ENDPOINT" "$@"; }
