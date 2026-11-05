@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
-import { address, createNoopSigner, generateKeyPairSigner, none } from '@solana/kit'
+import {
+  address, appendTransactionMessageInstructions, compressTransactionMessageUsingAddressLookupTables,
+  createNoopSigner, createTransactionMessage, generateKeyPairSigner, getBase64EncodedWireTransaction,
+  getCompiledTransactionMessageDecoder, getTransactionDecoder, none, setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash, signTransactionMessageWithSigners,
+} from '@solana/kit'
 import BN from 'bn.js'
 import { flashBorrowReserveLiquidity, flashRepayReserveLiquidity, PROGRAM_ID } from '@kamino-finance/klend-sdk'
 import { assertLoopbackForkEndpoint, missingForkPrerequisites, verifyLoopFork } from './verify-loop-fork.js'
@@ -35,10 +40,11 @@ assert.deepEqual(missingForkPrerequisites({
   LOCAL_FORK_FEE_ACCOUNT_USDY: '11111111111111111111111111111111',
   LOCAL_FORK_TREASURY_AUTHORITY: '11111111111111111111111111111111',
 }), ['LOCAL_FORK_TEST_WALLET (invalid address)'])
+assert.equal(fork.stringifyErrorDetails({ custom: 'simulation-error', slot: 11n }), '{"custom":"simulation-error","slot":"11"}')
 
 assert.equal(typeof fork.assertTokenBalanceDelta, 'function')
 assert.doesNotThrow(() => fork.assertTokenBalanceDelta({ beforeBaseUnits: '100', afterBaseUnits: '110', expectedBaseUnits: '10', label: 'USDY fee account' }))
-assert.throws(() => fork.assertTokenBalanceDelta({ beforeBaseUnits: '100', afterBaseUnits: '109', expectedBaseUnits: '10', label: 'USDY fee account' }), /delta/i)
+assert.throws(() => fork.assertTokenBalanceDelta({ beforeBaseUnits: '100', afterBaseUnits: '109', expectedBaseUnits: '10', label: 'USDY fee account' }), /observedDelta=9, expectedDelta=10/i)
 assert.equal(typeof fork.assertTokenBalanceChange, 'function')
 assert.doesNotThrow(() => fork.assertTokenBalanceChange({ beforeBaseUnits: '100', afterBaseUnits: '0', expectedChangeBaseUnits: -100n, label: 'USDC input' }))
 assert.equal(await fork.readLocalSlot({ getSlot: () => ({ send: async () => 987654 }) }), 987654, 'Kit getSlot returns the slot number directly')
@@ -53,6 +59,9 @@ const testCompute = { programAddress: address('ComputeBudget11111111111111111111
 const duplicateCompute = { ...testCompute, data: Uint8Array.from(testCompute.data) }
 const testSwap = { programAddress: address('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'), accounts: [], data: new Uint8Array([1]) }
 const testOpen = { programAddress: address('KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'), accounts: [], data: new Uint8Array([1]) }
+const upstreamLookupTable = { address: address('SysvarRent111111111111111111111111111111111'), data: { addresses: [] } }
+const temporaryLookupTable = { address: address('SysvarC1ock11111111111111111111111111111111'), data: { addresses: [] } }
+assert.deepEqual(fork.lookupTablesForAtomicOpen([upstreamLookupTable], temporaryLookupTable), [temporaryLookupTable], 'temporary local table is used exclusively for the composed fork open')
 assert.equal(fork.composeAtomicOpenInstructions([testCompute, duplicateCompute, testSwap], [duplicateCompute, testOpen]).filter((ix) => String(ix.programAddress) === String(testCompute.programAddress)).length, 1, 'identical setup compute-budget instructions are emitted once')
 assert.deepEqual(fork.composeAtomicOpenInstructions([testCompute, testAtaCreate, testSwap], [testAtaCreate, testOpen], new Set([testAta])).map((ix) => ix.programAddress), [testCompute.programAddress, testSwap.programAddress, testOpen.programAddress])
 assert.deepEqual(fork.composeAtomicOpenInstructions([testCompute, testAtaCreate, testSwap], [testAtaCreate, testOpen]).map((ix) => ix.programAddress), [testCompute.programAddress, testAtaCreate.programAddress, testSwap.programAddress, testOpen.programAddress])
@@ -114,6 +123,57 @@ const composedWithPreexistingAtas = fork.composeAtomicOpenInstructions(
 )
 assertFlashRepayPointsAtBorrow(composedWithPreexistingAtas, 3)
 const testSigner = await generateKeyPairSigner()
+const lookupTableAddress = address('Sysvar1nstructions1111111111111111111111111')
+const lookupTargetAddress = address('SysvarRent111111111111111111111111111111111')
+let lookupMessage = createTransactionMessage({ version: 0 })
+lookupMessage = setTransactionMessageFeePayerSigner(testSigner, lookupMessage)
+lookupMessage = setTransactionMessageLifetimeUsingBlockhash({ blockhash: '11111111111111111111111111111111', lastValidBlockHeight: 100n }, lookupMessage)
+lookupMessage = appendTransactionMessageInstructions([{
+  programAddress: address('11111111111111111111111111111111'),
+  accounts: [{ address: lookupTargetAddress }], data: new Uint8Array([1]),
+}], lookupMessage)
+lookupMessage = compressTransactionMessageUsingAddressLookupTables(lookupMessage, {
+  [lookupTableAddress]: [lookupTargetAddress],
+})
+const lookupWire = getBase64EncodedWireTransaction(await signTransactionMessageWithSigners(lookupMessage))
+const lookupTx = getTransactionDecoder().decode(Buffer.from(lookupWire, 'base64'))
+const decodedLookupMessage = getCompiledTransactionMessageDecoder().decode(lookupTx.messageBytes)
+assert.deepEqual(decodedLookupMessage.addressTableLookups, [{
+  lookupTableAddress, writableIndexes: [], readonlyIndexes: [0],
+}], 'regression inspects the lookup indexes in a serialized v0 transaction')
+assert.equal(fork.instructionProgramAddressAt(decodedLookupMessage, 0, [{
+  address: lookupTableAddress, data: { addresses: [lookupTargetAddress] },
+}]), String(address('11111111111111111111111111111111')))
+assert.deepEqual(fork.instructionAccountAddressesAt?.(decodedLookupMessage, 0, [{
+  address: lookupTableAddress, data: { addresses: [lookupTargetAddress] },
+}]), [String(lookupTargetAddress)], 'diagnostic resolves the serialized instruction account meta through the lookup table')
+const recentlyExtendedLookupTable = {
+  address: lookupTableAddress,
+  data: { addresses: [lookupTargetAddress], lastExtendedSlot: 10n, lastExtendedSlotStartIndex: 0 },
+}
+assert.throws(() => fork.assertV0LookupReferencesActive(decodedLookupMessage, [recentlyExtendedLookupTable], 10), /index 0 is inactive/i)
+assert.doesNotThrow(() => fork.assertV0LookupReferencesActive(decodedLookupMessage, [recentlyExtendedLookupTable], 11))
+assert.throws(() => fork.assertV0LookupReferencesActive(decodedLookupMessage, [{
+  ...recentlyExtendedLookupTable, data: { ...recentlyExtendedLookupTable.data, addresses: [] },
+}], 11), /index 0.*active address count 0/i)
+const metadataAddress = address('SysvarRent111111111111111111111111111111111')
+const metadataInstruction = { programAddress: address('KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'), accounts: [], data: new Uint8Array([1]) }
+let metadataSetupOptions
+const metadataSetup = await fork.prepareLocalUserMetadataSetup?.({
+  market: { getUserMetadata: async () => [metadataAddress, null] },
+  signer: { address: testSigner.address },
+  builder: async (options) => { metadataSetupOptions = options; return { ixs: [metadataInstruction], labels: [`initUserMetadata[${metadataAddress}]`], luts: [] } },
+})
+assert.deepEqual(metadataSetup?.instructions, [metadataInstruction], 'local verifier returns a distinct user-metadata setup instruction')
+assert.deepEqual(metadataSetupOptions?.initUserMetadata, { skipInitialization: false, skipLutCreation: true }, 'metadata setup initializes only the program-owned account and does not create a lookup table')
+assert.equal(metadataSetup?.alreadyInitialized, false)
+const existingMetadataSetup = await fork.prepareLocalUserMetadataSetup?.({
+  market: { getUserMetadata: async () => [metadataAddress, { userLookupTable: address('11111111111111111111111111111111') }] },
+  signer: { address: testSigner.address },
+  builder: async () => { throw new Error('existing user metadata must not produce another setup instruction') },
+})
+assert.deepEqual(existingMetadataSetup?.instructions, [], 'existing user metadata avoids setup')
+assert.equal(existingMetadataSetup?.alreadyInitialized, true)
 const signedLocal = await fork.compileSignedLocalTransaction({
   getLatestBlockhash: () => ({ send: async () => ({ value: { blockhash: '11111111111111111111111111111111', lastValidBlockHeight: 100n } }) }),
 }, testSigner, [fork.forcedFailureInstruction()])

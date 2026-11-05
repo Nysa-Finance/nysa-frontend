@@ -35,6 +35,7 @@ const wallet = '11111111111111111111111111111111'
 const feeAccount = 'SysvarRent111111111111111111111111111111111'
 const instruction = { programAddress: address(wallet), accounts: [], data: new Uint8Array([1]) }
 let buildRequests = []
+const composedSwapBuilds = []
 const buildSwapFn = async (request) => {
   buildRequests.push(request)
   return {
@@ -60,6 +61,7 @@ const callbacks = createKaminoSwapCallbacks({
   buildSwapFn,
   getFeeAccount: async (mint) => ({ account: feeAccount, mint }),
   tokenDecimals: { [usdc]: 6, [usdy]: 6 },
+  onSwapComposed: async (built) => composedSwapBuilds.push(built),
 })
 
 const inputs = { inputAmountLamports: new Decimal('1000000'), inputMint: address(usdc), outputMint: address(usdy) }
@@ -74,6 +76,7 @@ assert.equal(buildRequests[0].feeAccountMint, usdy)
 const providerBuildsBeforeSwap = buildRequests.length
 const swapped = await callbacks.swapper(inputs, [], quote)
 assert.equal(buildRequests.length, providerBuildsBeforeSwap) // compose the same route the SDK priced; do not requote between quote and swap.
+assert.deepEqual(composedSwapBuilds, [quote.quoteResponse], 'observer receives the exact provider quote used to compose transaction instructions')
 assert.deepEqual(swapped[0].preActionIxs, [])
 assert.deepEqual(swapped[0].swapIxs, [instruction])
 assert.deepEqual(swapped[0].lookupTables, [])
@@ -82,6 +85,7 @@ const changedAmountBuilds = buildRequests.length
 await callbacks.swapper({ ...inputs, inputAmountLamports: new Decimal('1000001') }, [], quote)
 assert.equal(buildRequests.length, changedAmountBuilds + 1)
 assert.equal(buildRequests.at(-1).inputAmountBaseUnits, '1000001')
+assert.equal(composedSwapBuilds.at(-1).inputAmountBaseUnits, '1000001', 'observer receives the replacement quote actually composed after amount changes')
 
 const cancelledBuild = new AbortController()
 cancelledBuild.abort(new DOMException('Client disconnected.', 'AbortError'))

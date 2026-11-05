@@ -74,18 +74,28 @@ It rejects non-loopback endpoints and needs a configured local mainnet fork, an 
 USDC, and initialized disposable USDC/USDY treasury token accounts. After the loopback guard passes, the verifier may sign
 and submit test transactions only to that local validator to check the SDK Multiply open/full-close path, fee deltas, flash
 repayment, and forced-failure rollback. Never point it at a public RPC or put a production key in its inputs. The ordinary
-fee-aware v0 open currently measures 1,453 bytes, above Solana's 1,232-byte limit. A temporary lookup table prepared with
-local setup transactions reduces it to 774 bytes, but the local validator rejects the message with an invalid lookup index;
-the economic transaction is not submitted.
+fee-aware v0 open measures 1,453 bytes without lookup compression. The verifier prepares a temporary local address lookup
+table in separate setup transactions and uses it exclusively for the atomic open; the latest composed v0 open is 741 bytes,
+below Solana's 1,232-byte limit, and its lookup indexes pass local bank-slot validation. If Kamino UserMetadata is absent,
+the verifier also sends the SDK's metadata initialization in a separate non-economic setup transaction. Neither setup
+transaction is included in the open. An earlier local simulation completed the atomic open instructions and measured the
+exact USDY fee, but the verifier compared it with a stale SDK quote. The verifier now checks the fee for the actual
+composed swapper quote. Follow-up fork runs could not revalidate it: one had stale cloned oracle data and a fresh reset
+snapshot timed out while confirming local setup. No economic open was submitted.
+
+The production one-click execution path is not part of this read-only preview phase. When execution is implemented, it must
+surface the same non-economic UserMetadata setup as a separate wallet-approved setup transaction when needed. Keep the
+loop's economic open in one atomic transaction; do not split acquisition from the open.
 
 Security-source review is recorded, but deployment approval is still blocked. Jupiter's official audit index lists the
 [Swap v6 Offside Labs October 2025 report](https://github.com/jup-ag/docs/blob/main/static/files/audits/swap-v6-offside-october-2025.pdf)
 and the [April 2024 report](https://github.com/jup-ag/docs/blob/main/static/files/audits/swap-v6-offside-april-2024.pdf).
 Orca's [Whirlpools repository](https://github.com/orca-so/whirlpools) lists its
-[Sec3 August 2025 report](https://github.com/orca-so/whirlpools/blob/main/.audits/2025-08-22.pdf) and a
-[verifiable-build status](https://verify.osec.io/status/whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc).
-These sources establish that audit reports and a verifiable-build status exist; they do not yet map each exact routed
-program ID and on-chain binary to an audited commit/version. Program evidence therefore remains unapproved.
+[Sec3 August 2025 report](https://github.com/orca-so/whirlpools/blob/main/.audits/2025-08-22.pdf). The
+[Osec verification endpoint for Orca](https://verify.osec.io/status/whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc)
+currently reports the deployed program as unverified. Jupiter's Osec endpoint also reports unverified with no source
+repository or commit. Report scope and current on-chain binary are not matched for either program, so program evidence
+remains unapproved.
 
 ## Wallets on phones
 Mobile browsers have no wallet extensions (`src/wallets.js`):

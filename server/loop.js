@@ -168,6 +168,7 @@ export function createKaminoSwapCallbacks({
   localForkSimulation = false,
   localForkRpcUrl,
   localRouteProgramVerifier,
+  onSwapComposed,
 } = {}) {
   if (typeof wallet !== 'string' || !wallet) throw new LoopPreviewError('Wallet address is required for the loop quote.')
   if (localForkSimulation) {
@@ -234,6 +235,7 @@ export function createKaminoSwapCallbacks({
     if (inputs.minOutAmountLamports != null && BigInt(built.minimumOutputBaseUnits) < BigInt(rawAmount(new Decimal(inputs.minOutAmountLamports).ceil()))) {
       throw new LoopPreviewError(`Swap provider minimum output ${built.minimumOutputBaseUnits} is below Kamino’s required flash-repayment amount ${rawAmount(new Decimal(inputs.minOutAmountLamports).ceil())}.`)
     }
+    if (typeof onSwapComposed === 'function') await onSwapComposed(built)
     const lookupTables = await resolveLookupTables(built, lookupTableResolver)
     return [{ preActionIxs: [], swapIxs: built.instructions, lookupTables, quote }]
   }

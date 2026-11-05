@@ -3,10 +3,11 @@ import Decimal from 'decimal.js'
 import {
   address, appendTransactionMessageInstructions, compressTransactionMessageUsingAddressLookupTables, lamports,
   createKeyPairSignerFromBytes, createTransactionMessage, fetchEncodedAccount, getBase64EncodedWireTransaction,
+  getCompiledTransactionMessageDecoder, getTransactionDecoder,
   none, signTransactionMessageWithSigners, setTransactionMessageFeePayerSigner, setTransactionMessageLifetimeUsingBlockhash,
 } from '@solana/kit'
 import { fetchAddressLookupTable, getCreateLookupTableInstructionAsync, getExtendLookupTableInstruction } from '@solana-program/address-lookup-table'
-import { getCurrentLedgerInstant, MultiplyObligation, ObligationTypeTag, PROGRAM_ID } from '@kamino-finance/klend-sdk'
+import { getCurrentLedgerInstant, KaminoAction, MultiplyObligation, ObligationTypeTag, PROGRAM_ID } from '@kamino-finance/klend-sdk'
 import { TOKENS, marketById } from '../src/config.js'
 import { ataOf } from '../server/account.js'
 import { loadMarket, reserveOf } from '../server/market.js'
@@ -93,13 +94,35 @@ function localTokenAccount(value, mint, authority, name) {
 export function assertTokenBalanceDelta({ beforeBaseUnits, afterBaseUnits, expectedBaseUnits, label }) {
   let before, after, expected
   try { before = BigInt(beforeBaseUnits); after = BigInt(afterBaseUnits); expected = BigInt(expectedBaseUnits) } catch { throw new Error(`${label} balance delta inputs are invalid.`) }
-  if (before < 0n || after < 0n || expected < 0n || after - before !== expected) throw new Error(`${label} fee balance delta does not match the provider-reported amount.`)
+  if (before < 0n || after < 0n || expected < 0n || after - before !== expected) {
+    throw new Error(`${label} fee balance delta does not match the provider-reported amount (before=${before}, after=${after}, observedDelta=${after - before}, expectedDelta=${expected}).`)
+  }
 }
 
 export function assertTokenBalanceChange({ beforeBaseUnits, afterBaseUnits, expectedChangeBaseUnits, label }) {
   let before, after, expected
   try { before = BigInt(beforeBaseUnits); after = BigInt(afterBaseUnits); expected = BigInt(expectedChangeBaseUnits) } catch { throw new Error(`${label} balance change inputs are invalid.`) }
   if (before < 0n || after < 0n || after - before !== expected) throw new Error(`${label} token balance change does not match the expected amount.`)
+}
+
+export async function prepareLocalUserMetadataSetup({ market, signer, builder = KaminoAction.buildUserMetadataSetupIxs }) {
+  const [userMetadataAddress, userMetadata] = await market.getUserMetadata(signer.address)
+  if (userMetadata) return { userMetadataAddress, instructions: [], alreadyInitialized: true }
+
+  const bundle = await builder({
+    kaminoMarket: market,
+    owner: signer,
+    payer: signer,
+    referrer: none(),
+    initUserMetadata: { skipInitialization: false, skipLutCreation: true },
+  })
+  if (!Array.isArray(bundle?.ixs) || bundle.ixs.length !== 1 || (bundle.luts?.length ?? 0) !== 0) {
+    throw new Error('Kamino user metadata setup must contain only its initialization instruction and no lookup-table setup.')
+  }
+  if (bundle.labels?.length !== 1 || !String(bundle.labels[0]).startsWith('initUserMetadata[')) {
+    throw new Error('Kamino user metadata setup returned an unexpected instruction bundle.')
+  }
+  return { userMetadataAddress, instructions: bundle.ixs, alreadyInitialized: false }
 }
 
 export function forcedFailureInstruction() {
@@ -193,6 +216,69 @@ export function collectLookupTableAddresses(instructions, excludedAddresses = []
   return [...found]
 }
 
+export function lookupTablesForAtomicOpen(upstreamLookupTables, temporaryLocalLookupTable) {
+  return temporaryLocalLookupTable ? [temporaryLocalLookupTable] : upstreamLookupTables
+}
+
+export function assertV0LookupReferencesActive(message, lookupTables, bankSlot) {
+  if (message?.version !== 0) throw new Error('Local simulation requires a compiled v0 message.')
+  const slot = BigInt(bankSlot)
+  const byAddress = new Map(lookupTables.map((table) => [String(table.address), table.data]))
+  for (const lookup of message.addressTableLookups ?? []) {
+    const table = byAddress.get(String(lookup.lookupTableAddress))
+    if (!table) throw new Error(`Lookup table ${lookup.lookupTableAddress} referenced by v0 message is unavailable locally.`)
+    const lastExtendedSlot = BigInt(table.lastExtendedSlot)
+    if (lastExtendedSlot > slot) {
+      throw new Error(`Lookup table ${lookup.lookupTableAddress} was last extended at slot ${lastExtendedSlot}, newer than simulation bank slot ${slot}.`)
+    }
+    const activeAddressCount = lastExtendedSlot === slot
+      ? Number(table.lastExtendedSlotStartIndex)
+      : table.addresses.length
+    for (const index of [...lookup.writableIndexes, ...lookup.readonlyIndexes]) {
+      if (!Number.isSafeInteger(index) || index < 0 || index >= activeAddressCount) {
+        throw new Error(`Lookup table ${lookup.lookupTableAddress} index ${index} is inactive at bank slot ${slot} (active address count ${activeAddressCount}).`)
+      }
+    }
+  }
+}
+
+export function instructionProgramAddressAt(message, instructionIndex, lookupTables) {
+  const instruction = message?.instructions?.[instructionIndex]
+  if (!instruction) return null
+  const allAddresses = messageAccountAddresses(message, lookupTables)
+  const programAddress = allAddresses[instruction.programAddressIndex]
+  return typeof programAddress === 'string' ? programAddress : null
+}
+
+export function instructionAccountAddressesAt(message, instructionIndex, lookupTables) {
+  const instruction = message?.instructions?.[instructionIndex]
+  if (!instruction) return null
+  const allAddresses = messageAccountAddresses(message, lookupTables)
+  const accounts = instruction.accountIndices.map((index) => allAddresses[index])
+  return accounts.every((account) => typeof account === 'string') ? accounts : null
+}
+
+function messageAccountAddresses(message, lookupTables) {
+  const byAddress = new Map(lookupTables.map((table) => [String(table.address), table.data.addresses]))
+  const loadedWritable = []
+  const loadedReadonly = []
+  for (const lookup of message.addressTableLookups ?? []) {
+    const addresses = byAddress.get(String(lookup.lookupTableAddress))
+    if (!addresses) return null
+    for (const index of lookup.writableIndexes) loadedWritable.push(addresses[index])
+  }
+  for (const lookup of message.addressTableLookups ?? []) {
+    const addresses = byAddress.get(String(lookup.lookupTableAddress))
+    if (!addresses) return null
+    for (const index of lookup.readonlyIndexes) loadedReadonly.push(addresses[index])
+  }
+  return [...message.staticAccounts, ...loadedWritable, ...loadedReadonly]
+}
+
+export function stringifyErrorDetails(value) {
+  return JSON.stringify(value, (_key, item) => typeof item === 'bigint' ? item.toString() : item)
+}
+
 async function waitForLocalLookupTableActivation(rpcClient, tableAddress, requiredAddresses) {
   const deadline = Date.now() + 10_000
   while (Date.now() < deadline) {
@@ -279,12 +365,16 @@ export async function compileSignedLocalTransaction(rpcClient, signer, instructi
   return tx
 }
 
-async function simulateLocalTransaction(rpcClient, tx, accounts) {
+async function simulateLocalTransaction(rpcClient, tx, accounts, lookupTables = []) {
+  const transaction = getTransactionDecoder().decode(Buffer.from(tx, 'base64'))
+  const message = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes)
+  const simulationSlot = await readLocalSlot(rpcClient)
+  assertV0LookupReferencesActive(message, lookupTables, simulationSlot)
   const { value } = await rpcClient.simulateTransaction(tx, {
     encoding: 'base64', sigVerify: true, commitment: 'confirmed',
     accounts: { addresses: accounts, encoding: 'base64' },
   }).send()
-  return value
+  return { ...value, compiledMessage: message }
 }
 
 async function submitAndConfirmLocal(rpcClient, tx, expectFailure = false) {
@@ -320,12 +410,45 @@ async function confirmLocalSignature(rpcClient, signature) {
   throw new Error('Local test-wallet funding request confirmation timed out.')
 }
 
-async function assertFeeSimulationDeltas(rpcClient, simulation, feeAccounts, before, expectedByMint) {
+async function assertFeeSimulationDeltas(rpcClient, simulation, feeAccounts, before, expectedByMint, composedSwapQuotes = [], providerQuoteBuilds = []) {
   if (!Array.isArray(simulation.accounts) || simulation.accounts.length !== feeAccounts.length) throw new Error('Local simulation omitted fee-account post-state.')
   for (let index = 0; index < feeAccounts.length; index++) {
     const mint = feeAccounts[index].mint
     const afterBaseUnits = tokenAmountBaseUnits(simulation.accounts[index], `fee account for ${mint}`)
-    assertTokenBalanceDelta({ beforeBaseUnits: before[index].amount, afterBaseUnits, expectedBaseUnits: expectedByMint[mint] ?? '0', label: `Mint ${mint}` })
+    try {
+      assertTokenBalanceDelta({ beforeBaseUnits: before[index].amount, afterBaseUnits, expectedBaseUnits: expectedByMint[mint] ?? '0', label: `Mint ${mint}` })
+    } catch (error) {
+      const diagnostic = {
+        feeAccount: feeAccounts[index].account,
+        mint,
+        composedSwaps: composedSwapQuotes.filter((quote) => quote.fee?.mint === mint),
+        providerQuoteBuilds: providerQuoteBuilds.filter((quote) => quote.fee?.mint === mint),
+        simulationError: simulation.err ?? null,
+        simulationLogs: simulation.logs ?? [],
+      }
+      throw new Error(`${error.message} Provider quotes and simulated transaction details: ${stringifyErrorDetails(diagnostic)}`)
+    }
+  }
+}
+
+function swapQuoteDiagnostic(built, feeAccount, source = 'provider-build') {
+  return {
+    source,
+    direction: `${built.inputMint}->${built.outputMint}`,
+    feeAccount,
+    inputAmountBaseUnits: built.inputAmountBaseUnits,
+    grossRouteFeeBasisBaseUnits: built.fee?.basisAmountBaseUnits,
+    quotedNetOutputBaseUnits: built.outputAmountBaseUnits,
+    minimumOutputBaseUnits: built.minimumOutputBaseUnits,
+    fee: built.fee,
+    routePlan: (built.routePlan ?? []).map(({ swapInfo }) => ({
+      label: swapInfo?.label,
+      ammKey: swapInfo?.ammKey,
+      inputMint: swapInfo?.inputMint,
+      outputMint: swapInfo?.outputMint,
+      inAmount: swapInfo?.inAmount,
+      outAmount: swapInfo?.outAmount,
+    })),
   }
 }
 
@@ -345,7 +468,7 @@ async function assertNoTokenBalanceChanges(rpcClient, before, label) {
   }
 }
 
-async function executeLocalMultiplyScenario({ rpcClient, signer, market, collReserve, debtReserve, callbacks, acquisition, feeAccounts, initialUsdcBaseUnits, leverage, flashBorrowType, log }) {
+async function executeLocalMultiplyScenario({ rpcClient, signer, market, collReserve, debtReserve, callbacks, acquisition, feeAccounts, initialUsdcBaseUnits, leverage, flashBorrowType, localSwapQuotes, composedSwapQuotes, log }) {
   const multiplyType = new MultiplyObligation(collReserve.getLiquidityMint(), debtReserve.getLiquidityMint(), address(PROGRAM_ID))
   const usdcAta = await ataOf(signer.address, address(TOKENS['svm-usdc'].mint), debtReserve.getLiquidityTokenProgram())
   const usdyAta = await ataOf(signer.address, address(TOKENS['svm-usdy'].mint), collReserve.getLiquidityTokenProgram())
@@ -379,9 +502,12 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
     flashBorrowType,
     logger: () => {},
   }
+  const openQuoteStart = composedSwapQuotes.length
   const openResponses = await buildMultiplyOpenIxs(openInputs, callbacks)
   if (openResponses.length !== 1) throw new Error('Multiply open must fit one atomic economic transaction.')
   const open = openResponses[0]
+  const openComposedSwaps = composedSwapQuotes.slice(openQuoteStart)
+  if (openComposedSwaps.length === 0) throw new Error('Kamino Multiply open did not report its composed fee-aware swap quote.')
   const existingSetupAccounts = new Set()
   for (const instruction of [...acquisition.instructions, ...open.ixs].filter(associatedAtaCreate)) {
     const ata = address(String(instruction.accounts[1].address))
@@ -389,22 +515,32 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
     if (value) existingSetupAccounts.add(String(ata))
   }
   const openInstructions = composeAtomicOpenInstructions(acquisition.instructions, open.ixs, existingSetupAccounts)
-  const openLookupTables = [...new Map([...(await localLookupTables(rpcClient, acquisition)), ...open.lookupTables].map((table) => [String(table.address), table])).values()]
+  const upstreamOpenLookupTables = [...new Map([...(await localLookupTables(rpcClient, acquisition)), ...open.lookupTables].map((table) => [String(table.address), table])).values()]
   const localSetupTable = await prepareLocalAddressLookupTable(rpcClient, signer, openInstructions)
-  if (localSetupTable) openLookupTables.push(localSetupTable)
+  const openLookupTables = lookupTablesForAtomicOpen(upstreamOpenLookupTables, localSetupTable)
   const openTransaction = await compileSignedLocalTransaction(rpcClient, signer, openInstructions, openLookupTables)
   log(`LOCAL ATOMIC OPEN SIZE: ${Buffer.from(openTransaction, 'base64').byteLength} bytes with ${localSetupTable?.data.addresses.length ?? 0} temporary local ALT entries.`)
   const expectedOpenFees = {}
   addExpectedFee(expectedOpenFees, acquisition.fee)
-  addExpectedFee(expectedOpenFees, open.quote?.fee)
-  const openSimulation = await simulateLocalTransaction(rpcClient, openTransaction, feeAccounts.map(({ account }) => account))
-  if (openSimulation.err) throw new Error(`Local Multiply open simulation failed: ${JSON.stringify(openSimulation.err)}`)
-  await assertFeeSimulationDeltas(rpcClient, openSimulation, feeAccounts, beforeOpen.slice(0, feeAccounts.length), expectedOpenFees)
+  for (const swap of openComposedSwaps) addExpectedFee(expectedOpenFees, swap.fee)
+  const openFeeQuotes = [
+    swapQuoteDiagnostic(acquisition, feeAccounts.find(({ mint }) => mint === acquisition.fee.mint)?.account, 'initial-acquisition'),
+    ...openComposedSwaps.map((swap) => swapQuoteDiagnostic(swap, feeAccounts.find(({ mint }) => mint === swap.fee.mint)?.account, 'sdk-composed-swap')),
+  ]
+  const openSimulation = await simulateLocalTransaction(rpcClient, openTransaction, feeAccounts.map(({ account }) => account), openLookupTables)
+  if (openSimulation.err) {
+    const index = Array.isArray(openSimulation.err.InstructionError) ? Number(openSimulation.err.InstructionError[0]) : null
+    const program = Number.isSafeInteger(index) ? instructionProgramAddressAt(openSimulation.compiledMessage, index, openLookupTables) : null
+    const location = Number.isSafeInteger(index) ? ` at instruction ${index}${program ? ` (${program})` : ''}` : ''
+    const accounts = Number.isSafeInteger(index) ? instructionAccountAddressesAt(openSimulation.compiledMessage, index, openLookupTables) : null
+    throw new Error(`Local Multiply open simulation failed${location}; account metas ${stringifyErrorDetails(accounts)}; runtime logs ${stringifyErrorDetails(openSimulation.logs ?? [])}; error ${stringifyErrorDetails(openSimulation.err)}`)
+  }
+  await assertFeeSimulationDeltas(rpcClient, openSimulation, feeAccounts, beforeOpen.slice(0, feeAccounts.length), expectedOpenFees, openFeeQuotes, localSwapQuotes)
 
   // Add an invalid token-program instruction after the complete atomic open path. The local validator must reject the transaction
   // atomically: neither router fees, user tokens nor the Multiply obligation may persist.
   const failedOpen = await compileSignedLocalTransaction(rpcClient, signer, [...openInstructions, forcedFailureInstruction()], openLookupTables)
-  const failedOpenSimulation = await simulateLocalTransaction(rpcClient, failedOpen, [])
+  const failedOpenSimulation = await simulateLocalTransaction(rpcClient, failedOpen, [], openLookupTables)
   if (!failedOpenSimulation.err) throw new Error('Forced-failure open simulation unexpectedly succeeded.')
   const failedOpenResult = await submitAndConfirmLocal(rpcClient, failedOpen, true)
   if (!failedOpenResult.failed) throw new Error('Forced-failure open did not roll back on the local validator.')
@@ -450,20 +586,30 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
     flashBorrowType,
     userSolBalanceLamports: 0,
   }
+  const closeQuoteStart = composedSwapQuotes.length
   const closeResponses = await buildMultiplyFullCloseIxs(closeInputs, callbacks)
   if (closeResponses.length !== 1) throw new Error('Multiply full close must fit one atomic economic transaction.')
   const close = closeResponses[0]
+  const closeComposedSwaps = composedSwapQuotes.slice(closeQuoteStart)
+  if (closeComposedSwaps.length === 0) throw new Error('Kamino Multiply full close did not report its composed fee-aware swap quote.')
   const closeInstructions = close.ixs
   const closeTransaction = await compileSignedLocalTransaction(rpcClient, signer, closeInstructions, close.lookupTables)
   const beforeClose = await snapshotTokenAccounts(rpcClient, allTokenAccounts)
   const expectedCloseFees = {}
-  addExpectedFee(expectedCloseFees, close.quote?.fee)
-  const closeSimulation = await simulateLocalTransaction(rpcClient, closeTransaction, feeAccounts.map(({ account }) => account))
-  if (closeSimulation.err) throw new Error(`Local Multiply full-close simulation failed: ${JSON.stringify(closeSimulation.err)}`)
-  await assertFeeSimulationDeltas(rpcClient, closeSimulation, feeAccounts, beforeClose.slice(0, feeAccounts.length), expectedCloseFees)
+  for (const swap of closeComposedSwaps) addExpectedFee(expectedCloseFees, swap.fee)
+  const closeFeeQuotes = closeComposedSwaps.map((swap) => swapQuoteDiagnostic(swap, feeAccounts.find(({ mint }) => mint === swap.fee.mint)?.account, 'sdk-composed-swap'))
+  const closeSimulation = await simulateLocalTransaction(rpcClient, closeTransaction, feeAccounts.map(({ account }) => account), close.lookupTables)
+  if (closeSimulation.err) {
+    const index = Array.isArray(closeSimulation.err.InstructionError) ? Number(closeSimulation.err.InstructionError[0]) : null
+    const program = Number.isSafeInteger(index) ? instructionProgramAddressAt(closeSimulation.compiledMessage, index, close.lookupTables) : null
+    const location = Number.isSafeInteger(index) ? ` at instruction ${index}${program ? ` (${program})` : ''}` : ''
+    const accounts = Number.isSafeInteger(index) ? instructionAccountAddressesAt(closeSimulation.compiledMessage, index, close.lookupTables) : null
+    throw new Error(`Local Multiply full-close simulation failed${location}; account metas ${stringifyErrorDetails(accounts)}; runtime logs ${stringifyErrorDetails(closeSimulation.logs ?? [])}; error ${stringifyErrorDetails(closeSimulation.err)}`)
+  }
+  await assertFeeSimulationDeltas(rpcClient, closeSimulation, feeAccounts, beforeClose.slice(0, feeAccounts.length), expectedCloseFees, closeFeeQuotes, localSwapQuotes)
 
   const failedClose = await compileSignedLocalTransaction(rpcClient, signer, [...closeInstructions, forcedFailureInstruction()], close.lookupTables)
-  const failedCloseSimulation = await simulateLocalTransaction(rpcClient, failedClose, [])
+  const failedCloseSimulation = await simulateLocalTransaction(rpcClient, failedClose, [], close.lookupTables)
   if (!failedCloseSimulation.err) throw new Error('Forced-failure full-close simulation unexpectedly succeeded.')
   const failedCloseResult = await submitAndConfirmLocal(rpcClient, failedClose, true)
   if (!failedCloseResult.failed) throw new Error('Forced-failure full close did not roll back on the local validator.')
@@ -520,6 +666,18 @@ async function runConfiguredLocalFork(env, endpoint, log) {
   await confirmLocalSignature(localRpc, airdrop)
   const marketConfig = marketById('sol-usdy-usdc')
   const market = await loadMarket(localRpc, marketConfig)
+  const metadataSetup = await prepareLocalUserMetadataSetup({ market, signer })
+  if (metadataSetup.instructions.length > 0) {
+    const setupTransaction = await compileSignedLocalTransaction(localRpc, signer, metadataSetup.instructions)
+    const setupResult = await submitAndConfirmLocal(localRpc, setupTransaction)
+    const [initializedAddress, initializedMetadata] = await market.getUserMetadata(signer.address)
+    if (!initializedMetadata || String(initializedAddress) !== String(metadataSetup.userMetadataAddress)) {
+      throw new Error('Separate local Kamino user metadata setup did not initialize the expected account.')
+    }
+    log(`LOCAL NON-ECONOMIC SETUP PASS: Kamino user metadata initialized in separate loopback transaction ${setupResult.signature}; excluded from atomic open.`)
+  } else {
+    log('LOCAL NON-ECONOMIC SETUP PASS: Kamino user metadata already exists; no setup transaction needed.')
+  }
   const collToken = TOKENS['svm-usdy']
   const debtToken = TOKENS['svm-usdc']
   const collReserve = reserveOf(market, collToken)
@@ -559,7 +717,14 @@ async function runConfiguredLocalFork(env, endpoint, log) {
     feeBalanceDeltaVerified: false,
     routeProgramIdsByLabel: ROUTE_PROGRAM_IDS_BY_LABEL,
     evidence: PROGRAM_EVIDENCE,
+  }).then((built) => {
+    const diagnostic = swapQuoteDiagnostic(built, request.feeAccount)
+    localSwapQuotes.push(diagnostic)
+    log(`LOCAL SWAP QUOTE: ${stringifyErrorDetails(diagnostic)}`)
+    return built
   })
+  const localSwapQuotes = []
+  const composedSwapQuotes = []
   const callbacks = createKaminoSwapCallbacks({
     wallet: String(signer.address),
     buildSwapFn: buildLocalSwap,
@@ -569,6 +734,11 @@ async function runConfiguredLocalFork(env, endpoint, log) {
     localForkSimulation: true,
     localForkRpcUrl: endpoint.href,
     localRouteProgramVerifier,
+    onSwapComposed: async (built) => {
+      composedSwapQuotes.push(built)
+      const feeAccount = feeAccountForMint(built.fee?.mint)?.account
+      log(`LOCAL COMPOSED SWAP: ${stringifyErrorDetails(swapQuoteDiagnostic(built, feeAccount, 'sdk-composed-swap'))}`)
+    },
   })
 
   const acquisition = await buildLocalSwap({
@@ -598,6 +768,8 @@ async function runConfiguredLocalFork(env, endpoint, log) {
     initialUsdcBaseUnits: env.LOCAL_FORK_STARTING_USDC_BASE_UNITS,
     leverage,
     flashBorrowType,
+    localSwapQuotes,
+    composedSwapQuotes,
     log,
   })
   const slot = await readLocalSlot(localRpc)
