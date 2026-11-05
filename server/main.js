@@ -18,7 +18,11 @@ import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
-import { LIVE, VAULTS, marketById, vaultById } from '../src/config.js'
+import { LIVE, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
+import { evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
+import { buildReadOnlyLoopPreview } from './loop.js'
+import { configuredFeeAccountForMint } from './swap.js'
+import { PROGRAM_EVIDENCE } from './program-policy.js'
 
 if (!RPC_URL) {
   console.error('SOLANA_RPC is not set (see .env.example)')
@@ -108,6 +112,63 @@ setInterval(() => { for (const c of clients) c.write(': ping\n\n') }, 25_000).un
 
 // ---- routes ----
 const routes = [
+  ['GET', /^\/api\/loop-strategies$/, (req, res) => {
+    const snapshot = getSnapshot()
+    const market = marketById('sol-usdy-usdc')
+    const strategy = evaluateLoopStrategy({
+      market,
+      allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
+      vaults: snapshot?.vaults ?? {},
+      reserves: snapshot?.reserves ?? {},
+      snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
+      providerConfigured: true, // Jupiter permits keyless prototype requests, rate-limited to 0.5 RPS.
+      productionProviderConfigured: !!process.env.JUPITER_API_KEY,
+      treasuryConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
+        && !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
+        && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
+      riskApproval: { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
+      programEvidenceApproved: PROGRAM_EVIDENCE.length > 0,
+      feasibilityPassed: false,
+    })
+    return send(res, 200, { strategies: [strategy], readOnly: true })
+  }],
+  ['POST', /^\/api\/loop-preview$/, async (req, res) => {
+    if (limited(req, 'loop-preview', 20)) return send(res, 429, { error: 'Too many requests' })
+    const body = await jsonBody(req)
+    if ((body.marketId ?? 'sol-usdy-usdc') !== 'sol-usdy-usdc') throw new UserError('Unknown loop strategy')
+    if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
+    if (typeof body.fundingAmount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(body.fundingAmount)) throw new UserError('Invalid funding amount')
+    if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > 1.5) throw new UserError('Funding amount or leverage is outside the preview range')
+    const snapshot = getSnapshot()
+    const strategy = evaluateLoopStrategy({
+      market: marketById('sol-usdy-usdc'),
+      allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
+      vaults: snapshot?.vaults ?? {},
+      reserves: snapshot?.reserves ?? {},
+      snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
+      providerConfigured: true, // Keyless requests remain usable for read-only prototype quotes.
+      productionProviderConfigured: !!process.env.JUPITER_API_KEY,
+      treasuryConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
+        && !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
+        && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
+      riskApproval: { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
+      programEvidenceApproved: PROGRAM_EVIDENCE.length > 0,
+      feasibilityPassed: false,
+    })
+    try {
+      const preview = await buildReadOnlyLoopPreview({ wallet: body.wallet, fundingAmount: body.fundingAmount, leverage: Number(body.leverage), snapshot, strategy })
+      return send(res, 200, { ...preview, strategyId: 'sol-usdy-usdc', readOnly: true })
+    } catch (error) {
+      console.warn('[loop] preview unavailable', error?.message)
+      return send(res, 200, {
+        strategyId: 'sol-usdy-usdc',
+        readOnly: true,
+        executionEnabled: false,
+        available: false,
+        unavailableReasons: [...strategy.unavailableReasons, { code: 'quote-unavailable', message: 'Live fee-aware route or Kamino preview is unavailable.' }],
+      })
+    }
+  }],
   ['GET', /^\/api\/market$/, (req, res) => {
     const s = getSnapshot()
     return s ? send(res, 200, s) : send(res, 503, { error: 'Market data is still loading' })
@@ -172,7 +233,7 @@ const routes = [
 
 // Client-side routes of the SPA (keep in sync with src/main.js).
 // '/', '/lend' and '/market/:id' are old links the SPA redirects (to Earn, a vault or a borrow market page).
-const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/analytics', '/liquidations', '/dashboard'])
+const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/loop', '/analytics', '/liquidations', '/dashboard'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
   || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
   || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
@@ -181,7 +242,7 @@ const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
+${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), '/loop', '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
 </urlset>
 `
 

@@ -56,6 +56,25 @@ Actions (by commit) are pinned; Dependabot proposes updates as pull requests.
 creates the user's Kamino accounts: that setup comes back first (`final: false`); the client sends it, waits for
 confirmation, then asks again for the action itself.
 
+## Swap fees and loop preview
+The shared backend adapter uses Jupiter V2 Build's native `platformFeeBps=10` and configured fee token account. It
+validates the provider's route-based fee amount, net output and fee-account mint; it never adds a separate fee transfer.
+Keyless Jupiter access is available for prototype/read-only requests at 0.5 requests per second. Production use needs a
+provider key and approved rate limit, a configured USDC and USDY fee account, an authorized treasury, reviewed route
+program evidence and successful local-fork verification. Set these values in `.env`; never put them in browser config.
+
+`/loop` is a read-only USDY collateral / USDC debt preview. It shows current strategy blockers, exposure, carry and fees
+from both economic swaps when fresh market data and fee-aware route quotes are available. It does not build or send a
+transaction. A strategy stays unavailable until the risk, program evidence and local-fork gates pass.
+
+Run `npm run simulate:swap-fees -- --scenario scripts/scenarios/swap-fees.synthetic.json` for a network-free,
+hypothetical fee business scenario. Edit the synthetic inputs to compare sizes, frequency and direct costs; outputs are
+not a forecast. Append `--json` for a machine-readable report. `npm run verify:loop-fork` is a separate local-only
+check. It rejects non-loopback endpoints and needs a
+configured local mainnet fork and real disposable test treasury token accounts. The current Phase 1 command only checks
+local validator and token-account prerequisites, then stays blocked until exact route audit evidence and actual SDK
+Multiply open/full-close simulation are available. It never signs or submits transactions.
+
 ## Wallets on phones
 Mobile browsers have no wallet extensions (`src/wallets.js`):
 - **Android (Chrome)**: Solana's Mobile Wallet Adapter (`@solana-mobile/wallet-standard-mobile`, loaded only on Android)

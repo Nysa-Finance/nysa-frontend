@@ -29,6 +29,7 @@ const router = createRouter({
     { path: '/borrow', name: 'borrow', component: () => import('./pages/Borrow.vue') },
     { path: '/borrow/:id', name: 'market-detail', component: () => import('./pages/MarketDetail.vue') },
     { path: '/portfolio', name: 'portfolio', component: () => import('./pages/Portfolio.vue') },
+    { path: '/loop', name: 'loop', component: () => import('./pages/Loop.vue') },
     // Old links: Lend is now Earn (the vault); a market page is now its borrow page.
     { path: '/lend', redirect: { name: 'earn' } },
     { path: '/market/:id', redirect: (to) => (to.query.mode === 'lend' && VAULTS[0] ? { name: 'vault', params: { id: VAULTS[0].id } } : { name: 'market-detail', params: to.params, query: to.query }) },
