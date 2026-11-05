@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict'
-import { address, generateKeyPairSigner } from '@solana/kit'
+import { address, createNoopSigner, generateKeyPairSigner, none } from '@solana/kit'
+import BN from 'bn.js'
+import { flashBorrowReserveLiquidity, flashRepayReserveLiquidity, PROGRAM_ID } from '@kamino-finance/klend-sdk'
 import { assertLoopbackForkEndpoint, missingForkPrerequisites, verifyLoopFork } from './verify-loop-fork.js'
 import * as fork from './verify-loop-fork.js'
 
@@ -39,16 +41,78 @@ assert.doesNotThrow(() => fork.assertTokenBalanceDelta({ beforeBaseUnits: '100',
 assert.throws(() => fork.assertTokenBalanceDelta({ beforeBaseUnits: '100', afterBaseUnits: '109', expectedBaseUnits: '10', label: 'USDY fee account' }), /delta/i)
 assert.equal(typeof fork.assertTokenBalanceChange, 'function')
 assert.doesNotThrow(() => fork.assertTokenBalanceChange({ beforeBaseUnits: '100', afterBaseUnits: '0', expectedChangeBaseUnits: -100n, label: 'USDC input' }))
+assert.equal(await fork.readLocalSlot({ getSlot: () => ({ send: async () => 987654 }) }), 987654, 'Kit getSlot returns the slot number directly')
+assert.equal(await fork.readLocalSlot({ getSlot: () => ({ send: async () => 987654n }) }), 987654, 'large numeric JSON-RPC slot results normalize safely from bigint')
+await assert.rejects(fork.readLocalSlot({ getSlot: () => ({ send: async () => ({ value: 987654 }) }) }), /slot/i)
 assert.equal(typeof fork.forcedFailureInstruction, 'function')
 assert.deepEqual([...fork.forcedFailureInstruction().data], [255])
 assert.equal(typeof fork.composeAtomicOpenInstructions, 'function')
 const testAta = '11111111111111111111111111111111'
 const testAtaCreate = { programAddress: address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'), accounts: [{ address: 'SysvarRent111111111111111111111111111111111' }, { address: testAta }], data: new Uint8Array([1]) }
 const testCompute = { programAddress: address('ComputeBudget111111111111111111111111111111'), accounts: [], data: new Uint8Array([3]) }
+const duplicateCompute = { ...testCompute, data: Uint8Array.from(testCompute.data) }
 const testSwap = { programAddress: address('JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'), accounts: [], data: new Uint8Array([1]) }
 const testOpen = { programAddress: address('KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'), accounts: [], data: new Uint8Array([1]) }
+assert.equal(fork.composeAtomicOpenInstructions([testCompute, duplicateCompute, testSwap], [duplicateCompute, testOpen]).filter((ix) => String(ix.programAddress) === String(testCompute.programAddress)).length, 1, 'identical setup compute-budget instructions are emitted once')
 assert.deepEqual(fork.composeAtomicOpenInstructions([testCompute, testAtaCreate, testSwap], [testAtaCreate, testOpen], new Set([testAta])).map((ix) => ix.programAddress), [testCompute.programAddress, testSwap.programAddress, testOpen.programAddress])
 assert.deepEqual(fork.composeAtomicOpenInstructions([testCompute, testAtaCreate, testSwap], [testAtaCreate, testOpen]).map((ix) => ix.programAddress), [testCompute.programAddress, testAtaCreate.programAddress, testSwap.programAddress, testOpen.programAddress])
+const testAta2 = address('SysvarC1ock11111111111111111111111111111111')
+const lookupCandidates = fork.collectLookupTableAddresses([
+  { programAddress: testSwap.programAddress, accounts: [{ address: testAta }, { address: testAta2 }], data: new Uint8Array([1]) },
+  { programAddress: testOpen.programAddress, accounts: [{ address: testAta2 }], data: new Uint8Array([2]) },
+], [testAta])
+assert.deepEqual(lookupCandidates, [String(testSwap.programAddress), String(testAta2), String(testOpen.programAddress)], 'local lookup-table setup excludes the wallet signer and deduplicates keys in first-use order')
+const owner = createNoopSigner(address(testAta))
+const klend = address(PROGRAM_ID)
+const fake = address('SysvarRent111111111111111111111111111111111')
+const tokenProgram = address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
+const flashCommon = {
+  userTransferAuthority: owner,
+  lendingMarketAuthority: fake,
+  lendingMarket: fake,
+  reserve: fake,
+  reserveLiquidityMint: fake,
+  reserveLiquidityFeeReceiver: fake,
+  referrerTokenState: none(),
+  referrerAccount: none(),
+  sysvarInfo: address('Sysvar1nstructions1111111111111111111111111'),
+  tokenProgram,
+}
+const sdkFlashBorrow = flashBorrowReserveLiquidity({ liquidityAmount: new BN(123) }, {
+  ...flashCommon, reserveSourceLiquidity: fake, userDestinationLiquidity: fake,
+}, [], klend)
+const sdkFlashRepay = (borrowInstructionIndex) => flashRepayReserveLiquidity({ liquidityAmount: new BN(123), borrowInstructionIndex }, {
+  ...flashCommon, reserveDestinationLiquidity: fake, userSourceLiquidity: fake,
+}, [], klend)
+const assertFlashRepayPointsAtBorrow = (instructions, expectedIndex) => {
+  const borrowIndex = instructions.findIndex((ix) => Buffer.from(ix.data).subarray(0, 8).equals(Buffer.from(sdkFlashBorrow.data).subarray(0, 8)))
+  const repay = instructions.find((ix) => Buffer.from(ix.data).subarray(0, 8).equals(Buffer.from(sdkFlashRepay(0).data).subarray(0, 8)))
+  assert.equal(borrowIndex, expectedIndex)
+  assert.ok(repay, 'installed Kamino SDK flash repay instruction remains in composed open')
+  assert.equal(repay.data[16], expectedIndex, 'flash repay ABI points to the final composed borrow instruction index')
+}
+const sdkOpenWithAtaSetups = [
+  { programAddress: address('SysvarC1ock11111111111111111111111111111111'), accounts: [], data: new Uint8Array([7]) },
+  { ...testAtaCreate, accounts: [testAtaCreate.accounts[0], { address: testAta }] },
+  { ...testAtaCreate, accounts: [testAtaCreate.accounts[0], { address: testAta2 }] },
+  sdkFlashBorrow,
+  testOpen,
+  testSwap,
+  sdkFlashRepay(3),
+  testCompute,
+]
+const composedWithSetup = fork.composeAtomicOpenInstructions(
+  [testCompute, testAtaCreate, testSwap], sdkOpenWithAtaSetups,
+)
+assertFlashRepayPointsAtBorrow(composedWithSetup, 5)
+assert.equal(sdkOpenWithAtaSetups[6].data[16], 3, 'composition does not mutate the SDK-owned instruction')
+const sdkOpenWithPreexistingAtas = [
+  sdkOpenWithAtaSetups[0], sdkOpenWithAtaSetups[1], sdkOpenWithAtaSetups[2], sdkFlashBorrow, testOpen, testSwap, sdkFlashRepay(3), testCompute,
+]
+const composedWithPreexistingAtas = fork.composeAtomicOpenInstructions(
+  [testCompute, testSwap], sdkOpenWithPreexistingAtas, new Set([testAta, String(testAta2)]),
+)
+assertFlashRepayPointsAtBorrow(composedWithPreexistingAtas, 3)
 const testSigner = await generateKeyPairSigner()
 const signedLocal = await fork.compileSignedLocalTransaction({
   getLatestBlockhash: () => ({ send: async () => ({ value: { blockhash: '11111111111111111111111111111111', lastValidBlockHeight: 100n } }) }),

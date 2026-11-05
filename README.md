@@ -69,11 +69,23 @@ transaction. A strategy stays unavailable until the risk, program evidence and l
 
 Run `npm run simulate:swap-fees -- --scenario scripts/scenarios/swap-fees.synthetic.json` for a network-free,
 hypothetical fee business scenario. Edit the synthetic inputs to compare sizes, frequency and direct costs; outputs are
-not a forecast. Append `--json` for a machine-readable report. `npm run verify:loop-fork` is a separate local-only
-check. It rejects non-loopback endpoints and needs a
-configured local mainnet fork and real disposable test treasury token accounts. The current Phase 1 command only checks
-local validator and token-account prerequisites, then stays blocked until exact route audit evidence and actual SDK
-Multiply open/full-close simulation are available. It never signs or submits transactions.
+not a forecast. Append `--json` for a machine-readable report. `npm run verify:loop-fork` is a separate local-only check.
+It rejects non-loopback endpoints and needs a configured local mainnet fork, an ephemeral test wallet funded with local-fork
+USDC, and initialized disposable USDC/USDY treasury token accounts. After the loopback guard passes, the verifier may sign
+and submit test transactions only to that local validator to check the SDK Multiply open/full-close path, fee deltas, flash
+repayment, and forced-failure rollback. Never point it at a public RPC or put a production key in its inputs. The ordinary
+fee-aware v0 open currently measures 1,453 bytes, above Solana's 1,232-byte limit. A temporary lookup table prepared with
+local setup transactions reduces it to 774 bytes, but the local validator rejects the message with an invalid lookup index;
+the economic transaction is not submitted.
+
+Security-source review is recorded, but deployment approval is still blocked. Jupiter's official audit index lists the
+[Swap v6 Offside Labs October 2025 report](https://github.com/jup-ag/docs/blob/main/static/files/audits/swap-v6-offside-october-2025.pdf)
+and the [April 2024 report](https://github.com/jup-ag/docs/blob/main/static/files/audits/swap-v6-offside-april-2024.pdf).
+Orca's [Whirlpools repository](https://github.com/orca-so/whirlpools) lists its
+[Sec3 August 2025 report](https://github.com/orca-so/whirlpools/blob/main/.audits/2025-08-22.pdf) and a
+[verifiable-build status](https://verify.osec.io/status/whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc).
+These sources establish that audit reports and a verifiable-build status exist; they do not yet map each exact routed
+program ID and on-chain binary to an audited commit/version. Program evidence therefore remains unapproved.
 
 ## Wallets on phones
 Mobile browsers have no wallet extensions (`src/wallets.js`):

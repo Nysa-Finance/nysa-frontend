@@ -23,6 +23,7 @@ import { evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { buildReadOnlyLoopPreview } from './loop.js'
 import { configuredFeeAccountForMint } from './swap.js'
 import { PROGRAM_EVIDENCE } from './program-policy.js'
+import { runWithRequestAbortSignal } from './request-signal.js'
 
 if (!RPC_URL) {
   console.error('SOLANA_RPC is not set (see .env.example)')
@@ -157,17 +158,26 @@ const routes = [
       leverage: Number(body.leverage),
     })
     try {
-      const preview = await buildReadOnlyLoopPreview({ wallet: body.wallet, fundingAmount: body.fundingAmount, leverage: Number(body.leverage), snapshot, strategy })
-      return send(res, 200, { ...preview, strategyId: 'sol-usdy-usdc', readOnly: true })
-    } catch (error) {
-      console.warn('[loop] preview unavailable', error?.message)
-      return send(res, 200, {
-        strategyId: 'sol-usdy-usdc',
-        readOnly: true,
-        executionEnabled: false,
-        available: false,
-        unavailableReasons: [...strategy.unavailableReasons, { code: 'quote-unavailable', message: 'Live fee-aware route or Kamino preview is unavailable.' }],
+      return await runWithRequestAbortSignal(req, res, async (signal) => {
+        try {
+          const preview = await buildReadOnlyLoopPreview({ wallet: body.wallet, fundingAmount: body.fundingAmount, leverage: Number(body.leverage), snapshot, strategy, signal })
+          if (signal.aborted || res.destroyed) return
+          return send(res, 200, { ...preview, strategyId: 'sol-usdy-usdc', readOnly: true })
+        } catch (error) {
+          if (signal.aborted || res.destroyed) return
+          console.warn('[loop] preview unavailable', error?.message)
+          return send(res, 200, {
+            strategyId: 'sol-usdy-usdc',
+            readOnly: true,
+            executionEnabled: false,
+            available: false,
+            unavailableReasons: [...strategy.unavailableReasons, { code: 'quote-unavailable', message: 'Live fee-aware route or Kamino preview is unavailable.' }],
+          })
+        }
       })
+    } catch (error) {
+      if (res.destroyed) return
+      throw error
     }
   }],
   ['GET', /^\/api\/market$/, (req, res) => {

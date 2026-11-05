@@ -5,7 +5,7 @@ import {
   createKeyPairSignerFromBytes, createTransactionMessage, fetchEncodedAccount, getBase64EncodedWireTransaction,
   none, signTransactionMessageWithSigners, setTransactionMessageFeePayerSigner, setTransactionMessageLifetimeUsingBlockhash,
 } from '@solana/kit'
-import { fetchAddressLookupTable } from '@solana-program/address-lookup-table'
+import { fetchAddressLookupTable, getCreateLookupTableInstructionAsync, getExtendLookupTableInstruction } from '@solana-program/address-lookup-table'
 import { getCurrentLedgerInstant, MultiplyObligation, ObligationTypeTag, PROGRAM_ID } from '@kamino-finance/klend-sdk'
 import { TOKENS, marketById } from '../src/config.js'
 import { ataOf } from '../server/account.js'
@@ -68,6 +68,13 @@ async function localRpc(fetcher, endpoint, method, params = []) {
   return body?.result
 }
 
+export async function readLocalSlot(rpcClient) {
+  const result = await rpcClient.getSlot({ commitment: 'confirmed' }).send()
+  const slot = typeof result === 'bigint' && result <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(result) : result
+  if (!Number.isSafeInteger(slot) || slot < 0) throw new Error('Local validator getSlot did not return a safe slot number.')
+  return slot
+}
+
 function localTokenAccount(value, mint, authority, name) {
   const raw = value?.data
   if (!value || !Array.isArray(raw) || typeof raw[0] !== 'string' || raw[1] !== 'base64') {
@@ -101,6 +108,24 @@ export function forcedFailureInstruction() {
 
 const ASSOCIATED_TOKEN_PROGRAM = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 const COMPUTE_BUDGET_PROGRAM = address('ComputeBudget111111111111111111111111111111')
+const FLASH_BORROW_DISCRIMINATOR = Uint8Array.from([135, 231, 52, 167, 7, 52, 212, 193])
+const FLASH_REPAY_DISCRIMINATOR = Uint8Array.from([185, 117, 0, 203, 96, 245, 180, 186])
+
+function hasDiscriminator(instruction, discriminator) {
+  return String(instruction?.programAddress) === String(PROGRAM_ID)
+    && instruction.data instanceof Uint8Array
+    && instruction.data.length >= discriminator.length
+    && discriminator.every((byte, index) => instruction.data[index] === byte)
+}
+
+function flashInstructionIndexes(instructions) {
+  const borrowIndexes = [], repayIndexes = []
+  instructions.forEach((instruction, index) => {
+    if (hasDiscriminator(instruction, FLASH_BORROW_DISCRIMINATOR)) borrowIndexes.push(index)
+    if (hasDiscriminator(instruction, FLASH_REPAY_DISCRIMINATOR)) repayIndexes.push(index)
+  })
+  return { borrowIndexes, repayIndexes }
+}
 
 function associatedAtaCreate(instruction) {
   return String(instruction?.programAddress) === ASSOCIATED_TOKEN_PROGRAM && instruction.data?.[0] === 1 && instruction.accounts?.[1]?.address
@@ -109,8 +134,25 @@ function associatedAtaCreate(instruction) {
 /** Deduplicate only idempotent ATA initialization; keep one create before either swap if the ATA is absent. */
 export function composeAtomicOpenInstructions(acquisitionInstructions, sdkOpenInstructions, existingTokenAccounts = new Set()) {
   if (!Array.isArray(acquisitionInstructions) || !Array.isArray(sdkOpenInstructions)) throw new TypeError('Atomic open instructions must be arrays.')
+  const sdkFlash = flashInstructionIndexes(sdkOpenInstructions)
+  if (sdkFlash.borrowIndexes.length || sdkFlash.repayIndexes.length) {
+    if (sdkFlash.borrowIndexes.length !== 1 || sdkFlash.repayIndexes.length !== 1) throw new Error('SDK Multiply open must contain exactly one flash borrow and repay instruction.')
+    const originalBorrowIndex = sdkOpenInstructions[sdkFlash.repayIndexes[0]].data[16]
+    if (originalBorrowIndex !== sdkFlash.borrowIndexes[0]) throw new Error('SDK flash repay instruction does not point to its borrow instruction before composition.')
+  }
   const allInstructions = [...acquisitionInstructions, ...sdkOpenInstructions]
-  const computeBudget = allInstructions.filter((instruction) => String(instruction.programAddress) === COMPUTE_BUDGET_PROGRAM)
+  const computeBudget = []
+  const seenComputeBudget = new Set()
+  for (const instruction of allInstructions) {
+    if (String(instruction.programAddress) !== COMPUTE_BUDGET_PROGRAM) continue
+    const identity = JSON.stringify({
+      accounts: instruction.accounts ?? [],
+      data: Buffer.from(instruction.data ?? []).toString('hex'),
+    })
+    if (seenComputeBudget.has(identity)) continue
+    seenComputeBudget.add(identity)
+    computeBudget.push(instruction)
+  }
   const setup = []
   const seen = new Set(existingTokenAccounts)
   for (const instruction of allInstructions) {
@@ -122,7 +164,79 @@ export function composeAtomicOpenInstructions(acquisitionInstructions, sdkOpenIn
   }
   const economic = allInstructions.filter((instruction) =>
     String(instruction.programAddress) !== COMPUTE_BUDGET_PROGRAM && !associatedAtaCreate(instruction))
-  return [...computeBudget, ...setup, ...economic]
+  const ordered = [...computeBudget, ...setup, ...economic]
+  const finalFlash = flashInstructionIndexes(ordered)
+  if (sdkFlash.borrowIndexes.length) {
+    if (finalFlash.borrowIndexes.length !== 1 || finalFlash.repayIndexes.length !== 1) throw new Error('Composed Multiply open lost its flash borrow or repay instruction.')
+    const borrowInstructionIndex = finalFlash.borrowIndexes[0]
+    const repayInstructionIndex = finalFlash.repayIndexes[0]
+    if (borrowInstructionIndex >= repayInstructionIndex || borrowInstructionIndex > 255) throw new Error('Composed Multiply open has an invalid flash-loan instruction order.')
+    const repay = ordered[repayInstructionIndex]
+    const data = Uint8Array.from(repay.data)
+    data[16] = borrowInstructionIndex
+    ordered[repayInstructionIndex] = { ...repay, data }
+  }
+  return ordered
+}
+
+export function collectLookupTableAddresses(instructions, excludedAddresses = []) {
+  const excluded = new Set([...excludedAddresses].map(String))
+  const found = new Set()
+  for (const instruction of instructions ?? []) {
+    const candidates = [instruction?.programAddress, ...(instruction?.accounts ?? []).map((account) =>
+      typeof account === 'string' ? account : account?.address)]
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string' || excluded.has(candidate)) continue
+      try { found.add(String(address(candidate))) } catch { /* non-address metadata is not a table key */ }
+    }
+  }
+  return [...found]
+}
+
+async function waitForLocalLookupTableActivation(rpcClient, tableAddress, requiredAddresses) {
+  const deadline = Date.now() + 10_000
+  while (Date.now() < deadline) {
+    const [slot, table] = await Promise.all([
+      rpcClient.getSlot({ commitment: 'confirmed' }).send(),
+      fetchAddressLookupTable(rpcClient, tableAddress, { commitment: 'confirmed' }),
+    ])
+    if (table.exists && slot > Number(table.data.lastExtendedSlot)) {
+      const fresh = await fetchAddressLookupTable(rpcClient, tableAddress, { commitment: 'confirmed' })
+      const freshSlot = await readLocalSlot(rpcClient)
+      if (!fresh.exists || freshSlot <= Number(fresh.data.lastExtendedSlot)) {
+        await new Promise((resolve) => setTimeout(resolve, 150))
+        continue
+      }
+      const missing = requiredAddresses.filter((key) => !fresh.data.addresses.includes(key))
+      if (missing.length) throw new Error(`Local address lookup table omitted ${missing.length} composed account address(es).`)
+      return fresh
+    }
+    await new Promise((resolve) => setTimeout(resolve, 150))
+  }
+  throw new Error('Local address lookup table did not warm up before open composition.')
+}
+
+/** Prepare a temporary lookup table with non-economic setup transactions on the loopback fork only. */
+async function prepareLocalAddressLookupTable(rpcClient, signer, instructions) {
+  const addresses = collectLookupTableAddresses(instructions, [String(signer.address)])
+  if (!addresses.length) return null
+  const slot = await readLocalSlot(rpcClient)
+  if (slot < 1) throw new Error('Local validator slot is too low to create a lookup table.')
+  const create = await getCreateLookupTableInstructionAsync({ authority: signer, payer: signer, recentSlot: slot - 1 })
+  const tableAddress = address(String(create.accounts[0].address))
+  const createTransaction = await compileSignedLocalTransaction(rpcClient, signer, [create])
+  await submitAndConfirmLocal(rpcClient, createTransaction)
+  for (let offset = 0; offset < addresses.length; offset += 20) {
+    const extend = getExtendLookupTableInstruction({
+      address: tableAddress,
+      authority: signer,
+      payer: signer,
+      addresses: addresses.slice(offset, offset + 20).map((key) => address(key)),
+    })
+    const extendTransaction = await compileSignedLocalTransaction(rpcClient, signer, [extend])
+    await submitAndConfirmLocal(rpcClient, extendTransaction)
+  }
+  return waitForLocalLookupTableActivation(rpcClient, tableAddress, addresses)
 }
 
 function tokenAmountBaseUnits(value, name) {
@@ -231,7 +345,7 @@ async function assertNoTokenBalanceChanges(rpcClient, before, label) {
   }
 }
 
-async function executeLocalMultiplyScenario({ rpcClient, signer, market, collReserve, debtReserve, callbacks, acquisition, feeAccounts, initialUsdcBaseUnits, leverage, flashBorrowType }) {
+async function executeLocalMultiplyScenario({ rpcClient, signer, market, collReserve, debtReserve, callbacks, acquisition, feeAccounts, initialUsdcBaseUnits, leverage, flashBorrowType, log }) {
   const multiplyType = new MultiplyObligation(collReserve.getLiquidityMint(), debtReserve.getLiquidityMint(), address(PROGRAM_ID))
   const usdcAta = await ataOf(signer.address, address(TOKENS['svm-usdc'].mint), debtReserve.getLiquidityTokenProgram())
   const usdyAta = await ataOf(signer.address, address(TOKENS['svm-usdy'].mint), collReserve.getLiquidityTokenProgram())
@@ -276,7 +390,10 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
   }
   const openInstructions = composeAtomicOpenInstructions(acquisition.instructions, open.ixs, existingSetupAccounts)
   const openLookupTables = [...new Map([...(await localLookupTables(rpcClient, acquisition)), ...open.lookupTables].map((table) => [String(table.address), table])).values()]
+  const localSetupTable = await prepareLocalAddressLookupTable(rpcClient, signer, openInstructions)
+  if (localSetupTable) openLookupTables.push(localSetupTable)
   const openTransaction = await compileSignedLocalTransaction(rpcClient, signer, openInstructions, openLookupTables)
+  log(`LOCAL ATOMIC OPEN SIZE: ${Buffer.from(openTransaction, 'base64').byteLength} bytes with ${localSetupTable?.data.addresses.length ?? 0} temporary local ALT entries.`)
   const expectedOpenFees = {}
   addExpectedFee(expectedOpenFees, acquisition.fee)
   addExpectedFee(expectedOpenFees, open.quote?.fee)
@@ -481,8 +598,9 @@ async function runConfiguredLocalFork(env, endpoint, log) {
     initialUsdcBaseUnits: env.LOCAL_FORK_STARTING_USDC_BASE_UNITS,
     leverage,
     flashBorrowType,
+    log,
   })
-  const { value: slot } = await localRpc.getSlot({ commitment: 'confirmed' }).send()
+  const slot = await readLocalSlot(localRpc)
   log(`LOCAL FORK OPEN/CLOSE PASS: slot ${slot}; open ${result.openSignature}; close ${result.closeSignature}; final debt ${result.finalDebt}; final collateral ${result.finalCollateral}.`)
   log(`LOCAL FEE DELTAS: open ${JSON.stringify(result.openFees)}; close ${JSON.stringify(result.closeFees)}; flash fees open=${result.openFlashLoanFee}, close=${result.closeFlashLoanFee}.`)
   log('LOCAL FAILURE ROLLBACK PASS: forced open and close failures preserved token balances and obligation state.')

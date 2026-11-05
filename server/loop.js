@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import Decimal from 'decimal.js'
 import { address, createNoopSigner, none } from '@solana/kit'
 import { fetchAddressLookupTable } from '@solana-program/address-lookup-table'
@@ -12,6 +13,7 @@ import { ObligationTypeTag } from '@kamino-finance/klend-sdk'
 import { buildSwap, configuredFeeAccountForMint } from './swap.js'
 import { rpc } from './rpc.js'
 import { getLive, reserveOf } from './market.js'
+import { LOOP_ACK_POLICY_VERSION } from './strategy.js'
 
 export class LoopPreviewError extends Error {}
 const PreciseDecimal = Decimal.clone({ precision: 50, rounding: Decimal.ROUND_HALF_UP })
@@ -44,6 +46,42 @@ function positiveDecimal(value, label, allowZero = false) {
 
 function decimalText(value) {
   return value.toDecimalPlaces(38, Decimal.ROUND_HALF_UP).toFixed()
+}
+
+function canonicalize(value) {
+  if (typeof value === 'bigint') return value.toString()
+  if (Array.isArray(value)) return value.map(canonicalize)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().flatMap((key) =>
+    value[key] === undefined ? [] : [[key, canonicalize(value[key])]]))
+  return value
+}
+
+export function createLoopAcknowledgementKey({ strategy, fundingAmount, leverage, acquisitionQuote, leverageQuote, preview, sdkPosition, policyVersion = LOOP_ACK_POLICY_VERSION }) {
+  if (!strategy?.carry?.requiresAcknowledgement || !sdkPosition || !acquisitionQuote || !leverageQuote) return null
+  const fundingBaseUnits = parseBaseUnits(String(fundingAmount), TOKENS['svm-usdc'].decimals).toString()
+  const signedPreview = {
+    policyVersion,
+    marketId: strategy.id ?? 'sol-usdy-usdc',
+    fundingAmountBaseUnits: fundingBaseUnits,
+    selectedLeverage: String(leverage),
+    rateAssumptions: strategy.carry.assumptions ?? null,
+    carry: {
+      estimatedCarryPct: strategy.carry.estimatedCarryPct ?? null,
+      asOf: strategy.carry.asOf ?? null,
+    },
+    routes: { acquisition: acquisitionQuote, leverage: leverageQuote },
+    sdkPosition,
+    economics: {
+      exposure: preview.exposure,
+      limits: preview.limits,
+      risk: preview.risk,
+      fees: preview.fees,
+      costs: preview.costs,
+      knownCostsTotalUsd: preview.knownCostsTotalUsd,
+      feeTotalUsd: preview.feeTotalUsd,
+    },
+  }
+  return createHash('sha256').update(JSON.stringify(canonicalize(signedPreview))).digest('hex')
 }
 
 function sdkPositionExposure(position) {
@@ -123,6 +161,7 @@ export function createKaminoSwapCallbacks({
   tokenDecimals: decimals = {},
   lookupTableResolver,
   providerApiKey = process.env.JUPITER_API_KEY,
+  signal,
   // The installed SDK budgets 50 bps when sizing flash repayment; quote the route at 49 bps so its provider min-out
   // remains above that repayment amount after 10-bps fee arithmetic and integer-base-unit rounding.
   slippageBps = 49,
@@ -157,6 +196,7 @@ export function createKaminoSwapCallbacks({
       platformFeeBps: 10,
       providerApiKey,
       slippageBps,
+      signal,
     })
     if (!built || !built.fee?.routeDeltaVerified || !built.programPolicy) throw new LoopPreviewError('Swap route did not verify its 10-bps fee and provider route.')
     return { built, inputMint, outputMint, inputAmountBaseUnits }
@@ -257,7 +297,7 @@ export function buildLoopPreview({
   const unavailableReasons = [...(strategy?.unavailableReasons ?? [])]
   for (const violation of violations) unavailableReasons.push({ code: violation, message: 'The preview cannot confirm that this request is within the current loop risk limits.' })
   if (fees.length !== 2) unavailableReasons.push({ code: 'swap-quotes-unavailable', message: 'Both the initial USDY acquisition and leverage swap need fee-aware provider quotes.' })
-  return {
+  const preview = {
     available: !!strategy?.enabled && violations.length === 0 && fees.length === 2,
     executionEnabled: false,
     exposure,
@@ -270,13 +310,18 @@ export function buildLoopPreview({
       liquidationPriceDeclinePct: liquidationPriceDeclinePct ? decimalText(liquidationPriceDeclinePct) : null,
       violations,
     },
-    carry: strategy?.carry ?? { estimatedCarryPct: null },
+    carry: { ...(strategy?.carry ?? { estimatedCarryPct: null }), acknowledgementKey: null,
+      ...(strategy?.carry?.requiresAcknowledgement ? { acknowledgementPolicyVersion: LOOP_ACK_POLICY_VERSION } : {}) },
     fees,
     costs: estimatedCosts.costs,
     knownCostsTotalUsd: estimatedCosts.knownCostsTotalUsd,
     feeTotalUsd: fees.every((fee) => fee.usd != null) ? fees.reduce((sum, fee) => sum + fee.usd, 0) : null,
     unavailableReasons,
   }
+  preview.carry.acknowledgementKey = createLoopAcknowledgementKey({
+    strategy, fundingAmount, leverage, acquisitionQuote, leverageQuote, preview, sdkPosition,
+  })
+  return preview
 }
 
 /** Use the installed Kamino SDK quote path while preserving the provider-native fee in the quoter callback. */
@@ -309,7 +354,7 @@ export function buildMultiplyFullCloseIxs(inputs, callbacks, builder = getWithdr
  * Build a quote-only USDY Multiply preview with the installed Kamino SDK and shared fee-aware Jupiter adapter.
  * It never returns instructions, simulates an economic transaction, or offers a signer path.
  */
-export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage, snapshot, strategy, now = Date.now() } = {}) {
+export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage, snapshot, strategy, now = Date.now(), signal } = {}) {
   const collateral = TOKENS['svm-usdy']
   const liability = TOKENS['svm-usdc']
   const fundingBaseUnits = parseBaseUnits(String(fundingAmount), liability.decimals).toString()
@@ -344,9 +389,10 @@ export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage
     feeAccount: initialFeeAccount.account,
     feeAccountMint: collateral.mint,
     slippageBps: 50,
+    signal,
   })
   const acquiredCollateral = new Decimal(acquisitionQuote.outputAmountBaseUnits).div(new Decimal(10).pow(collateral.decimals))
-  const callbacks = createKaminoSwapCallbacks({ wallet: taker, slippageBps: 49 })
+  const callbacks = createKaminoSwapCallbacks({ wallet: taker, slippageBps: 49, signal })
   const sdkPreview = await quoteMultiplyOpen({
     owner: createNoopSigner(address(taker)),
     kaminoMarket: market,

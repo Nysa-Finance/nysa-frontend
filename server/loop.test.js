@@ -3,7 +3,7 @@ import Decimal from 'decimal.js'
 import { address } from '@solana/kit'
 import { getSlippageFactor } from '@kamino-finance/klend-sdk'
 import { TOKENS } from '../src/config.js'
-import { buildLoopPreview, createKaminoSwapCallbacks } from './loop.js'
+import { buildLoopPreview, createKaminoSwapCallbacks, createLoopAcknowledgementKey } from './loop.js'
 import * as loop from './loop.js'
 
 const sdkSlippage = loop.sdkSlippagePctFromBps?.(50)
@@ -83,6 +83,21 @@ await callbacks.swapper({ ...inputs, inputAmountLamports: new Decimal('1000001')
 assert.equal(buildRequests.length, changedAmountBuilds + 1)
 assert.equal(buildRequests.at(-1).inputAmountBaseUnits, '1000001')
 
+const cancelledBuild = new AbortController()
+cancelledBuild.abort(new DOMException('Client disconnected.', 'AbortError'))
+const cancellationCallbacks = createKaminoSwapCallbacks({
+  wallet,
+  signal: cancelledBuild.signal,
+  getFeeAccount: async (mint) => ({ account: feeAccount, mint }),
+  tokenDecimals: { [usdc]: 6, [usdy]: 6 },
+  buildSwapFn: async (request) => {
+    assert.equal(request.signal, cancelledBuild.signal, 'request abort signal reaches provider build')
+    if (request.signal.aborted) throw request.signal.reason
+    return buildSwapFn(request)
+  },
+})
+await assert.rejects(cancellationCallbacks.quoter(inputs, []), /Client disconnected/)
+
 assert.throws(() => createKaminoSwapCallbacks({ wallet, localForkSimulation: true, localForkRpcUrl: 'https://api.mainnet-beta.solana.com', localRouteProgramVerifier: async () => true }), /loopback/i)
 let verifiedLocalPrograms
 const localCallbacks = createKaminoSwapCallbacks({
@@ -151,5 +166,61 @@ assert.ok(adverseRoutePreview.risk.violations.includes('projected-ltv-cap'))
 assert.equal(adverseRoutePreview.costs.find((cost) => cost.action === 'borrow-origination-fee').usd, 0.6)
 assert.equal(adverseRoutePreview.costs.find((cost) => cost.action === 'flash-loan-fee').usd, 0.028)
 assert.ok(adverseRoutePreview.knownCostsTotalUsd > 0.62)
+
+const acknowledgementStrategy = {
+  id: 'sol-usdy-usdc', enabled: false, unavailableReasons: [],
+  carry: {
+    estimatedCarryPct: '-0.75', collateralSupplyAprPct: 0.5, liabilityBorrowAprPct: 3,
+    basedOnLeverage: 1.5, asOf: '2026-11-05T12:00:00.000Z', requiresAcknowledgement: true,
+    acknowledgementKey: 'stale-pre-quote-key',
+    assumptions: {
+      collateralYieldSource: 'Kamino reserve supply APR', liabilityBorrowSource: 'Kamino reserve borrow APR',
+      collateralSupplyAprPct: 0.5, liabilityBorrowAprPct: 3, leverage: 1.5,
+    },
+  },
+}
+const acknowledgementRisk = { slippageBps: 50, priceImpactPct: 0.2, quoteAgeSeconds: 1, oracleAgeSeconds: 1, oracleHeartbeatSeconds: 60 }
+const acquisitionQuote = {
+  provider: 'jupiter-v2-build', providerVersion: 'swap-v2-build', quoteAt: 1_800_000_000_000,
+  inputMint: usdc, outputMint: usdy, inputAmountBaseUnits: '100000000', outputAmountBaseUnits: '89910000',
+  minimumOutputBaseUnits: '89460450', slippageBps: 50, priceImpactPct: 0.2,
+  fee: { bps: 10, mint: usdy, amountBaseUnits: '90000' }, routeProgramIds: ['OrcaWhirlpoolProgram1111111111111111111111'],
+  routePlan: [{ percent: 100, swapInfo: { label: 'Orca Whirlpool', ammKey: 'OrcaPool11111111111111111111111111111111',
+    inputMint: usdc, outputMint: usdy, inAmount: '100000000', outAmount: '90000000' } }],
+}
+const leverageQuote = {
+  ...acquisitionQuote, quoteAt: 1_800_000_000_100, inputAmountBaseUnits: '50000000', outputAmountBaseUnits: '44955000',
+  minimumOutputBaseUnits: '44730225', fee: { bps: 10, mint: usdy, amountBaseUnits: '45000' },
+  routePlan: [{ percent: 100, swapInfo: { ...acquisitionQuote.routePlan[0].swapInfo, ammKey: 'AnotherOrcaPool111111111111111111111',
+    inAmount: '50000000', outAmount: '45000000' } }],
+}
+const acknowledgementPosition = {
+  collateralMint: usdy, collateralDecimals: 6, collateralAmount: '140', collateralPriceUsd: '1',
+  liabilityMint: usdc, liabilityDecimals: 6, debtBorrowAmount: '40', borrowFeeRatio: '0.01', liabilityPriceUsd: '1',
+  flashBorrowAmount: '20', flashFeeRatio: '0.001',
+}
+const makeAcknowledgementPreview = (overrides = {}) => buildLoopPreview({
+  fundingAmount: '100', leverage: 1.5, strategy: acknowledgementStrategy,
+  maxBorrowLtvPct: 90, liquidationLtvPct: 95, riskInputs: acknowledgementRisk,
+  acquisitionQuote, leverageQuote, feePricesUsd: { [usdc]: 1, [usdy]: 1 }, sdkPosition: acknowledgementPosition,
+  ...overrides,
+})
+const finalAcknowledgementPreview = makeAcknowledgementPreview()
+assert.match(finalAcknowledgementPreview.carry.acknowledgementKey, /^[a-f0-9]{64}$/)
+assert.equal(finalAcknowledgementPreview.carry.acknowledgementPolicyVersion, 'nysa-loop-ack-v1')
+const acknowledgementKeyArgs = {
+  strategy: acknowledgementStrategy, fundingAmount: '100', leverage: 1.5,
+  acquisitionQuote, leverageQuote, preview: finalAcknowledgementPreview, sdkPosition: acknowledgementPosition,
+}
+assert.notEqual(createLoopAcknowledgementKey({ ...acknowledgementKeyArgs, policyVersion: 'nysa-loop-ack-v2' }), finalAcknowledgementPreview.carry.acknowledgementKey)
+const changedAcknowledgementPreviews = [
+  makeAcknowledgementPreview({ fundingAmount: '101' }),
+  makeAcknowledgementPreview({ leverage: 1.4 }),
+  makeAcknowledgementPreview({ acquisitionQuote: { ...acquisitionQuote, routePlan: [{ ...acquisitionQuote.routePlan[0], swapInfo: { ...acquisitionQuote.routePlan[0].swapInfo, ammKey: 'DifferentOrcaPool1111111111111111111111' } }] } }),
+  makeAcknowledgementPreview({ acquisitionQuote: { ...acquisitionQuote, fee: { ...acquisitionQuote.fee, amountBaseUnits: '90001' } } }),
+  makeAcknowledgementPreview({ sdkPosition: { ...acknowledgementPosition, flashFeeRatio: '0.002' } }),
+  makeAcknowledgementPreview({ strategy: { ...acknowledgementStrategy, carry: { ...acknowledgementStrategy.carry, assumptions: { ...acknowledgementStrategy.carry.assumptions, collateralSupplyAprPct: 0.6 } } } }),
+]
+for (const changed of changedAcknowledgementPreviews) assert.notEqual(changed.carry.acknowledgementKey, finalAcknowledgementPreview.carry.acknowledgementKey)
 
 console.log('loop preview ok')

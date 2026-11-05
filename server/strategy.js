@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto'
 import { LIVE, TOKENS } from '../src/config.js'
 import { calculateCarryPct, carryNeedsAcknowledgement } from '../src/loop-policy.js'
 
 export const LOOP_ALLOWED_MARKET_IDS = Object.freeze(['sol-usdy-usdc'])
+export const LOOP_ACK_POLICY_VERSION = 'nysa-loop-ack-v1'
 const SNAPSHOT_MAX_AGE_MS = 60_000
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value)
@@ -34,9 +34,6 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
   }
   const finish = (estimatedCarryPct) => {
     const requiresAcknowledgement = carryNeedsAcknowledgement(estimatedCarryPct)
-    const acknowledgementKey = requiresAcknowledgement
-      ? createHash('sha256').update(JSON.stringify({ marketId, asOf, assumptions, estimatedCarryPct })).digest('hex')
-      : null
     return {
       estimatedCarryPct,
       collateralSupplyAprPct: finite(supplyAprPct) ? supplyAprPct : null,
@@ -45,7 +42,8 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
       asOf,
       assumptions,
       requiresAcknowledgement,
-      acknowledgementKey,
+      // Bound only after provider routes and final SDK economics are available in the preview.
+      acknowledgementKey: null,
     }
   }
   if (!finite(supplyAprPct) || !finite(borrowAprPct)) {

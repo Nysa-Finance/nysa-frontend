@@ -55,7 +55,7 @@ const negativeCarry = evaluateLoopStrategy({
 })
 assert.equal(negativeCarry.carry.estimatedCarryPct, '-0.75')
 assert.equal(negativeCarry.carry.requiresAcknowledgement, true)
-assert.match(negativeCarry.carry.acknowledgementKey, /^[a-f0-9]{64}$/)
+assert.equal(negativeCarry.carry.acknowledgementKey, null) // no key until this carry estimate is bound to final routes and costs.
 assert.ok(negativeCarry.unavailableReasons.some((x) => x.code === 'carry-acknowledgement-required'))
 
 const allocationMissing = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [] } } })

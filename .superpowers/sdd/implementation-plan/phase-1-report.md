@@ -95,3 +95,50 @@ Phase 1 cannot be marked complete. The plan requires a single atomic USDC-funded
 There is also no approved audit-to-deployed-version evidence for the exact Jupiter and DEX programs. PROGRAM_EVIDENCE remains empty. The read-only /loop preview is not an execution flow.
 
 Self-review found no fixture-only fork success, no transaction split, no production RPC request in the fork verifier, and no production transaction signing or submission. The hard atomic-feasibility acceptance item remains unresolved and should be resliced before Phase 1 can pass review.
+
+## Round 2 review fixes and evidence
+
+- Kamino flash-repay rebasing is tested with the installed SDK's `flashBorrowReserveLiquidity` and `flashRepayReserveLiquidity` builders. The tests cover both missing ATA setup and preexisting ATA states, assert that the final repay ABI byte points to the final composed borrow index, and prove the SDK-owned instruction is not mutated. The setup/ordering scenario initially failed with `3 !== 6`; after rebasing, it passed. Exact duplicate compute-budget setup instructions are now emitted once; that regression initially observed three copies instead of one. Final borrow indices are 5 with ATA setup and 3 with both ATAs preexisting.
+- Negative-carry acknowledgement keys are now created only after the final SDK-backed preview includes funding base units, selected leverage, both full provider route identities, fee and cost results, exposure/risk/limits, carry timestamps and rate assumptions, and `nysa-loop-ack-v1`. Tests prove changes to funding, leverage, route, fee, flash cost, rate assumption, or policy version change the key. The initial preview test failed because the old prequote key remained `stale-pre-quote-key`; the fixed preview emits a 64-character hash and binds each tested change.
+- `/api/loop-preview` passes a disconnect signal through `buildReadOnlyLoopPreview`, the Kamino quote callbacks, and provider build/limiter. The real HTTP disconnect test first failed because the provider did not observe client disconnect; it now passes. The adapter test confirms an already-aborted signal reaches the provider build.
+- `readLocalSlot` now reads the direct `getSlot().send()` result and normalizes either a safe number or bigint. The regression first failed with `undefined` instead of slot `987654` when treating the direct value as `{ value }`. The installed local Kit RPC in this run returned a direct bigint (`326` at the first probe); both numeric result forms now pass, and object-shaped results reject.
+- README and `.env.example` now document that the verifier uses an ephemeral local test wallet and can sign/submit only to loopback after checking the endpoint. They describe the local inputs and state that no production key or public RPC is allowed.
+
+### Local v0 size and fork retry
+
+The local mainnet fork used a disposable signer and test treasury accounts injected into Agave 2.2.16 at `http://127.0.0.1:8899`. The repo-configured USDC mint is `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`; the earlier candidate address missing the extra `G` returned no account. Fee-account preflight passed for both local test token accounts.
+
+After exact duplicate compute-budget deduplication, the ordinary fee-aware v0 open measured **1,453 bytes**, 221 bytes over Solana's 1,232-byte limit. I also attempted a non-economic, temporary local address lookup table containing 38 unique non-signer addresses. The table creation/extensions were submitted only to the loopback validator; the table warmed, was re-fetched, and contained all required addresses. The atomic open serialized to **774 bytes**, but local simulation rejected it with:
+
+> JSON-RPC error: Invalid method parameter(s) (invalid transaction: Transaction address table lookup uses an invalid index)
+
+The verifier stopped before any economic open was submitted. Only local faucet/lookup-table setup transactions were submitted. No public-RPC transaction was signed or sent. The ALT result does not constitute open simulation evidence; the fork proof remains blocked.
+
+### Audit source status
+
+Official audit-source links are recorded here and in README. Jupiter's [official audit index](https://developers.jup.ag/docs/resources/audits) lists the [Swap v6 Offside Labs October 2025 PDF](https://github.com/jup-ag/docs/blob/main/static/files/audits/swap-v6-offside-october-2025.pdf), the [April 2024 PDF](https://github.com/jup-ag/docs/blob/main/static/files/audits/swap-v6-offside-april-2024.pdf), and a Sec3 v3 report. Orca's [Whirlpools repository README](https://github.com/orca-so/whirlpools) lists multiple audit reports, including [Sec3, August 22, 2025](https://github.com/orca-so/whirlpools/blob/main/.audits/2025-08-22.pdf), and links an [Osec verifiable-build status for the mainnet program ID](https://verify.osec.io/status/whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc). The source indexes establish report existence and Orca's verifiable-build status; exact correspondence between every route program ID, current deployed binary, source commit, and audit scope is not verified. No program-evidence record is approved, and `PROGRAM_EVIDENCE` remains empty.
+
+### Round 2 phase status
+
+The atomic-open, audit-version, and successful local-fork evidence gates remain unresolved. No split economic transaction or v1 transaction path was added. The loop remains unavailable. Round 2 fixes are recorded with their tests and report updates; Phase 1 is still incomplete.
+
+## Round 2 final verification
+
+`npm test`: exit 0. Decisive final lines:
+
+> loop fork guard ok
+> strategy ok
+> swap adapter ok
+> loop preview ok
+> request disconnect cancellation ok
+> market-updates ok
+> screening ok
+> relay ok
+> refresh ok
+> bigint-buffer ok
+
+`npm run build`: exit 0; Vite 8.3.1 transformed 293 modules and built the Loop JS/CSS chunks.
+
+`npm run simulate:swap-fees -- --scenario scripts/scenarios/swap-fees.synthetic.json`: exit 0; attempted 1,315, completed 1,312, excluded 2 failed and 1 rejected; completed notional was 110,100.009 USDC standalone and 30,000 USDY loop; gross fees were $140.10 and net after declared direct costs was $50.71 under the labeled synthetic assumptions.
+
+`npm run verify:loop-fork` without local configuration: exit 1 as expected, `BLOCKED: LOCAL_FORK_RPC is not set. No RPC request was sent.` The configured loopback attempt and its ALT simulation failure are detailed above.
