@@ -154,6 +154,7 @@ const routes = [
       riskApproval: { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
       programEvidenceApproved: PROGRAM_EVIDENCE.length > 0,
       feasibilityPassed: false,
+      leverage: Number(body.leverage),
     })
     try {
       const preview = await buildReadOnlyLoopPreview({ wallet: body.wallet, fundingAmount: body.fundingAmount, leverage: Number(body.leverage), snapshot, strategy })

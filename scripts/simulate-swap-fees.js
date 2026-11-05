@@ -130,6 +130,7 @@ function stableValue(value) {
 export function simulateScenario(scenario) {
   const { events, costs } = validateScenario(scenario)
   const inputTotals = new Map(), feeTotals = new Map(), directCostTotals = new Map()
+  const sourceInputTotals = { standalone: new Map(), loop: new Map() }
   const counts = { attempted: 0, completed: 0, failed: 0, rejected: 0, standalone: 0, loop: 0 }
   const eventResults = []
 
@@ -144,6 +145,7 @@ export function simulateScenario(scenario) {
     }
     counts.completed += count
     addTo(inputTotals, event.inputMint, event.inputAmount * BigInt(count))
+    addTo(sourceInputTotals[event.source], event.inputMint, event.inputAmount * BigInt(count))
     const feePerSwap = calculateSwapFeeBaseUnits(event.feeBasisAmount, scenario.feeBps)
     addTo(feeTotals, event.feeMint, feePerSwap * BigInt(count))
     eventResults.push({ id: event.id, source: event.source, outcome: event.outcome, swapCount: count, feeMint: event.feeMint, feeBasisMint: event.feeBasisMint, feeBasisPerSwap: human(event.feeBasisAmount, scenario.tokens[event.feeBasisMint].decimals), feePerSwapBaseUnits: String(feePerSwap), totalFeeBaseUnits: String(feePerSwap * BigInt(count)) })
@@ -160,6 +162,7 @@ export function simulateScenario(scenario) {
 
   const tokenNetFees = new Map([...new Set([...feeTotals.keys(), ...directCostTotals.keys()])].map((mint) => [mint, (feeTotals.get(mint) ?? 0n) - (directCostTotals.get(mint) ?? 0n)]))
   const inputNotional = summarizeMints(inputTotals, scenario.tokens)
+  const inputNotionalBySource = Object.fromEntries(Object.entries(sourceInputTotals).map(([source, totals]) => [source, summarizeMints(totals, scenario.tokens)]))
   const grossFees = summarizeMints(feeTotals, scenario.tokens)
   const directCosts = summarizeMints(directCostTotals, scenario.tokens)
   const netFees = summarizeMints(tokenNetFees, scenario.tokens)
@@ -176,6 +179,7 @@ export function simulateScenario(scenario) {
     completedSwapCountsBySource: { standalone: counts.standalone - events.filter((event) => event.source === 'standalone' && event.outcome !== 'completed').reduce((sum, event) => sum + event.repetitions, 0), loop: counts.loop - events.filter((event) => event.source === 'loop' && event.outcome !== 'completed').reduce((sum, event) => sum + event.repetitions, 0) },
     excludedSwapCounts,
     completedInputNotional: Object.fromEntries(Object.entries(inputNotional).map(([mint, total]) => [mint, { amount: total.amount, baseUnits: total.baseUnits, decimals: total.decimals, usd: total.usd, assumedUsdPrice: total.assumedUsdPrice }])),
+    completedInputNotionalBySource: inputNotionalBySource,
     completedInputNotionalTotalUsd: usdTotal(inputTotals, scenario.tokens),
     grossFees: { byMint: grossFees, totalUsd: usdTotal(feeTotals, scenario.tokens) },
     directCosts: { byMint: directCosts, totalUsd: usdTotal(directCostTotals, scenario.tokens) },
@@ -202,6 +206,7 @@ export function renderScenarioReport(result) {
     `Completed swaps: ${result.completedSwapCount} (standalone ${result.completedSwapCountsBySource.standalone}, loop ${result.completedSwapCountsBySource.loop})`,
     `Excluded swaps: ${result.excludedSwapCounts.failed} failed, ${result.excludedSwapCounts.rejected} rejected`,
     listTotals('Completed input notional', result.completedInputNotional),
+    `Completed input notional by source:\n${Object.entries(result.completedInputNotionalBySource).map(([source, totals]) => `${source}:\n${listTotals('  input mint', totals)}`).join('\n')}`,
     listTotals('Gross fees by mint', result.grossFees.byMint),
     `Gross fees: ${result.grossFees.totalUsd === null ? 'USD equivalent unavailable without explicit prices' : `${result.grossFees.totalUsd} USD equivalent`}`,
     listTotals('Declared direct costs by mint', result.directCosts.byMint),

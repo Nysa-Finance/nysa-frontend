@@ -75,17 +75,25 @@ onMounted(loadStrategies)
   <div v-if="error" class="n-banner warn" role="status">{{ error }}</div>
 
   <section v-if="preview?.exposure" class="n-stats stat-4">
-    <div class="n-stat"><div class="k">Starting USDC</div><div class="v">{{ preview.exposure.equity }} USDC</div></div>
+    <div class="n-stat"><div class="k">{{ preview.exposure.source === 'kamino-sdk-net-route' ? 'Estimated net equity' : 'Target net equity' }}</div><div class="v">{{ preview.exposure.equity }} USDC</div></div>
     <div class="n-stat"><div class="k">Projected collateral</div><div class="v">{{ preview.exposure.grossCollateral }} USDC equivalent</div></div>
     <div class="n-stat"><div class="k">Projected debt</div><div class="v">{{ preview.exposure.debt }} USDC equivalent</div></div>
     <div class="n-stat"><div class="k">Projected LTV / limit</div><div class="v">{{ pct(Number(preview.risk?.projectedLtvPct) / 100) }} / {{ pct(Number(preview.limits?.projectedLtvPct) / 100) }}</div></div>
   </section>
+  <p v-if="preview?.exposure" class="preview-basis">
+    {{ preview.exposure.source === 'kamino-sdk-net-route' ? 'Amounts use Kamino SDK position calculations and fee-adjusted swap quote outputs.' : 'Amounts are target-only estimates pending live fee-adjusted route quotes.' }}
+    <template v-if="preview.exposure.source === 'kamino-sdk-net-route'"> Health factor {{ Number(preview.risk?.healthFactor).toFixed(2) }} · liquidation threshold {{ preview.risk?.liquidationLtvPct }}% · liquidation collateral price {{ usd(Number(preview.risk?.liquidationPriceUsd)) }} per USDY.</template>
+  </p>
 
   <div class="content-grid">
     <section class="n-panel">
       <div class="panel-heading"><h2>Strategy availability</h2><span class="n-chip" :class="preview?.available ? 'ready' : 'blocked'">{{ preview?.available ? 'Available' : 'Preview only' }}</span></div>
       <p class="n-muted">{{ strategies[0]?.marketName ?? 'USDY Ondo Market' }} · {{ usdy.name }} collateral / {{ usdc.name }} debt</p>
-      <div v-if="preview?.carry?.estimatedCarryPct != null" class="carry">Estimated carry <b>{{ preview.carry.estimatedCarryPct }}%</b></div>
+      <div v-if="preview?.carry?.estimatedCarryPct != null" class="carry">
+        Estimated carry at {{ preview.carry.basedOnLeverage }}× <b>{{ preview.carry.estimatedCarryPct }}%</b>
+        <div class="carry-assumptions">{{ usdy.name }} supply APR {{ preview.carry.assumptions?.collateralSupplyAprPct }}% − {{ usdc.name }} borrow APR {{ preview.carry.assumptions?.liabilityBorrowAprPct }}%; live reserve rates as of {{ preview.carry.asOf ?? 'unknown' }}.</div>
+        <div v-if="preview.carry.requiresAcknowledgement" class="carry-ack">Current estimate is non-positive; acknowledgement is required before entry.</div>
+      </div>
       <div v-else class="carry">Estimated carry <b>Unavailable</b> until live supply yield and borrow cost are verified.</div>
       <ul v-if="preview?.unavailableReasons?.length || strategies[0]?.unavailableReasons?.length" class="reason-list">
         <li v-for="reason in (preview?.unavailableReasons ?? strategies[0]?.unavailableReasons ?? [])" :key="reason.code">{{ reason.message }}</li>
@@ -100,6 +108,7 @@ onMounted(loadStrategies)
       </div>
       <p v-else class="n-muted">Fee totals appear when both fee-aware route quotes and token-account configuration are available.</p>
       <div v-if="preview?.feeTotalUsd != null" class="fee-total">Estimated fees <b>{{ usd(preview.feeTotalUsd) }}</b></div>
+      <div v-if="preview?.knownCostsTotalUsd != null" class="fee-total">Known costs including borrow and flash fees <b>{{ usd(preview.knownCostsTotalUsd) }}</b></div>
       <p class="footnote">Each 10-bps fee is counted once per economic swap. DEX hops do not create additional Nysa fees.</p>
     </section>
   </div>
@@ -123,6 +132,9 @@ onMounted(loadStrategies)
 .n-chip.blocked { color: var(--n-yellow); }
 .carry { margin-top: 20px; color: var(--n-text-2); font-size: 14px; line-height: 1.6; }
 .carry b { color: var(--n-text); }
+.carry-assumptions,.carry-ack { margin-top: 7px; color: var(--n-text-3); font-size: 12px; }
+.carry-ack { color: var(--n-yellow); }
+.preview-basis { margin: -8px 0 20px; color: var(--n-text-3); font-size: 12px; line-height: 1.6; }
 .reason-list { display: grid; gap: 9px; margin: 18px 0 0; padding-left: 18px; color: var(--n-text-2); font-size: 13px; line-height: 1.5; }
 .fee-list { display: grid; gap: 12px; margin-top: 18px; }
 .fee-row,.fee-total { display: flex; justify-content: space-between; gap: 12px; color: var(--n-text-2); font-size: 13px; }

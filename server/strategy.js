@@ -1,5 +1,6 @@
+import { createHash } from 'node:crypto'
 import { LIVE, TOKENS } from '../src/config.js'
-import { calculateCarryPct } from '../src/loop-policy.js'
+import { calculateCarryPct, carryNeedsAcknowledgement } from '../src/loop-policy.js'
 
 export const LOOP_ALLOWED_MARKET_IDS = Object.freeze(['sol-usdy-usdc'])
 const SNAPSHOT_MAX_AGE_MS = 60_000
@@ -7,29 +8,50 @@ const SNAPSHOT_MAX_AGE_MS = 60_000
 const finite = (value) => typeof value === 'number' && Number.isFinite(value)
 const reason = (code, message) => ({ code, message })
 
-function allocationExists(vaults, market, collateral) {
+function allocationExists(vaults, market, collateral, liability) {
   return Object.values(vaults ?? {}).some((vault) => (vault?.allocations ?? []).some((allocation) =>
     allocation.market === market.kaminoMarket
-      && allocation.reserve === collateral.reserve
+      // Nysa's vault is USDC-denominated, so its actual allocation points at the market's USDC reserve.
+      // The allocation's collateral list establishes that this loan reserve serves the USDY collateral pair.
+      && allocation.reserve === liability.reserve
       && (allocation.collateral ?? []).includes(collateral.token_id)
       && finite(allocation.invested)
       && allocation.invested > 0))
 }
 
-function carryStatus(reserves, pair, leverage) {
+function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
   const collateral = reserves?.[pair.collateral]
   const liability = reserves?.[pair.liability]
   const supplyAprPct = collateral?.supplyAPR
   const borrowAprPct = liability?.borrowAPR
+  const asOf = finite(snapshotUpdatedAt) && snapshotUpdatedAt > 0 ? new Date(snapshotUpdatedAt).toISOString() : null
+  const assumptions = {
+    collateralYieldSource: 'Kamino reserve supply APR',
+    liabilityBorrowSource: 'Kamino reserve borrow APR',
+    collateralSupplyAprPct: finite(supplyAprPct) ? supplyAprPct : null,
+    liabilityBorrowAprPct: finite(borrowAprPct) ? borrowAprPct : null,
+    leverage,
+  }
+  const finish = (estimatedCarryPct) => {
+    const requiresAcknowledgement = carryNeedsAcknowledgement(estimatedCarryPct)
+    const acknowledgementKey = requiresAcknowledgement
+      ? createHash('sha256').update(JSON.stringify({ marketId, asOf, assumptions, estimatedCarryPct })).digest('hex')
+      : null
+    return {
+      estimatedCarryPct,
+      collateralSupplyAprPct: finite(supplyAprPct) ? supplyAprPct : null,
+      liabilityBorrowAprPct: finite(borrowAprPct) ? borrowAprPct : null,
+      basedOnLeverage: leverage,
+      asOf,
+      assumptions,
+      requiresAcknowledgement,
+      acknowledgementKey,
+    }
+  }
   if (!finite(supplyAprPct) || !finite(borrowAprPct)) {
-    return { estimatedCarryPct: null, collateralSupplyAprPct: finite(supplyAprPct) ? supplyAprPct : null, liabilityBorrowAprPct: finite(borrowAprPct) ? borrowAprPct : null, basedOnLeverage: leverage }
+    return finish(null)
   }
-  return {
-    estimatedCarryPct: calculateCarryPct({ equity: '1', leverage: String(leverage), collateralYieldPct: String(supplyAprPct), borrowCostPct: String(borrowAprPct) }),
-    collateralSupplyAprPct: supplyAprPct,
-    liabilityBorrowAprPct: borrowAprPct,
-    basedOnLeverage: leverage,
-  }
+  return finish(calculateCarryPct({ equity: '1', leverage: String(leverage), collateralYieldPct: String(supplyAprPct), borrowCostPct: String(borrowAprPct) }))
 }
 
 export function evaluateLoopStrategy({
@@ -54,7 +76,8 @@ export function evaluateLoopStrategy({
   if (market && market.visible && Array.isArray(market.pairs)) {
     const pair = market.pairs.find((candidate) => candidate.collateral === 'svm-usdy' && candidate.liability === 'svm-usdc')
     const collateral = pair ? TOKENS[pair.collateral] : null
-    if (!pair || !collateral || !allocationExists(vaults, market, collateral)) {
+    const liability = pair ? TOKENS[pair.liability] : null
+    if (!pair || !collateral || !liability || !allocationExists(vaults, market, collateral, liability)) {
       unavailableReasons.push(reason('no-actual-allocation', 'No configured Nysa vault has a nonzero actual allocation to USDY collateral in this market.'))
     }
     if (!finite(snapshotUpdatedAt) || snapshotUpdatedAt <= 0 || now - snapshotUpdatedAt > SNAPSHOT_MAX_AGE_MS) {
@@ -70,8 +93,9 @@ export function evaluateLoopStrategy({
     if (!programEvidenceApproved) unavailableReasons.push(reason('program-evidence-unreviewed', 'Router and DEX program security evidence is not approved.'))
     if (!feasibilityPassed) unavailableReasons.push(reason('atomic-feasibility-unverified', 'Atomic route and flash-loan feasibility has not passed a local mainnet-fork check.'))
     if (pair) {
-      const carry = carryStatus(reserves, pair, leverage)
+      const carry = carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt)
       if (carry.estimatedCarryPct === null) unavailableReasons.push(reason('carry-unavailable', 'Verified supply yield or borrowing cost is unavailable.'))
+      else if (carry.requiresAcknowledgement) unavailableReasons.push(reason('carry-acknowledgement-required', 'The current non-positive carry estimate requires acknowledgement before loop entry.'))
       return { id: marketId, marketName: market.name, pair, enabled: unavailableReasons.length === 0, unavailableReasons, carry }
     }
   }

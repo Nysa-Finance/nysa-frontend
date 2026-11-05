@@ -8,7 +8,7 @@ const market = {
   pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc' }],
 }
 const vaults = {
-  rwa: { allocations: [{ market: 'market-address', reserve: TOKENS['svm-usdy'].reserve, collateral: ['svm-usdy'], invested: 100 }] },
+  rwa: { allocations: [{ market: 'market-address', reserve: TOKENS['svm-usdc'].reserve, collateral: ['svm-usdy'], invested: 100 }] },
 }
 const reserves = {
   'svm-usdy': { price: 1.1, supplyAPR: 4.5, oracleTs: now / 1000, maxAge: 60 },
@@ -36,8 +36,32 @@ assert.equal(enabled.id, 'sol-usdy-usdc')
 assert.deepEqual(enabled.unavailableReasons, [])
 assert.equal(enabled.carry.estimatedCarryPct, '5.25')
 
+const selectedLeverage = evaluateLoopStrategy({ ...ready, leverage: 1.2 })
+assert.equal(selectedLeverage.carry.estimatedCarryPct, '4.8')
+assert.equal(selectedLeverage.carry.basedOnLeverage, 1.2)
+assert.equal(selectedLeverage.carry.asOf, '2026-11-05T12:00:00.000Z')
+assert.deepEqual(selectedLeverage.carry.assumptions, {
+  collateralYieldSource: 'Kamino reserve supply APR',
+  liabilityBorrowSource: 'Kamino reserve borrow APR',
+  collateralSupplyAprPct: 4.5,
+  liabilityBorrowAprPct: 3,
+  leverage: 1.2,
+})
+assert.equal(selectedLeverage.carry.requiresAcknowledgement, false)
+
+const negativeCarry = evaluateLoopStrategy({
+  ...ready,
+  reserves: { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], supplyAPR: 0.5 } },
+})
+assert.equal(negativeCarry.carry.estimatedCarryPct, '-0.75')
+assert.equal(negativeCarry.carry.requiresAcknowledgement, true)
+assert.match(negativeCarry.carry.acknowledgementKey, /^[a-f0-9]{64}$/)
+assert.ok(negativeCarry.unavailableReasons.some((x) => x.code === 'carry-acknowledgement-required'))
+
 const allocationMissing = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [] } } })
 assert.ok(allocationMissing.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))
+const collateralReserveOnly = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [{ ...vaults.rwa.allocations[0], reserve: TOKENS['svm-usdy'].reserve }] } } })
+assert.ok(collateralReserveOnly.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))
 
 const inactive = evaluateLoopStrategy({ ...ready, market: { ...market, visible: false } })
 assert.ok(inactive.unavailableReasons.some((x) => x.code === 'market-inactive'))

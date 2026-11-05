@@ -4,78 +4,94 @@ Date: 2026-11-05
 
 ## Delivered
 
-- Shared server-side Jupiter V2 Build adapter with native `platformFeeBps=10` and `feeAccount` parameters, one fee per economic swap, integer base-unit fee checks, route-derived fee validation, net output/minimum output, exact route program admission, fee-account mint/authority verification, and safe provider errors. No custom SPL transfer fallback was added.
-- Keyless prototype quotes remain available and are serialized to one request per 2.1 seconds. Production API-key/rate configuration is a separate strategy readiness gate.
-- Fee-aware Kamino SDK quote callbacks and `/loop` read-only preview, strategy gates, LTV/carry/risk and fee reporting, plus SPA navigation and backend API wiring. No loop transaction signing or submission is exposed.
-- Offline synthetic fee simulator and deterministic tests; configurable local-fork preflight that rejects non-loopback RPC and checks real local test fee token accounts. The verifier never signs or sends transactions.
-- Program identity/audit record with exact gaps. `PROGRAM_EVIDENCE` remains empty, so no provider route is execution-eligible.
+- Shared backend Jupiter V2 Build adapter uses provider-native 10-bps fees. It validates input/output mints, fee-account mint and authority, provider route deltas, exact expected base-unit fee, net output and minimum output. No custom SPL transfer fallback exists.
+- Keyless prototype requests are limited to one every 2.1 seconds, with at most four pending requests, a ten-second wait/request bound, cancellation, and a safe busy error. Production API-key and rate configuration remain a readiness gate.
+- The read-only /loop preview uses fee-aware Jupiter quotes and Kamino SDK position calculations for collateral, debt, LTV, health, liquidation threshold and known swap/origination/flash costs. Selected leverage, carry timestamp, rate assumptions, and acknowledgement metadata are included.
+- Strategy eligibility requires an actual Nysa vault allocation to the USDC liability reserve in the selected market, with USDY collateral listed for the allocation. The actual local-fork feasibility flag stays false until atomic proof passes.
+- Offline synthetic business simulator reports completed notional by source and input mint, fee income, declared costs, and net fees. Inputs remain labeled hypothetical.
+- The local verifier now builds the real Jupiter swap instructions and installed Kamino SDK Multiply open/full-close instructions, composes the initial USDC acquisition and loop open into one atomic transaction, and contains fee-account delta checks plus forced-failure rollback checks. This path is not proven: the real v0 composition exceeds the transaction limit before simulation or submission. There is no split-transaction fallback.
 
 ## TDD evidence
 
-New behavior checks were written before their implementations and run red first:
+Round 1 behavior tests were run red before the corresponding fixes, then green:
 
 | Behavior | Red evidence | Green evidence |
 |---|---|---|
-| Keep keyless prototype quoting while making production credentials an explicit readiness gate | `node server/strategy.test.js` failed at `server/strategy.test.js:53`: expected `production-provider-key-missing`. | `strategy ok` |
-| Enforce the documented keyless Jupiter request rate | `node server/swap.test.js` failed during module loading: `The requested module './swap.js' does not provide an export named 'createKeylessRateLimiter'`. | `swap adapter ok`; deterministic limiter test confirms 2.1-second intervals. |
-| Prevent SDK composition unless fee-account balance delta has been simulated | `node server/loop.test.js` failed at line 67: `Missing expected rejection.` | `loop preview ok` |
-| Refuse public RPC endpoints in the local-fork gate | `node scripts/verify-loop-fork.test.js` initially failed with `ERR_MODULE_NOT_FOUND` for the not-yet-created verifier. | `loop fork guard ok`; public mainnet endpoint test confirms zero fetch calls. |
+| Match the Nysa vault's USDC loan reserve to the USDY collateral market pair | Strategy test failed with false instead of true when the fixture used the actual USDC allocation reserve. | node server/strategy.test.js: strategy ok |
+| Convert Kamino slippage basis points correctly | SDK regression expected 0.5 for 50 bps but received undefined before the helper existed. | node server/loop.test.js: installed SDK returns factor 0.995 for 0.5 percent |
+| Derive exposure and known costs from fee-adjusted SDK output | Adverse-route test expected 108 collateral value but received the target estimate 150. | node server/loop.test.js: actual net-route exposure, LTV, health, origination fee, flash fee and swap fees pass |
+| Pass selected leverage and expose carry provenance | Carry test expected an asOf timestamp but received undefined. | node server/strategy.test.js: selected 1.2x leverage, timestamp, assumptions, and acknowledgement metadata pass |
+| Group completed input notional by source and input mint | Simulator test failed while reading the missing standalone source group. | node scripts/simulate-swap-fees.test.js: source and mint totals pass |
+| Bound keyless queue, deadline and cancellation | Concurrent test expected saturation rejection but the old limiter did not reject. | node server/swap.test.js: bounded wait, cancellation, deadline and safe saturation error pass |
 
-Earlier Phase 1 tests also reproduced expected red behavior before their modules were implemented: the adapter test failed when the mocked provider response was not yet normalized; the loop test failed to import the absent `server/loop.js`; and exact program evidence tests failed when route labels alone were accepted. All focused tests passed after implementation.
+Earlier module-import and missing-export errors were setup failures, not valid behavioral RED evidence. They are not counted as red tests here.
+
+The local-fork test does not have a green economic execution result. The configured local validator accepted preflight and fee-account checks, but compilation produced a 1,443-byte atomic open transaction against the 1,232-byte v0 limit. The larger 1.5x run using the alternate debt flash-borrow mode measured 1,443 bytes; the collateral flash-borrow mode measured 1,475 bytes. No economic transaction was simulated or submitted. The failure is the unresolved atomic-feasibility gate, not a passing fork proof.
 
 ## Verification
 
-`npm test` — exit 0. Decisive output:
+Focused Round 1 tests passed:
 
-```text
-logic ok
-wallets ok
-swap-fees ok
-loop-policy ok
-swap-fee-simulator ok
-loop fork guard ok
-strategy ok
-program-policy ok
-swap adapter ok
-loop preview ok
-market-updates ok
-screening ok
-relay ok
-refresh ok
-bigint-buffer ok
-```
+- node server/strategy.test.js
+- node server/loop.test.js
+- node scripts/simulate-swap-fees.test.js
+- node scripts/verify-loop-fork.test.js
+- node server/swap.test.js
 
-`npm run build` — exit 0; Vite 8.3.1 transformed 293 modules and emitted the Loop JS/CSS chunks.
+Full suite, npm test: exit 0.
 
-`npm run simulate:swap-fees -- --scenario scripts/scenarios/swap-fees.synthetic.json` — exit 0, offline. Result excerpt:
+> logic ok
+> wallets ok
+> swap-fees ok
+> loop-policy ok
+> swap-fee-simulator ok
+> loop fork guard ok
+> strategy ok
+> program-policy ok
+> swap adapter ok
+> loop preview ok
+> market-updates ok
+> screening ok
+> relay ok
+> refresh ok
+> bigint-buffer ok
 
-```text
-Hypothetical scenario — not a forecast
-Attempted swaps: 1315
-Completed swaps: 1312 (standalone 1012, loop 300)
-Excluded swaps: 2 failed, 1 rejected
-Gross fees: 140.1 USD equivalent
-Net after declared direct costs: 50.71 USD equivalent
-```
+Production build, npm run build: exit 0. Vite 8.3.1 transformed 293 modules and built the Loop JS/CSS chunks.
 
-All USD prices, traffic, size/frequency and costs in this report are synthetic assumptions from the editable scenario.
-Appending `--json` also exited 0 and emitted the normalized machine-readable result; it reports 1,312 completed swaps,
-USDC gross fees of `140100000` base units, and net after declared costs of `50710000` base units.
+Offline simulator, npm run simulate:swap-fees -- --scenario scripts/scenarios/swap-fees.synthetic.json: exit 0.
 
-`npm run verify:loop-fork` — exit 1 as an expected hard gate:
+> Hypothetical scenario — not a forecast
+> Attempted swaps: 1315
+> Completed swaps: 1312 (standalone 1012, loop 300)
+> Excluded swaps: 2 failed, 1 rejected
+> Completed input notional by source: standalone USDC 110100.009; loop USDY 30000
+> Gross fees: 140.1 USD equivalent
+> Net after declared direct costs: 50.71 USD equivalent
 
-```text
-BLOCKED: LOCAL_FORK_RPC is not set. No RPC request was sent.
-```
+All simulator amounts, traffic, token prices, and costs are synthetic assumptions.
 
-One bounded `solana-test-validator --url https://api.mainnet-beta.solana.com` probe was attempted with Jupiter and Orca upgradeable-program clone flags and a temporary ledger at `/tmp/nysa-phase1-loop-validator`. Agave 2.2.16 booted at `http://127.0.0.1:8899`, reached processed slot 63 / confirmed slot 63 in about 31 seconds, and was stopped with Ctrl-C (exit 130). This showed the validator binary and public clone source could start; it did not validate that all required program state had cloned, and it did not load the Nysa market, reserve liquidity, a funded test wallet, or disposable fee accounts. No transaction was signed, simulated, or submitted.
+Guarded verifier without a configured local endpoint, npm run verify:loop-fork: exit 1 as expected.
 
-Jupiter read-only provider observation and public account evidence are recorded in [`docs/features/nysa-swap-router-loop/program-evidence.md`](../../../docs/features/nysa-swap-router-loop/program-evidence.md). The route returned gross USDY route-plan output `867442` and net `outAmount=866575` for 1,000,000 raw USDC input with `platformFeeBps=10`; fee delta `867` equals integer floor at 10 bps. Provider metadata omitted normalized fee amount/mint. The read-only call used a placeholder fee account only to test quote access; it is explicitly not transaction or treasury evidence.
+> BLOCKED: LOCAL_FORK_RPC is not set. No RPC request was sent.
+
+Configured local-fork attempt used only http://127.0.0.1:8899, a disposable local signer, and local disposable USDC/USDY fee token accounts. Validator preflight passed on Agave 2.2.16; fee token accounts were verified. The SDK built the real route and Multiply instructions, then failed closed before sending the economic transaction:
+
+> BLOCKED: Local Multiply transaction is 1443 bytes; Solana limit is 1232 bytes.
+
+No mainnet transaction was signed or sent. The local scenario's economic transaction was not simulated, and forced-failure rollback checks were not reached.
+
+A keyless read-only Jupiter observation for 10 USDC returned gross route-plan output 8,674,418 raw USDY, net output 8,665,744, and an 8,674 raw USDY fee. The fee equals floor(gross route output × 10 / 10,000). Jupiter did not return normalized fee amount/mint metadata; the adapter derives it from the route delta and requires simulated account-balance verification before production composition.
+
+## Deferred v1 path assessment
+
+Jupiter documents transaction v1 as a possible size remedy: it permits up to 4,096 bytes and requires transactionVersion=1, @solana/kit v8 or later, v1 compute configuration, an RPC that accepts v1, and a wallet that can sign it. The current app and installed Kamino SDK use @solana/kit 2.3.0. The current Android Mobile Wallet Adapter browser integration advertises only legacy and v0. The iOS Phantom/Solflare deeplink flow has no transaction-version capability negotiation, and the relay uses the Kit 2 legacy/v0 transaction-envelope decoder. The local validator is Agave 2.2.16; Solana's v1 size activation requires Agave 4.2.2 or later. Adopting v1 therefore needs separate scope for transaction compilation, wallet capability/fallback behavior, iOS relay parsing, and validator upgrades. It was not implemented under this plan.
+
+References: [Jupiter Build](https://developers.jup.ag/docs/swap/build), [Jupiter transaction versions](https://developers.jup.ag/docs/swap/advanced/transaction-versions), [Solana larger transaction sizes](https://solana.com/upgrades/larger-transaction-sizes).
 
 ## Blockers and self-review
 
-Phase 1 cannot be marked complete against its plan. Actual fee balance delta validation and fee-aware Multiply open/full-close local-fork simulation are not proven. There is no approved exact router/DEX audit-to-deployment match (`PROGRAM_EVIDENCE` is empty), and the workspace has no configured local fork, test wallet, or real disposable USDC/USDY fee token accounts. The guarded verifier exits closed and documents those conditions; it does not substitute fixture-only success.
+Phase 1 cannot be marked complete. The plan requires a single atomic USDC-funded open and full close with real local-fork fee deltas, flash repayment, zero-debt close, and forced-failure rollback. The tested v0 open is 211 bytes over Solana's limit even after deduplicating idempotent ATA initialization and testing the debt-flash variant. The local close, fee deltas, flash repayment and rollback path exist in the verifier but remain unproven because the open transaction cannot be simulated. The USDY/USDC loop stays unavailable: production feasibility is false, and no swap/open actions are exposed in the UI. Standalone swap acquisition remains independent; it is not used as a loop fallback.
 
-Review notes: fee arithmetic shares `src/swap-fees.js`; adapter validates provider output against route deltas and optional provider metadata; composition refuses to proceed without simulation and exact route evidence; non-local RPC is rejected before any request. Provider credentials, treasury addresses, risk approval and production route admission stay server-side and disabled until operators configure and verify them. Read-only `/loop` exposes no execution path. No direct transaction signing or sending code was added.
+There is also no approved audit-to-deployed-version evidence for the exact Jupiter and DEX programs. PROGRAM_EVIDENCE remains empty. The read-only /loop preview is not an execution flow.
 
-Dependency note: the first direct-dependency install attempt used the latest Solana program packages and failed `ERESOLVE` because they require `@solana/kit ^3.0`, while this app uses Kit 2.x. Direct dependencies now use Kit-2-compatible versions (`address-lookup-table 0.7.x`, `token 0.5.x`, `token-2022 0.4.x`). The final install completed; npm still printed peer-override warnings for newer transitive Solana packages brought by the installed Kamino SDK. Full tests and build pass with the resolved lockfile.
+Self-review found no fixture-only fork success, no transaction split, no production RPC request in the fork verifier, and no production transaction signing or submission. The hard atomic-feasibility acceptance item remains unresolved and should be resliced before Phase 1 can pass review.

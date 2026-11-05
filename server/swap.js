@@ -10,21 +10,53 @@ const FEE_BPS = 10
 const MAX_SLIPPAGE_BPS = 50
 const MAX_ROUTE_LEGS = 32
 const KEYLESS_PROVIDER_INTERVAL_MS = 2_100
+const KEYLESS_PROVIDER_MAX_PENDING = 4
+const KEYLESS_PROVIDER_MAX_WAIT_MS = 10_000
 const TOKEN_PROGRAMS = new Set([TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS])
 const addressDecoder = getAddressDecoder()
 
 /** Enforce Jupiter's documented 0.5-RPS keyless limit across requests from this backend process. */
-export function createKeylessRateLimiter({ intervalMs = KEYLESS_PROVIDER_INTERVAL_MS, now = Date.now, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)) } = {}) {
-  if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0 || typeof now !== 'function' || typeof sleep !== 'function') {
+export function createKeylessRateLimiter({
+  intervalMs = KEYLESS_PROVIDER_INTERVAL_MS,
+  maxPending = KEYLESS_PROVIDER_MAX_PENDING,
+  maxWaitMs = KEYLESS_PROVIDER_MAX_WAIT_MS,
+  now = Date.now,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+} = {}) {
+  if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0 || !Number.isSafeInteger(maxPending) || maxPending <= 0
+    || !Number.isSafeInteger(maxWaitMs) || maxWaitMs < 0 || typeof now !== 'function' || typeof sleep !== 'function') {
     throw new TypeError('Invalid keyless provider rate limiter settings.')
   }
   let nextAllowedAt = 0
-  return async function waitForKeylessProvider() {
+  let pending = 0
+  return async function waitForKeylessProvider(signal) {
+    if (signal?.aborted) throw signal.reason ?? new DOMException('Aborted', 'AbortError')
     const current = now()
     if (!Number.isFinite(current)) throw new TypeError('Invalid keyless provider clock.')
-    const waitMs = Math.max(0, nextAllowedAt - current)
-    nextAllowedAt = Math.max(current, nextAllowedAt) + intervalMs
-    if (waitMs > 0) await sleep(waitMs)
+    const scheduledAt = Math.max(current, nextAllowedAt)
+    const waitMs = scheduledAt - current
+    if (pending >= maxPending || waitMs > maxWaitMs) {
+      const error = new SwapError('Swap provider is busy; try again shortly.')
+      error.code = 'KEYLESS_PROVIDER_BUSY'
+      throw error
+    }
+    nextAllowedAt = scheduledAt + intervalMs
+    if (waitMs === 0) return
+    pending++
+    let onAbort
+    try {
+      if (!signal) await sleep(waitMs)
+      else {
+        const aborted = new Promise((_, reject) => {
+          onAbort = () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+          signal.addEventListener('abort', onAbort, { once: true })
+        })
+        await Promise.race([sleep(waitMs, signal), aborted])
+      }
+    } finally {
+      if (onAbort) signal.removeEventListener('abort', onAbort)
+      pending--
+    }
   }
 }
 const waitForKeylessProvider = createKeylessRateLimiter()
@@ -210,6 +242,7 @@ export async function buildSwap({
   slippageBps = MAX_SLIPPAGE_BPS,
   providerApiKey = process.env.JUPITER_API_KEY,
   keylessRateLimiter = waitForKeylessProvider,
+  signal,
   apiBaseUrl = 'https://api.jup.ag',
   fetcher = fetch,
   evidence = PROGRAM_EVIDENCE,
@@ -239,11 +272,15 @@ export async function buildSwap({
     platformFeeBps: String(FEE_BPS), feeAccount, slippageBps: String(slippageBps), transactionVersion: '0',
   }).toString()
   const headers = providerApiKey ? { 'x-api-key': providerApiKey } : {}
+  const timeoutSignal = AbortSignal.timeout(10_000)
+  const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
   let response
   try {
-    if (!providerApiKey) await keylessRateLimiter()
-    response = await fetcher(endpoint, { headers, signal: AbortSignal.timeout(10_000) })
-  } catch {
+    if (!providerApiKey) await keylessRateLimiter(requestSignal)
+    response = await fetcher(endpoint, { headers, signal: requestSignal })
+  } catch (error) {
+    if (error?.code === 'KEYLESS_PROVIDER_BUSY') throw new SwapError('Swap provider is busy; try again shortly.')
+    if (requestSignal.aborted) throw new SwapError('Swap provider request was cancelled or timed out.')
     throw new SwapError('Swap provider is temporarily unavailable.')
   }
   if (!response?.ok) throw new SwapError('Swap provider is temporarily unavailable.')

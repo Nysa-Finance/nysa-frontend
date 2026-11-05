@@ -36,6 +36,9 @@ try {
   assert.equal(result.completedInputNotional.USDC.usd, '30100')
   assert.equal(result.completedInputNotional.USDY.amount, '10000')
   assert.equal(result.completedInputNotional.USDY.usd, '11000')
+  assert.equal(result.completedInputNotionalBySource.standalone.USDC.amount, '30100')
+  assert.equal(result.completedInputNotionalBySource.loop.USDY.amount, '10000')
+  assert.equal(result.completedInputNotionalBySource.loop.USDC, undefined)
   assert.equal(result.grossFees.byMint.USDC.amount, '30.1') // 301 completed events × 0.10 USDC
   assert.equal(result.grossFees.byMint.USDY.amount, '10')
   assert.equal(result.grossFees.totalUsd, '41.1')
@@ -69,6 +72,8 @@ try {
   const report = renderScenarioReport(result)
   assert.match(report, /Hypothetical scenario — not a forecast/)
   assert.match(report, /Completed swaps: 302/)
+  assert.match(report, /standalone:[\s\S]*30100/)
+  assert.match(report, /loop:[\s\S]*10000/)
   assert.match(report, /Gross fees: 41\.1 USD equivalent/)
   assert.match(report, /Net after declared direct costs: 30\.91 USD equivalent/)
   assert.equal(report, renderScenarioReport(simulateScenario(scenario)))

@@ -20,6 +20,43 @@ await limiter()
 await limiter()
 await limiter()
 assert.deepEqual(waits, [2100, 2100]) // keyless Jupiter has a documented 0.5 RPS cap
+
+const heldSleeps = []
+const boundedLimiter = createKeylessRateLimiter({
+  intervalMs: 100,
+  maxPending: 2,
+  maxWaitMs: 1_000,
+  now: () => 0,
+  sleep: (milliseconds, signal) => new Promise((resolve, reject) => {
+    const item = { milliseconds, resolve, reject }
+    heldSleeps.push(item)
+    signal?.addEventListener('abort', () => reject(signal.reason), { once: true })
+  }),
+})
+await boundedLimiter()
+const pendingController = new AbortController()
+const pendingFirst = boundedLimiter(pendingController.signal)
+const pendingSecond = boundedLimiter()
+assert.deepEqual(heldSleeps.map((item) => item.milliseconds), [100, 200])
+const saturation = await Promise.race([
+  assert.rejects(boundedLimiter(), (error) => error.code === 'KEYLESS_PROVIDER_BUSY').then(() => true, () => false),
+  new Promise((resolve) => setTimeout(() => resolve(false), 50)),
+])
+assert.equal(saturation, true)
+pendingController.abort(new DOMException('cancelled', 'AbortError'))
+await assert.rejects(pendingFirst, (error) => error.name === 'AbortError')
+heldSleeps[1].resolve()
+await pendingSecond
+
+const deadlineLimiter = createKeylessRateLimiter({
+  intervalMs: 100,
+  maxPending: 4,
+  maxWaitMs: 50,
+  now: () => 0,
+  sleep: async () => {},
+})
+await deadlineLimiter()
+await assert.rejects(deadlineLimiter(), (error) => error.code === 'KEYLESS_PROVIDER_BUSY')
 const encoder = getAddressEncoder()
 const feeAccountData = new Uint8Array(165)
 feeAccountData.set(encoder.encode(address(inputMint)), 0)
@@ -185,5 +222,14 @@ const keylessRequest = await buildSwap({
   keylessRateLimiter: async () => {},
 })
 assert.equal(keylessRequest.provider, 'jupiter-v2-build')
+
+let saturationFetcherCalled = false
+await assert.rejects(buildSwap({
+  inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
+  fetcher: async () => { saturationFetcherCalled = true; return { ok: true, status: 200, json: async () => buildResponse() } },
+  evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
+  keylessRateLimiter: async () => { const error = new Error('private limiter details'); error.code = 'KEYLESS_PROVIDER_BUSY'; throw error },
+}), (error) => error.message === 'Swap provider is busy; try again shortly.' && error.code === undefined)
+assert.equal(saturationFetcherCalled, false)
 
 console.log('swap adapter ok')
