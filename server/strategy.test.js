@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { TOKENS } from '../src/config.js'
-import { evaluateLoopStrategy } from './strategy.js'
+import { evaluateLoopActionReadiness, evaluateLoopStrategy } from './strategy.js'
 
 const now = Date.parse('2026-11-05T12:00:00.000Z')
 const market = {
@@ -57,6 +57,22 @@ assert.equal(negativeCarry.carry.estimatedCarryPct, '-0.75')
 assert.equal(negativeCarry.carry.requiresAcknowledgement, true)
 assert.equal(negativeCarry.carry.acknowledgementKey, null) // no key until this carry estimate is bound to final routes and costs.
 assert.ok(negativeCarry.unavailableReasons.some((x) => x.code === 'carry-acknowledgement-required'))
+const negativeCarryAcknowledged = evaluateLoopActionReadiness({
+  action: 'loop-open', strategy: negativeCarry,
+  routeReadiness: { executionEnabled: true, unavailableReasons: [] },
+  builderAvailable: true, previewAcknowledgementValid: true,
+})
+assert.equal(negativeCarryAcknowledged.executionEnabled, true, 'a valid preview acknowledgement clears the negative-carry blocker')
+const negativeCarryStillBlockedByAllocation = evaluateLoopActionReadiness({
+  action: 'loop-open', strategy: {
+    ...negativeCarry,
+    unavailableReasons: [...negativeCarry.unavailableReasons, { code: 'no-actual-allocation', message: 'Allocation removed.' }],
+  },
+  routeReadiness: { executionEnabled: true, unavailableReasons: [] },
+  builderAvailable: true, previewAcknowledgementValid: true,
+})
+assert.deepEqual(negativeCarryStillBlockedByAllocation.unavailableReasons.map((item) => item.code), ['no-actual-allocation'],
+  'acknowledgement clears only the carry blocker and preserves unrelated entry blockers')
 
 const allocationMissing = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [] } } })
 assert.ok(allocationMissing.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))

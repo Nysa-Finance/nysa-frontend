@@ -2,12 +2,14 @@
 // Two RPC calls per read (the obligation, then token accounts + farm user states in one getMultipleAccounts), computed
 // against the shared market cache, and cached per wallet for TTL_MS.
 import { createRequire } from 'node:module'
-import { VanillaObligation, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
-import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress } from '@solana/kit'
+import { VanillaObligation, ObligationTypeTag, PROGRAM_ID, getObligationType, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
+import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress, some } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, VAULTS, tokensOf } from '../src/config.js'
+import { LIVE, TOKENS, VAULTS, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
 import { getLive, getVault, reserveOf, farms, num } from './market.js'
+import { LOOP_POSITION_MARKET_IDS } from './strategy.js'
+import { multiplyPosition } from './positions.js'
 
 const require = createRequire(import.meta.url)
 const { decodeUserState, getUserStatePDA } = require('@kamino-finance/farms-sdk')
@@ -18,6 +20,56 @@ const ATA_PROGRAM = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 const enc = getAddressEncoder()
 export const obligationType = () => new VanillaObligation(PROGRAM_ID)
 
+/** Read the ordinary obligation as the account's primary result; Multiply reads are isolated and additive. */
+export async function readWalletObligations({ wallet, marketConfig, market, vanillaObligationType = obligationType() } = {}) {
+  if (typeof wallet !== 'string' || !wallet || !marketConfig || !market) throw new TypeError('Wallet, market configuration and market are required.')
+  const owner = address(wallet)
+  const multiplyPairs = LOOP_POSITION_MARKET_IDS.includes(marketConfig.id)
+    ? marketConfig.pairs.filter((pair) => pair.collateral === 'svm-usdy' && pair.liability === 'svm-usdc')
+    : []
+  const loopPositionReadStatus = multiplyPairs.length ? { [marketConfig.id]: 'verified' } : {}
+  const reads = await Promise.allSettled([
+    market.getObligationByWallet(owner, vanillaObligationType),
+    ...multiplyPairs.map(async (pair) => {
+      const collateralReserve = reserveOf(market, TOKENS[pair.collateral])
+      const liabilityReserve = reserveOf(market, TOKENS[pair.liability])
+      const type = getObligationType(market, ObligationTypeTag.Multiply, some(collateralReserve.address), some(liabilityReserve.address))
+      const obligation = await market.getObligationByWallet(owner, type)
+      return { obligation, pair, collateralReserve, liabilityReserve }
+    }),
+  ])
+  if (reads[0].status === 'rejected') throw reads[0].reason
+  const loopPositions = []
+  for (const result of reads.slice(1)) {
+    if (result.status === 'rejected') {
+      loopPositionReadStatus[marketConfig.id] = 'unavailable'
+      console.warn('[account] Multiply obligation read unavailable', result.reason?.message)
+      continue
+    }
+    const item = result.value
+    if (!item.obligation) continue
+    try {
+      const position = multiplyPosition({
+        wallet,
+        marketId: marketConfig.id,
+        marketName: marketConfig.name,
+        obligation: item.obligation,
+        collateralReserve: item.collateralReserve.address,
+        liabilityReserve: item.liabilityReserve.address,
+        collateral: TOKENS[item.pair.collateral],
+        liability: TOKENS[item.pair.liability],
+        collateralMintFactor: String(item.collateralReserve.getMintFactor()),
+        liabilityMintFactor: String(item.liabilityReserve.getMintFactor()),
+      })
+      if (position) loopPositions.push(position)
+    } catch (error) {
+      loopPositionReadStatus[marketConfig.id] = 'unavailable'
+      console.warn('[account] Multiply obligation omitted', error?.message)
+    }
+  }
+  return { obligation: reads[0].value, loopPositions, loopPositionReadStatus }
+}
+
 export async function ataOf(owner, mint, tokenProgram) {
   const [ata] = await getProgramDerivedAddress({ programAddress: ATA_PROGRAM, seeds: [enc.encode(owner), enc.encode(tokenProgram), enc.encode(mint)] })
   return ata
@@ -25,6 +77,32 @@ export async function ataOf(owner, mint, tokenProgram) {
 
 // SPL token account amount (u64 at byte 64; same layout for Token-2022 accounts).
 const tokenAmount = (acc) => (acc?.exists ? Number(new DataView(acc.data.buffer, acc.data.byteOffset).getBigUint64(64, true)) : 0)
+
+export function maxWithdrawBaseUnits({ maxWithdrawAmountScaled, suppliedAmountScaled, mintFactor, decimals } = {}) {
+  if (!Number.isSafeInteger(decimals) || decimals < 0 || decimals > 18) throw new TypeError('Invalid token decimals.')
+  let max, supplied, factor
+  try {
+    max = new Decimal(String(maxWithdrawAmountScaled))
+    supplied = new Decimal(String(suppliedAmountScaled))
+    factor = new Decimal(String(mintFactor))
+  } catch { throw new TypeError('Invalid withdrawal amount.') }
+  if (!max.isFinite() || !supplied.isFinite() || !factor.isFinite() || max.isNegative() || supplied.isNegative() || factor.lte(0)) {
+    throw new TypeError('Invalid withdrawal amount.')
+  }
+  return Decimal.min(max, supplied).div(factor).mul(new Decimal(10).pow(decimals)).floor().toFixed(0)
+}
+
+export function maxWithdrawFromObligation({ obligation, market, reserve, instant, suppliedAmountScaled, mintFactor, decimals } = {}) {
+  if (!obligation) return maxWithdrawBaseUnits({ maxWithdrawAmountScaled: '0', suppliedAmountScaled: '0', mintFactor, decimals })
+  let maxWithdrawAmountScaled
+  try { maxWithdrawAmountScaled = String(obligation.getMaxWithdrawAmount(market, reserve.address, instant).maxWithdrawAmount) }
+  catch { throw new TypeError('Could not calculate the fresh withdrawal allowance.') }
+  return maxWithdrawBaseUnits({ maxWithdrawAmountScaled, suppliedAmountScaled, mintFactor, decimals })
+}
+
+const tokenAmountBaseUnits = (acc) => (acc?.exists
+  ? String(new DataView(acc.data.buffer, acc.data.byteOffset).getBigUint64(64, true))
+  : '0')
 
 // Unclaimed rewards of an obligation in its markets' collateral farms: [{ farm, mint, index, amount }].
 export function pendingRewards(farmStates, userStates) {
@@ -44,17 +122,22 @@ export function pendingRewards(farmStates, userStates) {
 
 async function readAccount(wallet) {
   const owner = address(wallet)
-  const balances = {}, positions = {}, claimable = {}
+  const balances = {}, balancesBaseUnits = {}, positions = {}, positionsBaseUnits = {}, claimable = {}, loopPositions = [], loopPositionReadStatus = {}
   for (const m of LIVE) {
     const { market, now, farms: farmStates } = getLive(m)
     const tokens = tokensOf(m)
-    const ob = await market.getObligationByWallet(owner, obligationType())
+    const { obligation: ob, loopPositions: marketLoopPositions, loopPositionReadStatus: marketLoopPositionReadStatus } = await readWalletObligations({ wallet, marketConfig: m, market })
+    loopPositions.push(...marketLoopPositions)
+    Object.assign(loopPositionReadStatus, marketLoopPositionReadStatus)
     // One getMultipleAccounts: the wallet's token account per token, then its farm user state per reward farm.
     const atas = await Promise.all(tokens.map((t) => ataOf(owner, address(t.mint), reserveOf(market, t).getLiquidityTokenProgram())))
     const farmAddrs = ob ? [...farmStates.keys()] : []
     const userPdas = await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress)))
     const accounts = await fetchEncodedAccounts(rpc, [...atas, ...userPdas])
-    tokens.forEach((t, i) => (balances[t.token_id] = tokenAmount(accounts[i]) / 10 ** t.decimals))
+    tokens.forEach((t, i) => {
+      balancesBaseUnits[t.token_id] = tokenAmountBaseUnits(accounts[i])
+      balances[t.token_id] = Number(balancesBaseUnits[t.token_id]) / 10 ** t.decimals
+    })
     const users = farmAddrs.map((f, i) => {
       const acc = accounts[atas.length + i]
       return [f, acc.exists ? decodeUserState(acc).data : null]
@@ -62,17 +145,26 @@ async function readAccount(wallet) {
     claimable[m.id] = pendingRewards(farmStates, users).map(({ mint, amount }) => ({ symbol: tokens.find((t) => t.mint === mint)?.name ?? mint, amount }))
     for (const t of tokens) {
       const r = reserveOf(market, t)
-      const f = num(r.getMintFactor()) || 1
-      const supplied = ob ? num(ob.getDepositByReserve(r.address)?.amount) / f : 0
+      const factorValue = r.getMintFactor()
+      const f = num(factorValue) || 1
+      const depositAmount = ob?.getDepositByReserve(r.address)?.amount
+      const suppliedScaled = depositAmount == null ? '0' : String(depositAmount)
+      const supplied = ob ? num(depositAmount) / f : 0
       const borrowed = ob ? num(ob.getBorrowByReserve(r.address)?.amount) / f : 0
-      let maxWithdraw = supplied
-      if (ob && supplied > 0) {
-        try { maxWithdraw = Math.min(num(ob.getMaxWithdrawAmount(market, r.address, now).maxWithdrawAmount) / f, supplied) } catch { /* keep supplied */ }
-      }
-      positions[t.token_id] = { supplied, borrowed, maxWithdraw }
+      const maxWithdraw = maxWithdrawFromObligation({
+        obligation: ob && supplied > 0 ? ob : null,
+        market,
+        reserve: r,
+        instant: now,
+        suppliedAmountScaled: suppliedScaled,
+        mintFactor: String(factorValue ?? '1'),
+        decimals: t.decimals,
+      })
+      positions[t.token_id] = { supplied, borrowed, maxWithdraw: Number(maxWithdraw) / 10 ** t.decimals }
+      positionsBaseUnits[t.token_id] = { maxWithdraw }
     }
   }
-  return { balances, positions, claimable, vaults: await vaultPositions(owner) }
+  return { balances, balancesBaseUnits, positions, positionsBaseUnits, loopPositions, loopPositionReadStatus, claimable, vaults: await vaultPositions(owner) }
 }
 
 // Each owner's shares in a vault: in the wallet (shares ATA) and staked in the vault farm, where Kamino's UI puts

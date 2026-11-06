@@ -2,11 +2,56 @@ import { LIVE, TOKENS } from '../src/config.js'
 import { calculateCarryPct, carryNeedsAcknowledgement } from '../src/loop-policy.js'
 
 export const LOOP_ALLOWED_MARKET_IDS = Object.freeze(['sol-usdy-usdc'])
+// Keep reading configured Multiply PDAs even if entry allowlisting or allocation changes, so full-close management
+// can still identify existing Nysa positions.
+export const LOOP_POSITION_MARKET_IDS = Object.freeze(['sol-usdy-usdc'])
 export const LOOP_ACK_POLICY_VERSION = 'nysa-loop-ack-v1'
 const SNAPSHOT_MAX_AGE_MS = 60_000
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value)
 const reason = (code, message) => ({ code, message })
+
+/** Shared fail-closed action policy. Full close does not inherit entry-only allocation, carry or risk-approval gates. */
+export function evaluateLoopActionReadiness({
+  action,
+  strategy = null,
+  routeReadiness = null,
+  positionId = null,
+  positionVerified = false,
+  builderAvailable = false,
+  previewAcknowledgementValid = false,
+} = {}) {
+  const unavailableReasons = []
+  if (!['loop-open', 'loop-close'].includes(action)) {
+    unavailableReasons.push(reason('unsupported-loop-action', 'This loop action is not supported.'))
+    return { executionEnabled: false, unavailableReasons }
+  }
+  if (!routeReadiness?.executionEnabled) {
+    const routeReasons = routeReadiness?.unavailableReasons
+    unavailableReasons.push(...(Array.isArray(routeReasons) && routeReasons.length
+      ? routeReasons
+      : [reason('route-readiness-unavailable', 'Swap route readiness is unavailable.')]))
+  }
+  if (action === 'loop-open') {
+    const strategyReasons = Array.isArray(strategy?.unavailableReasons) ? strategy.unavailableReasons : []
+    const acceptedReasons = strategy?.carry?.requiresAcknowledgement && previewAcknowledgementValid
+      ? strategyReasons.filter((item) => item?.code !== 'carry-acknowledgement-required')
+      : strategyReasons
+    if (!strategy?.enabled && acceptedReasons.length) unavailableReasons.push(...acceptedReasons)
+    else if (!strategy?.enabled && strategyReasons.length === 0) unavailableReasons.push(reason('loop-entry-unavailable', 'The selected loop strategy is not available for new entry.'))
+    if (strategy?.carry?.requiresAcknowledgement && !previewAcknowledgementValid) {
+      unavailableReasons.push(reason('preview-acknowledgement-invalid', 'A current acknowledgement for this exact loop preview is required.'))
+    }
+  } else {
+    if (typeof positionId !== 'string' || !/^multiply:[a-f0-9]{64}$/.test(positionId)) {
+      unavailableReasons.push(reason('loop-position-identity-required', 'Select an identified Nysa Multiply position to close.'))
+    } else if (!positionVerified) {
+      unavailableReasons.push(reason('loop-position-owner-unverified', 'The selected Multiply position has not been verified for this wallet and market.'))
+    }
+  }
+  if (!builderAvailable) unavailableReasons.push(reason('atomic-loop-builder-unavailable', 'Atomic loop transaction building is not enabled until its route and fork evidence pass.'))
+  return { executionEnabled: unavailableReasons.length === 0, unavailableReasons }
+}
 
 function allocationExists(vaults, market, collateral, liability) {
   return Object.values(vaults ?? {}).some((vault) => (vault?.allocations ?? []).some((allocation) =>

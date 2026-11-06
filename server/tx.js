@@ -8,25 +8,31 @@ import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables, compileTransaction, getTransactionEncoder,
-  getBase64EncodedWireTransaction, fetchEncodedAccounts,
+  getBase64EncodedWireTransaction, getTransactionDecoder, fetchEncodedAccounts,
 } from '@solana/kit'
 import { createRequire } from 'node:module'
 import { marketById, vaultById, tokensOf, tok } from '../src/config.js'
 import { rpc } from './rpc.js'
-import { getLive, getVault, reserveOf, farms, refreshSoon, NONE } from './market.js'
+import { getLive, getVault, reserveOf, farms, refreshSoon, refreshMarketForExecution, NONE } from './market.js'
 import { vaultClient } from './vault.js'
-import { obligationType, pendingRewards, ataOf, vaultShares } from './account.js'
+import { obligationType, pendingRewards, ataOf, vaultShares, maxWithdrawFromObligation } from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
+import { confirmedTokenDeltas } from './token-deltas.js'
+import { assertRawWithdrawalWithinAllowance, requestedTokenBaseUnits, requestedWithdrawalBaseUnits } from './withdrawal.js'
+import { relaySignedTransaction } from './send-safety.js'
 
 const require = createRequire(import.meta.url)
 const { decodeUserState } = require('@kamino-finance/farms-sdk')
 
 const MAX_TX_BYTES = 1232
 const SPLIT_ABOVE = 1100 // leave wallet headroom (Phantom adds a guard instruction)
+const safeSlotNumber = (value) => typeof value === 'bigint'
+  ? value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null
+  : Number.isSafeInteger(value) && value >= 0 ? value : null
 // Setup instructions that can run in their own transaction before the lending one.
 const SEPARABLE = /^(CreateUserAta(?!SOL)|CreateLiquidityUserAta|CreateCollateralUserAta|CreateAdditionalUserTokenAta|CreateAta|createAtasIxs|createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 const BOOTSTRAP = /^(createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
-export const KINDS = ['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate', 'vault-deposit', 'vault-withdraw']
+export const KINDS = ['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate', 'vault-deposit', 'vault-withdraw', 'loop-open', 'loop-close', 'loop-setup']
 const BUILDERS = {
   deposit: (p) => KaminoAction.buildDepositTxns(p),
   withdraw: (p) => KaminoAction.buildWithdrawTxns(p),
@@ -57,7 +63,58 @@ async function compile(owner, ixs, luts) {
     (m) => (Object.keys(luts).length ? compressTransactionMessageUsingAddressLookupTables(m, luts) : m),
   )
   const tx = compileTransaction(msg)
-  return { size: getTransactionEncoder().encode(tx).length, tx: getBase64EncodedWireTransaction(tx), minContextSlot: Number(context.slot) }
+  const encoded = getTransactionEncoder().encode(tx)
+  return {
+    size: encoded.length,
+    tx: getBase64EncodedWireTransaction(tx),
+    messageBytes: getTransactionDecoder().decode(encoded).messageBytes,
+    minContextSlot: Number(context.slot),
+  }
+}
+
+/** Compile a caller-provided instruction group as one bounded v0 transaction with confirmed lookup-table state. */
+export async function compileAtomicTransaction({ wallet, instructions, lookupTables = [] } = {}) {
+  if (typeof wallet !== 'string' || !Array.isArray(instructions) || !instructions.length || !Array.isArray(lookupTables)) {
+    throw new UserError('Invalid atomic transaction inputs.')
+  }
+  const addresses = lookupTables.map((table) => typeof table === 'string' ? table : String(table?.address ?? ''))
+  if (addresses.some((table) => !table)) throw new UserError('Atomic transaction has an invalid lookup-table address.')
+  const compiled = await compile(address(wallet), instructions, await fetchLuts([...new Set(addresses)]))
+  if (compiled.size > MAX_TX_BYTES) throw new UserError(`Atomic transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
+  return compiled
+}
+
+const tokenAccountRawAmount = (data) => data instanceof Uint8Array && data.length >= 72
+  ? new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(64, true)
+  : 0n
+
+/** Simulate one already-compiled atomic instruction group and return exact requested post-state token deltas. */
+export async function simulateAtomicTransaction({ compiled, accounts = [], tokenAccounts = [] } = {}) {
+  if (!rpc || typeof compiled?.tx !== 'string' || !Array.isArray(accounts) || !Array.isArray(tokenAccounts)) {
+    throw new UserError('Atomic transaction simulation inputs are unavailable.')
+  }
+  const tracked = [...new Set([...accounts, ...tokenAccounts.map((item) => item?.account)].filter(Boolean).map(String))]
+  if (tracked.length > 100) throw new UserError('Atomic transaction tracks too many simulation accounts.')
+  const addresses = tracked.map(address)
+  const before = addresses.length ? await fetchEncodedAccounts(rpc, addresses, { commitment: 'confirmed' }) : []
+  const { value } = await rpc.simulateTransaction(compiled.tx, {
+    encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true,
+    ...(addresses.length ? { accounts: { addresses, encoding: 'base64' } } : {}),
+  }).send()
+  if (value.err) simulationError(value.logs ?? [])
+  const accountData = new Map(tracked.map((key, index) => {
+    const encoded = value.accounts?.[index]?.data?.[0]
+    return [key, typeof encoded === 'string' ? Uint8Array.from(Buffer.from(encoded, 'base64')) : null]
+  }))
+  const accountOwners = new Map(tracked.map((key, index) => [key, value.accounts?.[index]?.owner ?? null]))
+  const tokenDeltas = tokenAccounts.map((item) => {
+    const key = String(item.account)
+    const index = tracked.indexOf(key)
+    const prior = before[index]?.exists ? tokenAccountRawAmount(before[index].data) : 0n
+    const after = tokenAccountRawAmount(accountData.get(key))
+    return { account: key, mint: String(item.mint), deltaBaseUnits: String(after - prior) }
+  })
+  return { ok: true, accountData, accountOwners, tokenDeltas }
 }
 
 const LIQ_SLIPPAGE = 0.01 // the built liquidation must pay out at least 99% of the collateral its simulation received
@@ -90,12 +147,35 @@ async function simulatedBalances(compiled, accounts) {
 // Errors safe to show the user as-is (anything else becomes a generic message).
 export class UserError extends Error {}
 
-async function lending(kind, owner, m, t, amount, all) {
+async function lending(kind, owner, m, t, amount, all, amountBaseUnits) {
   const { market, now } = getLive(m)
   const reserve = reserveOf(market, t)
   const ob = await market.getObligationByWallet(owner, obligationType())
   if (kind !== 'deposit' && !ob) throw new UserError('No Kamino position found for this wallet in this market')
-  const base = all ? U64_MAX : new Decimal(amount).mul(new Decimal(10).pow(reserve.stats.decimals)).floor().toFixed()
+  let base
+  if (kind === 'withdraw') {
+    const suppliedScaled = String(ob.getDepositByReserve(reserve.address)?.amount ?? '0')
+    const maxWithdraw = maxWithdrawFromObligation({
+      obligation: ob,
+      market,
+      reserve,
+      instant: now,
+      suppliedAmountScaled: suppliedScaled,
+      mintFactor: String(reserve.getMintFactor()),
+      decimals: reserve.stats.decimals,
+    })
+    let requested
+    try { requested = all ? maxWithdraw : requestedWithdrawalBaseUnits({ amountBaseUnits, amount, decimals: reserve.stats.decimals }) }
+    catch (error) { throw new UserError(error.message || 'Invalid withdrawal amount.') }
+    try { base = assertRawWithdrawalWithinAllowance(requested, maxWithdraw) }
+    catch (error) { throw new UserError(error.message) }
+  } else {
+    if (all) base = U64_MAX
+    else if (kind === 'deposit' && amountBaseUnits != null) {
+      try { base = requestedTokenBaseUnits({ amountBaseUnits, decimals: reserve.stats.decimals }) }
+      catch (error) { throw new UserError(error.message || 'Invalid deposit amount.') }
+    } else base = new Decimal(String(amount)).mul(new Decimal(10).pow(reserve.stats.decimals)).floor().toFixed()
+  }
   const axn = await BUILDERS[kind]({
     kaminoMarket: market, amount: base, reserveAddress: reserve.address, owner: createNoopSigner(owner),
     obligation: ob ?? obligationType(), useV2Ixs: true, scopeRefreshConfig: undefined, currentLedgerInstant: now,
@@ -247,12 +327,19 @@ async function vaultAction(kind, owner, v, amount, all) {
   return { ...(await simulated(await compile(owner, [buildComputeBudgetIx(VAULT_CU), ...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs], luts))), final: true }
 }
 
-async function build({ kind, wallet, market: marketId, token: tokenId, amount, all, borrower, preview, vault: vaultId }) {
+async function build({ kind, wallet, market: marketId, token: tokenId, amount, amountBaseUnits, all, borrower, preview, vault: vaultId }) {
+  if (kind === 'loop-open' || kind === 'loop-close') {
+    throw new UserError('Loop transaction building is unavailable until atomic route, fee, fork and wallet evidence passes.')
+  }
   const owner = address(wallet)
+  const validAmount = (value) => {
+    try { const decimal = new Decimal(String(value)); return decimal.isFinite() && decimal.gt(0) }
+    catch { return false }
+  }
   if (kind.startsWith('vault-')) {
     const v = vaultById(vaultId)
     if (!v) throw new UserError('Unknown vault')
-    if (!all && !(Number.isFinite(amount) && amount > 0)) throw new UserError('Invalid amount')
+    if (!all && !validAmount(amount)) throw new UserError('Invalid amount')
     if (kind === 'vault-deposit' && all) throw new UserError('Invalid amount')
     return vaultAction(kind, owner, v, amount, !!all)
   }
@@ -260,44 +347,75 @@ async function build({ kind, wallet, market: marketId, token: tokenId, amount, a
   if (!m?.kaminoMarket) throw new UserError('Unknown market')
   if (kind === 'claim') return claim(owner, m)
   if (kind === 'liquidate') {
-    if (!(Number.isFinite(amount) && amount > 0)) throw new UserError('Invalid amount')
+    if (!validAmount(amount)) throw new UserError('Invalid amount')
     return liquidate(owner, m, borrower, amount, preview)
   }
   const t = tokensOf(m).find((x) => x.token_id === tokenId)
   if (!t) throw new UserError('Unknown token for this market')
-  if (!all && !(Number.isFinite(amount) && amount > 0)) throw new UserError('Invalid amount')
-  return lending(kind, owner, m, t, amount, !!all)
+  if (!all && !(kind === 'withdraw' && amountBaseUnits != null)
+    && !(kind === 'deposit' && amountBaseUnits != null) && !validAmount(amount)) throw new UserError('Invalid amount')
+  if (kind === 'withdraw') await refreshMarketForExecution()
+  return lending(kind, owner, m, t, amount, !!all, amountBaseUnits)
 }
 
 // Wallets reached by deeplink (Phantom/Solflare on iOS) sign but don't send: relay the signed transaction, only when
 // it is that wallet's own, with screened signers and allowed programs (relay.js).
-export async function sendSigned({ tx, wallet }) {
-  const refused = await relayRefusal(tx, wallet)
-  if (refused) throw new UserError(refused)
-  try {
-    const signature = await rpc.sendTransaction(tx, { encoding: 'base64', preflightCommitment: 'confirmed' }).send()
-    noteRelayed(signature)
-    return { signature }
-  } catch (e) {
-    console.error('[tx] send failed', e)
-    throw new UserError(/blockhash/i.test(String(e?.message) + JSON.stringify(e?.context ?? {})) ? 'The transaction expired before it was sent, please try again' : 'The network rejected the transaction, please try again')
-  }
+export async function sendSigned({ tx, wallet, approvedProgramIds = [], intentStore, intentId, requireIntent = false }) {
+  return relaySignedTransaction({
+    tx,
+    wallet,
+    refuse: (signed, owner) => relayRefusal(signed, owner, { approvedProgramIds, intentStore, intentId, requireIntent }),
+    send: async (signed) => {
+      try { return await rpc.sendTransaction(signed, { encoding: 'base64', preflightCommitment: 'confirmed' }).send() }
+      catch (error) { console.error('[tx] send outcome unknown', error); throw error }
+    },
+    onSuccess: noteRelayed,
+  })
 }
 
-// Confirmation status of a sent transaction. A confirmed one built or relayed here refreshes the market cache for
-// everyone (checked in the background, so the status answer doesn't wait for it).
-export async function txStatus(signature) {
-  const { value } = await rpc.getSignatureStatuses([signature]).send()
-  const s = value[0]
+/** Resolve a signature from the recent status cache, then durable transaction history after a cache miss. */
+export async function resolveTransactionStatus(signature, {
+  getSignatureStatuses,
+  getTransaction,
+  onConfirmed = async () => {},
+} = {}) {
+  if (typeof signature !== 'string' || !signature
+    || typeof getSignatureStatuses !== 'function' || typeof getTransaction !== 'function' || typeof onConfirmed !== 'function') {
+    throw new TypeError('Transaction status reconciliation requires a signature and RPC functions.')
+  }
+  const recent = await getSignatureStatuses([signature])
+  let s = recent?.value?.[0] ?? null
+  if (!s) {
+    let historical
+    try { historical = await getSignatureStatuses([signature], { searchTransactionHistory: true }) }
+    catch { return { status: 'pending' } }
+    s = historical?.value?.[0] ?? null
+  }
   if (!s) return { status: 'pending' }
   if (s.err) return { status: 'failed', error: JSON.stringify(s.err, (_, v) => (typeof v === 'bigint' ? String(v) : v)) }
   if (s.confirmationStatus === 'confirmed' || s.confirmationStatus === 'finalized') {
-    confirmedHere(signature, landed)
-      .then((ours) => ours && refreshSoon())
-      .catch((e) => console.error('[tx] confirmation lookup failed', e?.message))
-    return { status: 'confirmed', slot: Number(s.slot) }
+    Promise.resolve().then(() => onConfirmed(signature)).catch((e) => console.error('[tx] confirmation lookup failed', e?.message))
+    let tokenDeltas = null
+    let transactionSlot = null
+    try {
+      const transaction = await getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 })
+      if (transaction?.meta) tokenDeltas = confirmedTokenDeltas(transaction.meta)
+      transactionSlot = safeSlotNumber(transaction?.slot)
+    } catch { /* confirmation remains visible; token-derived follow-up stays disabled until the transaction is readable */ }
+    return { status: 'confirmed', slot: safeSlotNumber(s.slot), transactionSlot, tokenDeltas }
   }
   return { status: 'pending' }
+}
+
+// Confirmation status of a sent transaction. A confirmed one built or relayed here refreshes the market cache for
+// everyone (checked in the background, so the status answer doesn't wait for it). Once a signature leaves the
+// recent cache, the RPC is asked to search its transaction history before an unknown result is returned.
+export async function txStatus(signature) {
+  return resolveTransactionStatus(signature, {
+    getSignatureStatuses: (signatures, config) => rpc.getSignatureStatuses(signatures, config).send(),
+    getTransaction: (sig, config) => rpc.getTransaction(sig, config).send(),
+    onConfirmed: async (sig) => { if (await confirmedHere(sig, landed)) refreshSoon() },
+  })
 }
 
 // Fee payer and block time of a landed transaction; null while this RPC node doesn't have it yet.

@@ -37,3 +37,20 @@ export function createRefresher(read, { every, soon, minGap }) {
 
   return { run, soon: soonRead }
 }
+
+/** Publish the newest-started successful read only; a slow stale request cannot overwrite newer chain state. */
+export function createLatestReadPublisher(publish) {
+  if (typeof publish !== 'function') throw new TypeError('A read publisher callback is required.')
+  let generation = 0
+  let latestPublished = 0
+  return async function readAndPublish(read) {
+    if (typeof read !== 'function') throw new TypeError('A read callback is required.')
+    const current = ++generation
+    const value = await read()
+    if (current >= latestPublished) {
+      latestPublished = current
+      publish(value)
+    }
+    return value
+  }
+}

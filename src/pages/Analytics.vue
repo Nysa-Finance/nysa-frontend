@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state, loadAnalytics, loadPoints } from '../store.js'
-import { LIVE, VAULTS, tokensOf, explorer } from '../config.js'
+import { LIVE, TOKENS, VAULTS, tokensOf, explorer } from '../config.js'
 import { usd, pct, amt, compact, short, ago, dur, hfText, hfColor } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import Section from '../components/Section.vue'
@@ -10,24 +10,52 @@ import FarmPointsModal from '../components/FarmPointsModal.vue'
 const m = LIVE[0] // ponytail: single live market; iterate LIVE here when a second one ships
 const positions = ref(undefined) // undefined = loading, null = unavailable
 const holders = ref(undefined) // { [vaultId]: [{ owner, wallet, staked }] }; undefined = loading, null = unavailable
+const feeReceivers = ref(undefined) // undefined = loading, null = unavailable
+const feeCopyStatus = ref('')
 const pointsOpen = ref(false)
 const nowSec = ref(Date.now() / 1000)
 
 async function load() {
   try {
     const a = await loadAnalytics()
-    positions.value = a.positions.map((p) => ({ ...p, hf: p.hf ?? Infinity }))
+    positions.value = Array.isArray(a.positions) ? a.positions.map((p) => ({ ...p, hf: p.hf ?? Infinity })) : null
     holders.value = a.vaults ?? null
+    feeReceivers.value = a.feeReceivers ?? null
   } catch (e) {
     console.error('[analytics] positions', e)
     positions.value = null
     holders.value = null
+    feeReceivers.value = null
   }
   nowSec.value = Date.now() / 1000
 }
 let timer
 onMounted(() => { load(); loadPoints(); timer = setInterval(load, 60_000) })
 onUnmounted(() => clearInterval(timer))
+
+async function copyFeeReceiver(label, value) {
+  if (!value) return
+  if (!globalThis.navigator?.clipboard?.writeText) {
+    feeCopyStatus.value = `Select the ${label} address to copy it.`
+    return
+  }
+  try {
+    await globalThis.navigator.clipboard.writeText(value)
+    feeCopyStatus.value = `${label} address copied.`
+  } catch {
+    feeCopyStatus.value = `Copy unavailable. Select the ${label} address to copy it.`
+  }
+}
+
+const feeReceiverNetwork = computed(() => {
+  if (feeReceivers.value?.network === 'surfpool-local') return 'Surfpool local · simulated'
+  if (feeReceivers.value?.network === 'mainnet') return 'Solana mainnet'
+  return 'Network unverified'
+})
+const feeReceiverAccounts = computed(() => (feeReceivers.value?.accounts ?? []).map((account) => ({
+  ...account,
+  name: TOKENS[account.tokenId]?.name ?? account.tokenId,
+})))
 
 // Reserve data is live from the backend's market stream (store.js); only positions are fetched here.
 const reserves = computed(() => tokensOf(m).filter((t) => state.reserves[t.token_id]).map((t) => ({ token: t, ...state.reserves[t.token_id] })))
@@ -97,6 +125,44 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
   </div>
 
   <div class="sections">
+    <Section title="Swap fee receivers" open>
+      <template #meta>10 bps per swap</template>
+      <div class="receiver-network"><span class="n-chip">Network: {{ feeReceiverNetwork }}</span></div>
+      <p class="receiver-intro">Nysa charges 10 bps (0.10%) once per economic swap. Standalone swaps and swaps inside loops use these same configured receivers; route hops do not add another Nysa fee. These addresses identify where fees are sent, not a total of fees earned.</p>
+      <div v-if="feeReceivers === undefined" class="n-empty">Loading fee receiver settings…</div>
+      <div v-else-if="feeReceivers === null" class="n-empty">Fee receiver settings are temporarily unavailable.</div>
+      <template v-else>
+        <div class="receiver-grid">
+          <div class="receiver-card">
+            <div class="receiver-label">Treasury authority</div>
+            <template v-if="feeReceivers.treasuryAuthority">
+              <code class="receiver-address">{{ feeReceivers.treasuryAuthority }}</code>
+              <div class="receiver-actions">
+                <button class="n-btn-sm ghost" type="button" @click="copyFeeReceiver('treasury authority', feeReceivers.treasuryAuthority)">Copy address</button>
+                <a v-if="feeReceivers.network === 'mainnet'" class="sub-link" :href="explorer(feeReceivers.treasuryAuthority)" target="_blank" rel="noopener noreferrer">Solscan ↗</a>
+                <span v-else class="receiver-network-note">{{ feeReceivers.network === 'surfpool-local' ? 'Local Surfpool address' : 'Explorer unavailable until network is verified' }}</span>
+              </div>
+            </template>
+            <span v-else class="receiver-missing">Not configured</span>
+          </div>
+          <div v-for="account in feeReceiverAccounts" :key="account.tokenId" class="receiver-card">
+            <div class="receiver-label">{{ account.name }} fee token account</div>
+            <template v-if="account.address">
+              <code class="receiver-address">{{ account.address }}</code>
+              <div class="receiver-actions">
+                <button class="n-btn-sm ghost" type="button" @click="copyFeeReceiver(`${account.name} fee account`, account.address)">Copy address</button>
+                <a v-if="feeReceivers.network === 'mainnet'" class="sub-link" :href="explorer(account.address)" target="_blank" rel="noopener noreferrer">Solscan ↗</a>
+                <span v-else class="receiver-network-note">{{ feeReceivers.network === 'surfpool-local' ? 'Local Surfpool address' : 'Explorer unavailable until network is verified' }}</span>
+              </div>
+              <div class="receiver-mint">Mint: <code>{{ account.mint }}</code></div>
+            </template>
+            <span v-else class="receiver-missing">Not configured</span>
+          </div>
+        </div>
+        <p v-if="feeCopyStatus" class="receiver-copy-status" role="status">{{ feeCopyStatus }}</p>
+      </template>
+    </Section>
+
     <Section title="Oracle feeds" open>
       <template #meta>{{ reserves.length }} feeds · live</template>
       <div class="n-table">
@@ -213,6 +279,18 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
 
 <style scoped>
 .sections { display: flex; flex-direction: column; gap: 16px; }
+.receiver-network { display: flex; align-items: center; margin-bottom: 12px; }
+.receiver-intro { margin: 0 0 16px; color: var(--n-text-3); font-size: 12px; line-height: 1.6; }
+.receiver-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px; }
+.receiver-card { min-width: 0; padding: 16px; border: 1px solid var(--n-line); border-radius: 6px; }
+.receiver-label { margin-bottom: 10px; color: var(--n-text-3); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
+.receiver-address { display: block; color: var(--n-text); font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; user-select: all; }
+.receiver-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+.receiver-actions .sub-link { font-size: 12px; }
+.receiver-network-note,.receiver-missing,.receiver-mint { color: var(--n-text-4); font-size: 11px; }
+.receiver-mint { margin-top: 12px; overflow-wrap: anywhere; }
+.receiver-mint code { font-family: var(--mono); user-select: all; }
+.receiver-copy-status { margin: 12px 0 0; color: var(--n-text-2); font-size: 12px; }
 .n-thead { font-size: 11px; padding: 14px 20px; }
 .n-tr.sm { padding: 15px 20px; font-size: 14px; }
 .or-grid { grid-template-columns: 1.5fr 1fr 1fr .8fr .9fr .8fr; }

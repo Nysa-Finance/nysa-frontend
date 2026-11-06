@@ -7,7 +7,7 @@ import {
 } from '@solana/kit'
 import BN from 'bn.js'
 import { flashBorrowReserveLiquidity, flashRepayReserveLiquidity, PROGRAM_ID } from '@kamino-finance/klend-sdk'
-import { assertLoopbackForkEndpoint, missingForkPrerequisites, verifyLoopFork } from './verify-loop-fork.js'
+import { assertLoopbackForkEndpoint, assertRouterSwapBalanceDeltas, assertTokenBalanceSnapshotsUnchanged, missingForkPrerequisites, verifyLoopFork } from './verify-loop-fork.js'
 import * as fork from './verify-loop-fork.js'
 
 assert.equal(assertLoopbackForkEndpoint('http://127.0.0.1:8899').hostname, '127.0.0.1')
@@ -28,6 +28,16 @@ assert.deepEqual(fork.missingLocalExecutionInputs({
   LOCAL_FORK_TEST_WALLET_SECRET_KEY: JSON.stringify(Array(64).fill(1)),
   LOCAL_FORK_STARTING_USDC_BASE_UNITS: '10000000',
 }), [])
+assert.deepEqual(fork.assertLocalOracleFreshness({ now: 200, oracles: [
+  { asset: 'USDY', feed: 'feed-a', timestamp: 150, heartbeatSeconds: 180 },
+  { asset: 'USDC', feed: 'feed-b', timestamp: 190, heartbeatSeconds: 180 },
+]}), [
+  { asset: 'USDY', feed: 'feed-a', ageSeconds: 50, heartbeatSeconds: 180 },
+  { asset: 'USDC', feed: 'feed-b', ageSeconds: 10, heartbeatSeconds: 180 },
+])
+assert.throws(() => fork.assertLocalOracleFreshness({ now: 200, oracles: [
+  { asset: 'USDY', feed: 'feed-a', timestamp: 10, heartbeatSeconds: 180 },
+]}), /oracle preflight failed.*ageSeconds.*190/i)
 assert.deepEqual(missingForkPrerequisites({
   LOCAL_FORK_TEST_WALLET: '11111111111111111111111111111111',
   LOCAL_FORK_FEE_ACCOUNT_USDC: '11111111111111111111111111111111',
@@ -45,8 +55,48 @@ assert.equal(fork.stringifyErrorDetails({ custom: 'simulation-error', slot: 11n 
 assert.equal(typeof fork.assertTokenBalanceDelta, 'function')
 assert.doesNotThrow(() => fork.assertTokenBalanceDelta({ beforeBaseUnits: '100', afterBaseUnits: '110', expectedBaseUnits: '10', label: 'USDY fee account' }))
 assert.throws(() => fork.assertTokenBalanceDelta({ beforeBaseUnits: '100', afterBaseUnits: '109', expectedBaseUnits: '10', label: 'USDY fee account' }), /observedDelta=9, expectedDelta=10/i)
+assert.equal(assertRouterSwapBalanceDeltas({ beforeInputBaseUnits: '5000', afterInputBaseUnits: '4000', beforeOutputBaseUnits: '2', afterOutputBaseUnits: '900', beforeFeeBaseUnits: '100', afterFeeBaseUnits: '101', inputAmountBaseUnits: '1000', minimumOutputBaseUnits: '800', feeAmountBaseUnits: '1', label: 'Standalone buy' }), '898')
+assert.throws(() => assertRouterSwapBalanceDeltas({ beforeInputBaseUnits: '5000', afterInputBaseUnits: '4000', beforeOutputBaseUnits: '2', afterOutputBaseUnits: '700', beforeFeeBaseUnits: '100', afterFeeBaseUnits: '101', inputAmountBaseUnits: '1000', minimumOutputBaseUnits: '800', feeAmountBaseUnits: '1', label: 'Follow-up sale' }), /below the route minimum/i)
+assert.doesNotThrow(() => assertTokenBalanceSnapshotsUnchanged([{ address: 'wallet-token', amount: '100' }, { address: 'treasury', amount: '10' }], [{ address: 'wallet-token', amount: '100' }, { address: 'treasury', amount: '10' }], 'Forced-failure router'))
+assert.throws(() => assertTokenBalanceSnapshotsUnchanged([{ address: 'wallet-token', amount: '100' }], [{ address: 'wallet-token', amount: '99' }], 'Forced-failure router'), /despite transaction failure/i)
 assert.equal(typeof fork.assertTokenBalanceChange, 'function')
 assert.doesNotThrow(() => fork.assertTokenBalanceChange({ beforeBaseUnits: '100', afterBaseUnits: '0', expectedChangeBaseUnits: -100n, label: 'USDC input' }))
+assert.doesNotThrow(() => fork.assertPositiveBalanceIncreaseWithinMax({ beforeBaseUnits: '100', afterBaseUnits: '150', maxIncreaseBaseUnits: '60', label: 'Fresh USDY withdrawal' }))
+assert.throws(() => fork.assertPositiveBalanceIncreaseWithinMax({ beforeBaseUnits: '100', afterBaseUnits: '100', maxIncreaseBaseUnits: '60', label: 'Fresh USDY withdrawal' }), /positive/i)
+assert.throws(() => fork.assertPositiveBalanceIncreaseWithinMax({ beforeBaseUnits: '100', afterBaseUnits: '161', maxIncreaseBaseUnits: '60', label: 'Fresh USDY withdrawal' }), /fresh allowance/i)
+assert.equal(typeof fork.assertRawAccountDataUnchanged, 'function')
+assert.doesNotThrow(() => fork.assertRawAccountDataUnchanged(
+  { address: 'vanilla-obligation', owner: String(PROGRAM_ID), data: 'c29tZS1zdGF0ZQ==' },
+  { address: 'vanilla-obligation', owner: String(PROGRAM_ID), data: 'c29tZS1zdGF0ZQ==' },
+  'Vanilla obligation after Multiply open',
+))
+assert.throws(() => fork.assertRawAccountDataUnchanged(
+  { address: 'vanilla-obligation', owner: String(PROGRAM_ID), data: 'c29tZS1zdGF0ZQ==' },
+  { address: 'vanilla-obligation', owner: String(PROGRAM_ID), data: 'Y2hhbmdlZA==' },
+  'Vanilla obligation after Multiply open',
+), /account bytes changed/i)
+assert.equal(typeof fork.assertObligationRawBalancesZero, 'function')
+assert.doesNotThrow(() => fork.assertObligationRawBalancesZero({ state: {
+  deposits: [{ depositedAmount: 0n }], borrows: [{ borrowedAmountSf: 0n }],
+} }, 'Multiply full close'))
+assert.throws(() => fork.assertObligationRawBalancesZero({ state: {
+  deposits: [{ depositedAmount: 0n }], borrows: [{ borrowedAmountSf: 1n }],
+} }, 'Multiply full close'), /nonzero.*obligation balances/i)
+assert.doesNotThrow(() => fork.assertTokenBalanceDeltasForAccounts({
+  before: [{ address: 'usdy', amount: '1000' }, { address: 'treasury', amount: '10' }],
+  after: [{ address: 'usdy', amount: '700' }, { address: 'treasury', amount: '10' }],
+  expectedByAddress: { usdy: '-300' }, label: 'Vanilla USDY supply',
+}))
+assert.doesNotThrow(() => fork.assertTokenBalanceDeltasForAccounts({
+  before: [{ address: 'user-usdy', amount: '100' }, { address: 'fee-usdy', amount: '10' }],
+  after: [{ address: 'user-usdy', amount: '150' }, { address: 'fee-usdy', amount: '10' }],
+  expectedByAddress: { 'user-usdy': '50', 'fee-usdy': '0' }, label: 'Free USDY withdrawal',
+}), 'withdrawal verification allows the user token account to increase while fee treasuries stay flat')
+assert.throws(() => fork.assertTokenBalanceDeltasForAccounts({
+  before: [{ address: 'usdy', amount: '1000' }, { address: 'treasury', amount: '10' }],
+  after: [{ address: 'usdy', amount: '700' }, { address: 'treasury', amount: '11' }],
+  expectedByAddress: { usdy: '-300' }, label: 'Vanilla USDY supply',
+}), /treasury.*delta/i)
 assert.equal(await fork.readLocalSlot({ getSlot: () => ({ send: async () => 987654 }) }), 987654, 'Kit getSlot returns the slot number directly')
 assert.equal(await fork.readLocalSlot({ getSlot: () => ({ send: async () => 987654n }) }), 987654, 'large numeric JSON-RPC slot results normalize safely from bigint')
 await assert.rejects(fork.readLocalSlot({ getSlot: () => ({ send: async () => ({ value: 987654 }) }) }), /slot/i)
@@ -178,6 +228,22 @@ const signedLocal = await fork.compileSignedLocalTransaction({
   getLatestBlockhash: () => ({ send: async () => ({ value: { blockhash: '11111111111111111111111111111111', lastValidBlockHeight: 100n } }) }),
 }, testSigner, [fork.forcedFailureInstruction()])
 assert.ok(Buffer.from(signedLocal, 'base64').byteLength > 0)
+const noopOwnerInstruction = {
+  programAddress: address('11111111111111111111111111111111'),
+  accounts: [{ address: testSigner.address, role: 2, signer: createNoopSigner(testSigner.address) }],
+  data: new Uint8Array([1]),
+}
+const normalizedOwnerTransaction = await fork.compileSignedLocalTransaction({
+  getLatestBlockhash: () => ({ send: async () => ({ value: { blockhash: '11111111111111111111111111111111', lastValidBlockHeight: 100n } }) }),
+}, testSigner, [noopOwnerInstruction])
+assert.ok(Buffer.from(normalizedOwnerTransaction, 'base64').byteLength > 0,
+  'local compiler reuses the keypair signer for SDK owner accounts represented by no-op signers')
+assert.equal(fork.simulatedTokenAccountAmount({
+  value: null, account: 'untouched-treasury', beforeAmount: '17', instructionAccountAddresses: new Set(), label: 'untouched treasury',
+}), '17', 'simulation omissions for accounts outside the message preserve their observed balance')
+assert.throws(() => fork.simulatedTokenAccountAmount({
+  value: null, account: 'used-wallet-ata', beforeAmount: '17', instructionAccountAddresses: new Set(['used-wallet-ata']), label: 'used wallet ATA',
+}), /used by the transaction.*omitted its account data/i, 'simulation omissions for accounts used by the transaction fail closed')
 
 const calls = []
 const messages = []

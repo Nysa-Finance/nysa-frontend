@@ -63,9 +63,24 @@ Keyless Jupiter access is available for prototype/read-only requests at 0.5 requ
 provider key and approved rate limit, a configured USDC and USDY fee account, an authorized treasury, reviewed route
 program evidence and successful local-fork verification. Set these values in `.env`; never put them in browser config.
 
-`/loop` is a read-only USDY collateral / USDC debt preview. It shows current strategy blockers, exposure, carry and fees
-from both economic swaps when fresh market data and fee-aware route quotes are available. It does not build or send a
-transaction. A strategy stays unavailable until the risk, program evidence and local-fork gates pass.
+`/swap` requests and displays a sanitized USDY/USDC provider route. The server-side execution pipeline validates a narrow
+Jupiter V2 `route_v2` single-hop `WhirlpoolSwapV2` shape: exact 27-account positions/roles, classic SPL mint/token state,
+wallet ATAs, pool/vault relationships, and Orca static or dynamic tick-array/oracle PDA and account relationships. The
+route is covered by encoded-account fixtures and is revalidated against confirmed account state before build. Legacy
+`route` / `sharedAccountsRoute`, multihop, Token-2022/hooks, and extra route metadata remain fail-closed. A route label or
+presence of the Whirlpool program key in remaining accounts is not sufficient. A validated route still does not make
+economic execution ready: transaction build/sign/relay requires exact program/deployment evidence, complete local-fork
+proof, production fee accounts, and validated wallet paths. Provider instructions and unsigned transactions are never
+returned by the quote endpoint. Production readiness remains disabled until those release gates are accepted.
+The borrower flows use fresh raw wallet balances and protocol withdrawal allowance, and carry only the confirmed raw
+amount into an optional next action. Locked collateral is never treated as wallet balance.
+
+`/loop` previews USDY collateral / USDC debt strategies and includes guarded separate Kamino metadata setup, atomic
+Multiply open/full-close builders, identified position management, signed-intent relay, and pending-close reconciliation.
+The economic actions remain unavailable while the supported-route, program evidence, complete local-fork, fee-account,
+and wallet-acceptance gates are open. A confirmed close is not reported as complete until a fresh account read proves
+zero raw debt and collateral. Metadata initialization is a separate non-economic transaction and does not charge the
+Nysa swap fee.
 
 Run `npm run simulate:swap-fees -- --scenario scripts/scenarios/swap-fees.synthetic.json` for a network-free,
 hypothetical fee business scenario. Edit the synthetic inputs to compare sizes, frequency and direct costs; outputs are
@@ -83,9 +98,38 @@ exact USDY fee, but the verifier compared it with a stale SDK quote. The verifie
 composed swapper quote. Follow-up fork runs could not revalidate it: one had stale cloned oracle data and a fresh reset
 snapshot timed out while confirming local setup. No economic open was submitted.
 
-The production one-click execution path is not part of this read-only preview phase. When execution is implemented, it must
-surface the same non-economic UserMetadata setup as a separate wallet-approved setup transaction when needed. Keep the
-loop's economic open in one atomic transaction; do not split acquisition from the open.
+The loop implementation remains guarded until all release evidence below is recorded. Keep the economic open and full
+close atomic; acquisition and leverage swaps use the shared 10-bps Nysa fee policy. Do not split either economic action
+into a sequence that can leave a partially opened or closed Multiply position.
+
+Loop risk defaults are conservative: leverage is at most 1.5×; projected LTV is capped at the lower of 50% of the
+market's current maximum borrow LTV and 40% of its current liquidation LTV; swap slippage is at most 50 bps; price
+impact is at most 1%; quotes expire after 15 seconds; and every oracle must be no older than its reported heartbeat.
+Tighter approved market/Nysa limits apply. Fresh prices, market limits, and quote/oracle ages are rechecked when building
+and relaying an action. A non-positive carry estimate requires explicit acknowledgement and does not override any risk
+limit.
+
+Multiply collateral contributes to Farm Points through the existing supplied-USD snapshot formula. A loop therefore
+increases counted gross supplied deposits while the formula remains unchanged; this points effect is disclosed and is
+not a promise of rewards. For rollback, disable new loop opens first, keep identified positions visible, and preserve the
+verified full-close and pending-signature reconciliation paths until every Nysa Multiply position is closed. Do not
+remove or revert the only exit path while a position or unresolved close signature remains.
+
+### Wallet acceptance record
+
+Automated fixtures cover desktop sign-only relay handling and iOS deeplink return/recovery behavior. These fixtures do
+not count as acceptance of a real wallet. No dated real-wallet acceptance is recorded yet, and Android Mobile Wallet
+Adapter acceptance remains unverified. Keep new economic actions unavailable on every wallet family until the matrix is
+completed against the supported route and final application builders.
+
+| Wallet family | Required acceptance | Current record |
+|---|---|---|
+| Desktop Wallet Standard | Swap, buy then optional supply, free withdraw then optional sale, loop setup/open/full close; cancel/resume optional steps; pending/unknown, reload, confirmation, and exact close-state reconciliation | Not run; record date, browser, wallet/version, action results, and transaction references after acceptance |
+| Android Mobile Wallet Adapter | Same swap, borrower, optional-step, setup, open/close, cancellation, pending, reload, and confirmation cases through MWA, including app return and wallet switching | Not run; MWA real-wallet acceptance is unverified |
+| iOS deeplink wallet | Same swap, borrower, optional-step, setup, open/close, cancellation, pending, reload, and confirmation cases through each supported deeplink wallet, including repeated returns, refusal, and timeout | Fixtures only; real-wallet acceptance not recorded |
+
+For each run, record the date, app commit, browser/OS, wallet name/version, action and recovery cases exercised, result,
+and test transaction references from the approved test environment. Never include wallet secrets or production signatures.
 
 Security-source review is recorded, but deployment approval is still blocked. Jupiter's official audit index lists the
 [Swap v6 Offside Labs October 2025 report](https://github.com/jup-ag/docs/blob/main/static/files/audits/swap-v6-offside-october-2025.pdf)
@@ -143,8 +187,9 @@ wallet's unclaimed rewards (`kind: 'claim'`, one transaction harvesting every pe
 
 ## Farm Points
 Points accrue as **supplied USD × days**: each snapshot (every 12 hours, 00:00 and 12:00 UTC) adds `last_supplied_usd × days since last snapshot` to every wallet's total,
-then records its current deposits (USDC lent + USDY collateral) in the Nysa Kamino market and its Earn vault shares (valued
-at the vault's share value; depositors found by the market index). Logic: `snapshotPoints` in `src/logic.js` (tested).
+then records its current vanilla and Multiply deposits (including USDY collateral) in the Nysa Kamino market and its Earn
+vault shares (valued at the vault's share value; depositors found by the market index). Multiply collateral increases
+counted gross supplied deposits under this unchanged formula. Logic: `snapshotPoints` in `src/logic.js` (tested).
 Only wallets with deposits in the Nysa market(s) and vaults listed in `src/config.js` are tracked. Run a snapshot by hand:
 `docker compose exec app node server/snapshot.js`.
 
@@ -174,6 +219,15 @@ Anyone can liquidate an unhealthy loan from the page (`LiquidateModal.vue`, `kin
 `GET /api/liquidation/:market/:borrower` gives the repayable amount under Kamino's rules (close factor, per-transaction
 cap, full liquidation of small loans); the quote is a simulation of the real transaction (the liquidator's token
 balances after it), and the transaction sent pays out at least 99% of that quote or fails.
+
+## Deployment guides
+
+- [Local Mainnet fork and readiness guide](docs/deployment/local-mainnet-fork-and-readiness.md) — includes `npm run setup:loop-fork` to seed ten disposable Surfpool wallets and local-only USDY/USDC balances, plus frontend routing and Mainnet release requirements.
+- [Devnet staging guide](docs/deployment/testnet-staging-guide.md) — explains why Devnet is the app-integration target
+  (Solana Testnet is for validator/network stress), and which cluster/dependency work is required before staging.
+- [Production Mainnet guide](docs/deployment/production-mainnet-guide.md) — release gates, production configuration,
+  deploy workflow, monitoring, and rollback. Swap and loop economics remain disabled until the recorded fork, program,
+  treasury, risk, and wallet evidence is accepted.
 
 ## License
 [MIT](LICENSE) © 2026 Nysa Finance. The lending smart contracts are Kamino Lend's; this repository is the interface and its backend.

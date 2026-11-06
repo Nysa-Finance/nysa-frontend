@@ -11,6 +11,7 @@ import { LIVE, VAULTS, TOKENS } from '../src/config.js'
 import { getVault } from './market.js'
 import { compact, usd, dur, short } from '../src/logic.js'
 import { read, write, INDEX } from './storage.js'
+import { recordIndexedObligation } from './positions.js'
 
 const require = createRequire(import.meta.url)
 const KLEND = 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'
@@ -281,9 +282,7 @@ async function indexNew(rpc, src, state) {
         const accounts = ix.accounts.map((a) => keys[a])
         if (!def || !accounts.includes(marketAddr)) return
         if (def.name === 'initObligation') { // accounts: owner, feePayer, obligation, lendingMarket, …
-          const list = (state.obligations[marketAddr] ??= [])
-          if (!list.includes(accounts[2])) list.push(accounts[2])
-          state.owners[accounts[2]] = accounts[0]
+          recordIndexedObligation({ obligations: state.obligations, owners: state.owners }, marketAddr, accounts[2], accounts[0])
           return
         }
         const id = `${sig}:${k}`
@@ -343,12 +342,18 @@ function vaultToken(v) {
 // Bring the index up to date and return it: { lastSig, updates, liquidations, obligations: { [market]: [address] },
 // owners: { [obligation]: wallet }, vaultUsers: { [vault]: [wallet] } }.
 // Also used by the snapshot (every 12 hours) to find every position and vault depositor without getProgramAccounts.
-export async function refreshIndex(rpc) {
-  const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, vaultUsers: {}, ...JSON.parse((await read(INDEX)) ?? '{}') }
+export async function refreshIndex(rpc, {
+  markets = LIVE,
+  vaults = VAULTS,
+  readIndex = () => read(INDEX),
+  writeIndex = (serialized) => write(INDEX, serialized),
+  resolveVaultToken = vaultToken,
+} = {}) {
+  const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, vaultUsers: {}, ...JSON.parse((await readIndex()) ?? '{}') }
   let changed = false
-  for (const m of LIVE) changed = (await indexNew(rpc, { address: m.kaminoMarket }, state)) || changed
-  for (const v of VAULTS) changed = (await indexNew(rpc, { address: v.address, vault: { name: v.name, token: vaultToken(v) } }, state)) || changed
-  if (changed) await write(INDEX, JSON.stringify(state))
+  for (const m of markets) changed = (await indexNew(rpc, { address: m.kaminoMarket }, state)) || changed
+  for (const v of vaults) changed = (await indexNew(rpc, { address: v.address, vault: { name: v.name, token: resolveVaultToken(v) } }, state)) || changed
+  if (changed) await writeIndex(JSON.stringify(state))
   return state
 }
 

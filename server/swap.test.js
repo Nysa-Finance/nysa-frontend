@@ -124,6 +124,18 @@ assert.equal(result.instructions[0].programAddress, routerProgram)
 assert.deepEqual([...result.instructions[0].data], [1])
 assert.deepEqual(result.routeProgramIds, [venueProgram])
 
+const roundedThreshold = await buildSwap({
+  inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
+  providerApiKey: 'test-key', evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
+  now: () => 1_800_000_000_000,
+  fetcher: async () => ({ ok: true, status: 200, json: async () => buildResponse({ overrides: {
+    outAmount: '90000001', otherAmountThreshold: '89550001',
+    routePlan: [{ swapInfo: { label: 'Reviewed Test Venue', ammKey: wallet, inputMint, outputMint, inAmount: '99900000', outAmount: '90000001' } }],
+  } }) }),
+})
+assert.equal(roundedThreshold.minimumOutputBaseUnits, '89550000',
+  'authorized minimum uses the exact floor guaranteed by the encoded Jupiter slippage, not a rounded-up API display threshold')
+
 const noFeeMetadata = await buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
   providerApiKey: 'test-key', fetcher: async () => ({ ok: true, status: 200, json: async () => buildResponse({ overrides: { platformFee: undefined } }) }),

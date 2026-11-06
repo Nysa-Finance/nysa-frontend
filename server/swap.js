@@ -136,23 +136,24 @@ function providerInstructions(body) {
   if (!body.swapInstruction || (body.cleanupInstruction != null && typeof body.cleanupInstruction !== 'object') || (body.tipInstruction != null && typeof body.tipInstruction !== 'object')) {
     throw new SwapError('Swap provider returned an incomplete route.')
   }
-  const raw = [
-    ...(body.computeBudgetInstructions ?? []),
-    ...(body.setupInstructions ?? []),
-    body.swapInstruction,
-    ...(body.cleanupInstruction ? [body.cleanupInstruction] : []),
-    ...(body.otherInstructions ?? []),
-    ...(body.tipInstruction ? [body.tipInstruction] : []),
-  ]
+  const computeBudgetInstructions = (body.computeBudgetInstructions ?? []).map(instructionFromApi)
+  const setupInstructions = (body.setupInstructions ?? []).map(instructionFromApi)
+  const swapInstruction = instructionFromApi(body.swapInstruction)
+  const cleanupInstruction = body.cleanupInstruction == null ? null : instructionFromApi(body.cleanupInstruction)
+  const otherInstructions = (body.otherInstructions ?? []).map(instructionFromApi)
+  const tipInstruction = body.tipInstruction == null ? null : instructionFromApi(body.tipInstruction)
+  const raw = [...computeBudgetInstructions, ...setupInstructions, swapInstruction,
+    ...(cleanupInstruction ? [cleanupInstruction] : []), ...otherInstructions, ...(tipInstruction ? [tipInstruction] : [])]
   if (raw.length > 80) throw new SwapError('Swap provider returned too many instructions.')
-  const instructions = raw.map(instructionFromApi)
+  const instructions = raw
   const tables = body.addressesByLookupTableAddress ?? {}
   if (typeof tables !== 'object' || Array.isArray(tables)) throw new SwapError('Swap provider returned invalid address lookup tables.')
   const addressesByLookupTableAddress = Object.fromEntries(Object.entries(tables).map(([table, keys]) => {
     if (!Array.isArray(keys)) throw new SwapError('Swap provider returned invalid address lookup tables.')
     return [safeAddress(table, 'lookup table address'), keys.map((key) => safeAddress(key, 'lookup address'))]
   }))
-  return { instructions, addressesByLookupTableAddress }
+  return { instructions, computeBudgetInstructions, setupInstructions, swapInstruction,
+    cleanupInstruction, otherInstructions, tipInstruction, addressesByLookupTableAddress }
 }
 
 function routePrograms(routePlan, mapping) {
@@ -292,8 +293,14 @@ export async function buildSwap({
   if (body.slippageBps != null && body.slippageBps !== slippageBps) throw new SwapError('Swap provider returned mismatched slippage settings.')
 
   const outAmount = positiveIntegerString(body.outAmount, 'provider output amount')
-  const minimumOutput = positiveIntegerString(body.otherAmountThreshold, 'minimum output amount')
-  if (BigInt(minimumOutput) > BigInt(outAmount)) throw new SwapError('Swap provider returned an invalid minimum output.')
+  const providerMinimumOutput = BigInt(positiveIntegerString(body.otherAmountThreshold, 'minimum output amount'))
+  const slippageOutputNumerator = BigInt(outAmount) * BigInt(10_000 - slippageBps)
+  const minimumOutput = slippageOutputNumerator / 10_000n
+  const roundedMinimumOutput = (slippageOutputNumerator + 9_999n) / 10_000n
+  if (providerMinimumOutput > BigInt(outAmount)
+    || providerMinimumOutput !== minimumOutput && providerMinimumOutput !== roundedMinimumOutput) {
+    throw new SwapError('Swap provider returned a minimum output inconsistent with encoded Jupiter slippage.')
+  }
   const routePlan = body.routePlan
   const fee = validateFee(body, { inputMint, outputMint, inputAmount, feeAccountMint, routePlan })
   const route = routePrograms(routePlan, routeProgramIdsByLabel)
@@ -308,7 +315,8 @@ export async function buildSwap({
   const feeAccountMintVerified = !!feeAccountInfo && feeAccountInfo.mint === feeAccountMint
     && !!feeAccountAuthority && feeAccountInfo.authority === feeAccountAuthority
     && feeAccountInfo.initialized === true && TOKEN_PROGRAMS.has(String(feeAccountInfo.tokenProgram))
-  const { instructions, addressesByLookupTableAddress } = providerInstructions(body)
+  const provider = providerInstructions(body)
+  const { instructions, addressesByLookupTableAddress } = provider
   const programIds = [...new Set([...instructions.map((ix) => String(ix.programAddress)), ...route.ids])]
   const programPolicy = evaluateProgramPolicy(programIds, evidence, route.labels, route.byLabel)
   const impact = Number(body.priceImpactPct)
@@ -326,10 +334,12 @@ export async function buildSwap({
     outputMint,
     inputAmountBaseUnits: inputAmount,
     outputAmountBaseUnits: outAmount,
-    minimumOutputBaseUnits: minimumOutput,
+    minimumOutputBaseUnits: String(minimumOutput),
     slippageBps,
     priceImpactPct: impact * 100,
     fee: fee.fee,
+    feeAccount,
+    feeAccountMint,
     feeVerified,
     feeAccountMintVerified,
     feeBalanceDeltaVerified,
@@ -340,8 +350,17 @@ export async function buildSwap({
           : fee.providerReported ? null : 'Jupiter V2 Build omits normalized fee metadata; the amount is derived from its route input/output delta and checked against the simulated fee-account balance.',
     routePlan,
     routeProgramIds: route.ids,
+    routeLabels: route.labels,
+    routeProgramIdsByLabel: route.byLabel,
     programIds,
     programPolicy,
+    swapInstructionProgramId: String(provider.swapInstruction.programAddress),
+    computeBudgetInstructions: provider.computeBudgetInstructions,
+    setupInstructions: provider.setupInstructions,
+    swapInstruction: provider.swapInstruction,
+    cleanupInstruction: provider.cleanupInstruction,
+    otherInstructions: provider.otherInstructions,
+    tipInstruction: provider.tipInstruction,
     executable,
     instructions,
     addressesByLookupTableAddress,
