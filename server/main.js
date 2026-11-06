@@ -2,7 +2,7 @@
 // - serves the Vite build (dist/) with SPA fallback;
 // - JSON API under /api (market, account, transactions, analytics, points, history, market updates, liquidations, health);
 // - pushes market updates to browsers over Server-Sent Events (/api/events);
-// - runs the snapshot every 12 hours (00:00 and 12:00 UTC).
+// - runs the snapshot every hour, at a random minute.
 // The browser never calls the Solana RPC: it reads from here and only uses the wallet to sign and send.
 import http from 'node:http'
 import { randomUUID } from 'node:crypto'
@@ -697,13 +697,14 @@ const routes = [
     send(res, 200, await txStatus(signature))
   }],
   ['GET', /^\/api\/analytics$/, async (req, res) => {
-    // On-chain analytics are optional; configured public fee receivers remain available if either read fails.
+    // Positions remain required by analytics and liquidation consumers; vault holders are optional.
     const [positions, vaults] = await Promise.all([
-      getPositions().catch((e) => { console.error('[analytics] positions', e?.message); return null }),
+      getPositions(),
       getVaultHolders().catch((e) => { console.error('[analytics] vault holders', e?.message); return null }),
     ])
     send(res, 200, { positions, vaults, feeReceivers: getFeeReceiverMetadata() }, { maxAge: 30 })
   }],
+  ['GET', /^\/api\/fee-receivers$/, (req, res) => send(res, 200, getFeeReceiverMetadata(), { maxAge: 30 })],
   ['GET', /^\/api\/market-updates$/, async (req, res) => send(res, 200, await marketUpdates(), { maxAge: 60 })],
   ['GET', /^\/api\/liquidations$/, async (req, res) => send(res, 200, await marketLiquidations(), { maxAge: 60 })],
   ['GET', /^\/api\/points$/, async (req, res) => send(res, 200, (await read(POINTS)) ?? EMPTY_POINTS, { type: 'text/csv; charset=utf-8', maxAge: 300 })],
@@ -754,7 +755,7 @@ async function serveStatic(pathname, res) {
   res.end(body)
 }
 
-http.createServer(async (req, res) => {
+const server = http.createServer(async (req, res) => {
   try {
     const { pathname } = new URL(req.url, 'http://localhost')
     if (pathname.startsWith('/api/')) {
@@ -775,17 +776,32 @@ http.createServer(async (req, res) => {
     if (!res.headersSent) send(res, 500, { error: 'Internal error' })
     else res.end()
   }
-}).listen(PORT, () => console.log(`nysa listening on :${PORT}`))
+})
 
-refreshMarket() // first read now, then every REFRESH_MS (market.js)
-startScreening() // OFAC sanctions list: saved copy now, fresh download daily
+// Deploys swap containers (docker compose up): Caddy holds requests while none answers (lb_try_duration, Caddyfile), so
+// the new one only starts listening once it has the market (first read, then every REFRESH_MS: market.js) and the saved
+// sanctions list (then a fresh download daily: screening.js), or after READY_TIMEOUT_MS if the RPC is slow: nobody gets
+// "still loading" or "screening is starting up".
+const READY_TIMEOUT_MS = 15_000
+await Promise.race([Promise.all([refreshMarket(), startScreening()]), new Promise((r) => setTimeout(r, READY_TIMEOUT_MS))])
+server.listen(PORT, () => console.log(`nysa listening on :${PORT}`))
 
-// Snapshot every 12 hours, at 00:00 and 12:00 UTC (epoch multiples of 12 h). A missed run (e.g. a restart at that
-// minute) is harmless: the next one accrues the whole gap.
-const SNAPSHOT_EVERY_MS = 12 * 3_600_000
+// Docker stops the old container with SIGTERM (node is PID 1, which ignores it unless handled: Docker would wait 10 s,
+// then kill it). Stop taking connections, end the market streams (browsers reconnect, through Caddy, to the new one),
+// let requests in flight finish, then exit; forced after 8 s, before Docker's kill.
+process.once('SIGTERM', () => {
+  console.log('[server] SIGTERM: draining')
+  server.close(() => process.exit(0))
+  for (const c of clients) c.end()
+  setTimeout(() => process.exit(0), 8_000).unref()
+})
+
+// Snapshot every hour, at a random minute of the next hour: nobody can time a deposit to be in only when it runs.
+// A missed run (e.g. a restart at that minute) is harmless: the next one accrues the whole gap.
+const HOUR_MS = 3_600_000
 function scheduleSnapshot() {
   const now = Date.now()
-  const next = (Math.floor(now / SNAPSHOT_EVERY_MS) + 1) * SNAPSHOT_EVERY_MS
+  const next = (Math.floor(now / HOUR_MS) + 1) * HOUR_MS + Math.floor(Math.random() * HOUR_MS)
   setTimeout(() => runSnapshot()
     .then((r) => console.log('[snapshot] done', r))
     .catch((e) => console.error('[snapshot] failed', e))

@@ -2,6 +2,9 @@
 // Live numbers, risk parameters and rate curves come from chain via the backend (server/market.js); the risk values
 // and IRM here are only shown until the first market update arrives (riskOf / irmOf in store.js).
 export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-of-service'
+// WalletConnect project id (Reown dashboard, cloud.reown.com). Public by design, it ships in the page; the project's
+// allowed domains on Reown are what stop others from using it. Empty = WalletConnect is not offered.
+export const WALLETCONNECT_PROJECT_ID = 'fe76c05c2791f7d71839bb257f55afb5'
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 
@@ -36,21 +39,16 @@ const dueDiligence = {
   ],
 }
 
-export const MARKETS = [
+export const LIVE = [
   {
-    id: 'sol-usdy-usdc', name: 'USDY Ondo Market', infra: 'Kamino', chain: 'svm', visible: true, farmPoints: true,
+    id: 'sol-usdy-usdc', name: 'USDY Ondo Market', farmPoints: true,
     kaminoMarket: 'F4uLsGZT4YnHDcemtoYDz2LBZKLmwTB1wzkwS6oqygvy',
     blurb: 'Lend against USDY, a yield-bearing token backed by short-term US Treasuries with over $2B in AUM. Borrow USDC on Solana in a market curated by Nysa.',
     collateral: ['svm-usdy'], loans: ['svm-usdc'],
     pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc', maxLtv: 90, liqLtv: 95, maxDiscount: 5, minDiscount: 2, supplyCap: 250_000, borrowCap: 250_000 }],
     dueDiligence,
   },
-  { id: 'equities-usdc', name: 'Tokenized Equities / USDC', infra: 'Euler', visible: false },
-  { id: 'rwa-usdt', name: 'RWA / USDT', infra: 'Euler', visible: false },
-  { id: 'rwa-crypto', name: 'RWA / Crypto', infra: 'Euler', visible: false },
 ]
-
-export const LIVE = MARKETS.filter((m) => m.visible)
 
 // Kamino Earn vaults curated by Nysa (Earn page). Name, token, allocations and exposure are read on-chain
 // (server/vault.js); only the address, the URL id and the description live here.

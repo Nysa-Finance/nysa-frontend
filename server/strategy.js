@@ -10,6 +10,7 @@ const SNAPSHOT_MAX_AGE_MS = 60_000
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value)
 const reason = (code, message) => ({ code, message })
+const marketIsActive = (market) => !!market && market.visible !== false && LIVE.some((candidate) => candidate.id === market.id)
 
 /** Shared fail-closed action policy. Full close does not inherit entry-only allocation, carry or risk-approval gates. */
 export function evaluateLoopActionReadiness({
@@ -114,9 +115,10 @@ export function evaluateLoopStrategy({
   now = Date.now(),
 } = {}) {
   const unavailableReasons = []
-  if (!market || !market.visible) unavailableReasons.push(reason('market-inactive', 'The selected Nysa market is not active.'))
+  const active = marketIsActive(market)
+  if (!active) unavailableReasons.push(reason('market-inactive', 'The selected Nysa market is not active.'))
   if (!Array.isArray(allowedMarketIds) || !allowedMarketIds.includes(marketId)) unavailableReasons.push(reason('market-not-allowlisted', 'The selected market is not allowlisted for router or loop entry.'))
-  if (market && market.visible && Array.isArray(market.pairs)) {
+  if (active && Array.isArray(market.pairs)) {
     const pair = market.pairs.find((candidate) => candidate.collateral === 'svm-usdy' && candidate.liability === 'svm-usdc')
     const collateral = pair ? TOKENS[pair.collateral] : null
     const liability = pair ? TOKENS[pair.liability] : null

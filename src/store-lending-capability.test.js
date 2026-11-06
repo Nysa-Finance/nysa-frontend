@@ -26,7 +26,7 @@ globalThis.fetch = async (path, init = {}) => {
   }
   if (requestPath === '/api/tx' && init.method === 'POST') {
     buildCount++
-    if (buildCount === 2) return { ok: false, status: 503, json: async () => ({ error: 'temporary action build failure' }) }
+    if (buildCount === 2 || buildCount === 3) return { ok: false, status: 503, json: async () => ({ error: 'temporary action build failure' }) }
     return {
       ok: true,
       status: 200,

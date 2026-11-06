@@ -22,8 +22,9 @@ export const compact = (v, unit) => {
   return unit ? `${n} ${unit}` : n
 }
 export const short = (s, a = 4, b = 4) => (s && s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s)
+// An amount typed by the user: "," or "." as the decimal separator (phone keyboards), anything else invalid → 0.
 export const num = (s) => {
-  const n = Number(s)
+  const n = Number(String(s ?? '').trim().replace(',', '.'))
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
@@ -88,12 +89,14 @@ export function ago(ts, now = Date.now()) {
   return h < 48 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`
 }
 
-// One Farm Points snapshot: points accrue as supplied USD × days, using the balance seen at the previous snapshot.
-// prev: rows from parsePoints; balances: Map(owner -> supplied USD now).
+// One Farm Points snapshot: points accrue as supplied USD × days, on the lower of the balances seen at the previous
+// snapshot and now: only what stayed in for the whole interval counts, so depositing just before a snapshot and
+// withdrawing right after earns nothing. prev: rows from parsePoints; balances: Map(owner -> supplied USD now).
 export function snapshotPoints(prev, balances, nowSec) {
   const rows = new Map(prev.map((r) => {
     const days = Number.isFinite(r.ts) ? Math.max(nowSec - r.ts, 0) / 86400 : 0
-    return [r.address, { address: r.address, points: r.points + (r.supplied || 0) * days, supplied: balances.get(r.address) ?? 0, ts: nowSec }]
+    const now = balances.get(r.address) ?? 0
+    return [r.address, { address: r.address, points: r.points + Math.min(r.supplied || 0, now) * days, supplied: now, ts: nowSec }]
   }))
   for (const [address, usd] of balances) if (!rows.has(address)) rows.set(address, { address, points: 0, supplied: usd, ts: nowSec })
   return [...rows.values()]
@@ -114,6 +117,10 @@ export function dur(sec) {
 }
 
 // Round a token amount to its decimals without ever exceeding (floor) or undershooting (ceil) the true value.
+// Kamino re-checks borrow and withdraw limits at the transaction's block (fresh prices, accrued interest): offered maxima
+// stay this fraction under the computed limit, so a max amount still fits when it lands.
+export const LIMIT_MARGIN = 0.001
+export const underLimit = (max, d) => floorTo(max * (1 - LIMIT_MARGIN), d)
 export const floorTo = (v, d) => (v > 0 ? Math.floor(v * 10 ** d + 1e-9) / 10 ** d : 0)
 export const ceilTo = (v, d) => (v > 0 ? Math.ceil(v * 10 ** d - 1e-9) / 10 ** d : 0)
 // True when paying `amount` would leave less than one smallest unit of `total` behind (i.e. it means "all of it").

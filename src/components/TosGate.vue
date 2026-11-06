@@ -15,7 +15,7 @@ const agreed = ref(false)
       <p class="tos__text">
         To access the Nysa Finance interface you must read and agree to our Terms of Service. Please review them in full before proceeding.
       </p>
-      <a class="tos__link" :href="TOS_URL" target="_blank" rel="noopener noreferrer">Read the Terms of Service ↗</a>
+      <a class="tos__link" :href="TOS_URL" target="_blank" rel="noopener noreferrer">Read the Terms of Service ↗&#xFE0E;</a>
       <label class="tos__check">
         <input v-model="agreed" type="checkbox" />
         <span>I have read and agree to the <a :href="TOS_URL" target="_blank" rel="noopener noreferrer">Terms of Service</a>.</span>

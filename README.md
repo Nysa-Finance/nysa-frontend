@@ -7,7 +7,15 @@ npm install
 npm run dev     # http://localhost:5173, /api proxied to the deployed backend (API_TARGET to override)
 npm run server  # backend on :3000 (needs SOLANA_RPC in .env)
 npm test        # formatter, lending/rewards math and instruction-decoding checks
+npm run test:e2e  # transactions landed on a local mainnet fork (needs surfpool), ~1-2 min
 ```
+
+`npm run test:e2e` (`e2e/fork.test.js`) starts a Surfpool fork of mainnet, funds throwaway wallets and lands every
+transaction the backend builds against the real Kamino market and vault: supply, borrow, repay all, withdraw all;
+vault deposit and withdraw all; withdraw of shares staked in the vault farm; the no-SOL message. It checks balances
+and that each transaction keeps our compute limit and priority fee. Run it before merging changes to `server/tx.js`,
+`server/vault.js` or `server/account.js`. It is not in CI: it depends on live mainnet state and the public RPC
+(`E2E_UPSTREAM_RPC` to use another one). Install Surfpool with `brew install txtx/taps/surfpool`.
 
 ## Architecture
 The browser never talks to the Solana RPC. The backend (`server/`) does every on-chain read and builds transactions;
@@ -24,7 +32,7 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 
 | Module | Role |
 |---|---|
-| `server/main.js` | HTTP server: static `dist/`, API routes, SSE, per-IP rate limits, snapshot schedule (every 12 h) |
+| `server/main.js` | HTTP server: static `dist/`, API routes, SSE, per-IP rate limits, snapshot schedule (hourly, random minute) |
 | `server/rpc.js` | The single RPC client (429 backoff, call counter for `/api/health`) |
 | `server/market.js` | Market cache: reserves, oracle prices, risk params, rate curves, reward farms (`/api/market`, `/api/events`) |
 | `server/refresh.js` | Market cache timer: every 60s, sooner after our transactions confirm (never postponed, at most every 10s) |
@@ -50,11 +58,21 @@ Liquidating a sanctioned borrower's loan is refused too. The liquidation bonus s
 actually get (`liquidationBonusRange` in `src/logic.js`), not the configured maximum. Docker images (by digest) and GitHub
 Actions (by commit) are pinned; Dependabot proposes updates as pull requests.
 
+Deploys without errors: `scripts/deploy.sh` builds the new image while the old container serves, then swaps them.
+Meanwhile Caddy retries the app for up to 20 s instead of answering 502 (`lb_try_duration`), the new backend listens
+only once it has the market and the saved sanctions list, and the old one drains on SIGTERM (ends the market streams,
+finishes requests in flight, exits within 8 s). Measured under load on a local swap: 20× 502, 6× 503 and 6× "still
+loading" before, none after (slowest response 2 s). A tunnel or Caddy update still drops connections for a few seconds.
+
 ## Transactions
 `POST /api/tx` builds the action against the market cache with a fresh read of the wallet's obligation, simulates it
 (a failing transaction comes back as a readable error and is never sent) and returns it unsigned. A first deposit also
 creates the user's Kamino accounts: that setup comes back first (`final: false`); the client sends it, waits for
 confirmation, then asks again for the action itself.
+
+Borrow and withdraw limits come from Kamino and are rechecked against fresh prices and accrued interest before a
+transaction is built. Withdrawals use the exact raw token allowance. Wallet funding and common Kamino simulation errors
+are reported in plain language; transient 502/503/504 responses are retried once, except signed transaction sends.
 
 ## Swap fees and loop preview
 The shared backend adapter uses Jupiter V2 Build's native `platformFeeBps=10` and configured fee token account. It
@@ -155,6 +173,20 @@ Mobile browsers have no wallet extensions (`src/wallets.js`):
   Compute Budget, System or Lighthouse (wallet guard) (`server/relay.js`, `server/relay.test.js`). Round trip covered by
   `src/wallets.test.js`.
 
+## WalletConnect
+Wallet apps that support WalletConnect for Solana (Trust Wallet, Exodus, OKX, Bitget, Ledger Live, …) connect from any
+device (`src/walletconnect.js`): Reown's AppKit modal shows the QR code and the list of 160+ wallets (on a phone it opens
+the chosen app), as on Kamino.
+- Shown only when `WALLETCONNECT_PROJECT_ID` (`src/config.js`) is set (Reown project; allowed domain `app.nysa.finance`).
+- The connection is ours (`manualWCControl`): one `@walletconnect/universal-provider`, the same version AppKit uses (both
+  pinned), wrapped as a Wallet Standard wallet so the store treats it like the others; the session survives reloads.
+  Both Solana mainnet ids are accepted (the genesis hash and the truncated one some wallets still use). Loaded only
+  when someone picks WalletConnect; telemetry and AppKit analytics off (its `pulse` beacon is blocked by the CSP).
+- Transactions are signed in the wallet app (`solana_signTransaction`) and sent by `POST /api/tx/send`, the same relay
+  as the iOS deeplink wallets. A wallet that returns only the signature gets it placed at its signer slot
+  (`withSignature`, tested in `src/wallets.test.js`).
+- CSP (Caddyfile): WalletConnect relay/verify/rpc, `api.web3modal.org` (wallet list, icons as `blob:`), `fonts.reown.com`.
+
 ## Earn vaults
 Lending goes through Nysa-curated Kamino Earn vaults (kVaults), e.g. **RWA Prime** (`VAULTS` in `src/config.js`: address,
 URL id and description only). `server/vault.js` reads each vault with the market cache: allocations, holdings, value per
@@ -165,8 +197,8 @@ share, utilization and APY; its **exposure** (the markets it is allocated to and
 - Allocations are targets (`getVaultComputedReservesAllocation`): weights plus the unallocated weight (a liquidity
   buffer kept uninvested for instant withdrawals), capped per reserve. Kamino's bot syncs vaults to them about every
   15 minutes; the Exposure donut splits uninvested tokens into the buffer and what is awaiting sync.
-- `/earn`: vaults with network, infra (Kamino), APY (⚡ breakdown), exposure (collateral icons), Total Supply (collateral
-  + loan asset supplied in the exposure markets); a row (a card on mobile) opens the vault.
+- `/earn`: vaults with network, infra (Kamino), APY (⚡ breakdown), exposure (collateral icons), Total Deposits (the
+  vault's AUM: invested in its markets or waiting in the vault); a row (a card on mobile) opens the vault.
 - `/earn/:id`: Exposure (allocation donut, `pieSlices`/`arcPath` in `src/logic.js`, and markets), Realized APY from the vault's
   share value, Market Updates of the vault and its exposure markets, Fees (management, performance, withdrawal) and
   Addresses (vault, admin, allocation admin, oracle); rewards boost card; Deposit / Withdraw panel (`VaultPanel.vue`).
@@ -177,7 +209,7 @@ share, utilization and APY; its **exposure** (the markets it is allocated to and
 - Shares staked in the vault farm (Kamino's UI stakes deposits there) count everywhere: Portfolio, Farm Points,
   Analytics (`vaultShares` in `server/account.js`), and `vault-withdraw` unstakes them in the same transaction.
 - Old links redirect: `/` and `/lend` → `/earn`, `/market/:id?mode=lend` → the vault, other `/market/:id` → `/borrow/:id`.
-Verified end to end on a Surfpool mainnet fork (deposit + invest, withdraw all).
+Covered by `npm run test:e2e` (deposit + invest, withdraw all, staked shares).
 
 ## Supply rewards (boosted APY)
 The USDC reserve's Kamino collateral farm pays USDC incentives. `server/market.js` reads the farm with the market and
@@ -193,8 +225,21 @@ counted gross supplied deposits under this unchanged formula. Logic: `snapshotPo
 Only wallets with deposits in the Nysa market(s) and vaults listed in `src/config.js` are tracked. Run a snapshot by hand:
 `docker compose exec app node server/snapshot.js`.
 
+Backup: `.github/workflows/points-backup.yml` copies the points CSV to Cloudflare R2 every 6 hours, read from the VPS over
+SSH (Cloudflare's Bot Fight Mode blocks `/api/points` for the Actions runners): `farm-points/latest.csv`
+plus a dated copy per change (`farm-points/YYYY/MM/DD/HHMMSSZ.csv`). The run fails, and GitHub emails it, if the site is
+unreachable or the total points went down (the last good copy is kept). Setup: an R2 bucket and an R2 API token with Object Read &
+Write on that bucket only; in the repo settings, secrets `R2_ENDPOINT` (the bucket's S3 API URL without the bucket name:
+`https://<account id>.eu.r2.cloudflarestorage.com` for an EU bucket), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and
+variable `R2_BUCKET`; and secret `VPS_POINTS_SSH_KEY`, a key the VPS lets run only the read (in `/home/deploy/.ssh/authorized_keys`:
+`command="cd /home/deploy/nysa && docker compose exec -T app cat /data/farm-points/points_state.csv",restrict ssh-ed25519 …`).
+To restore: download `latest.csv` (Cloudflare dashboard → R2 → bucket → farm-points), copy it to the
+VPS project directory, then
+`docker compose exec -T app sh -c 'cat > /data/farm-points/points_state.csv' < latest.csv`.
+An older copy loses no accrual: the next snapshot credits the whole gap since its `last_snapshot_ts` (on the lower balance).
+
 ## Realized APY
-Each snapshot also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
+The first snapshot of each 12-hour UTC block also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
 utilization to `market-history/history.json`, plus the reserve's creation time (share value is exactly 1 then); and per
 Earn vault, its tokens per share (`vaults` in that file). The vault page shows 30D / 7D realized APY (share-value growth over the window, annualised) next to the live APY, and a daily chart.
 Math: `realizedApy` / `windowApy` / `dailyApySeries` in `src/logic.js` (tested).

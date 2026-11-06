@@ -9,7 +9,7 @@ const board = computed(() => state.points.board)
 const error = computed(() => state.points.error)
 const fmt = (n) => (n === 0 ? '0' : n < 0.01 ? '<0.01' : n.toLocaleString('en-US', { maximumFractionDigits: 2 }))
 const me = computed(myPoints)
-const stale = computed(() => board.value && Date.now() / 1000 - board.value.updatedTs > 18 * 3600) // snapshots every 12 h
+const stale = computed(() => board.value && Date.now() / 1000 - board.value.updatedTs > 3 * 3600) // snapshots every hour
 
 onMounted(loadPoints)
 </script>
@@ -20,7 +20,7 @@ onMounted(loadPoints)
       <div class="fp-head">
         <div>
           <h3 id="fp-title" class="fp-title">Farm Points</h3>
-          <p class="fp-sub">Points accrue as supplied balance × time. Updated every 12 hours.</p>
+          <p class="fp-sub">Points accrue as supplied balance × time. Updated every hour.</p>
         </div>
         <button class="x-btn" aria-label="Close" @click="emit('close')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -34,7 +34,7 @@ onMounted(loadPoints)
         </template>
         <span v-else-if="!board && !error" class="n-skel" style="min-width: 180px" />
         <div v-else-if="state.address" class="fp-you-note">
-          No points for <b>{{ short(state.address, 6) }}</b> yet. Supply to this market and your first points appear after the next snapshot (every 12 hours).
+          No points for <b>{{ short(state.address, 6) }}</b> yet. Supply to this market: your first points appear within about two hours (snapshots run every hour).
         </div>
         <div v-else class="fp-you-note"><button class="fp-connect" @click="state.connectOpen = true">Connect a wallet</button> to see your position.</div>
       </div>

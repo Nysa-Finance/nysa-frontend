@@ -18,19 +18,28 @@ const nowSec = ref(Date.now() / 1000)
 async function load() {
   try {
     const a = await loadAnalytics()
-    positions.value = Array.isArray(a.positions) ? a.positions.map((p) => ({ ...p, hf: p.hf ?? Infinity })) : null
+    positions.value = a.positions.map((p) => ({ ...p, hf: p.hf ?? Infinity }))
     holders.value = a.vaults ?? null
-    feeReceivers.value = a.feeReceivers ?? null
   } catch (e) {
     console.error('[analytics] positions', e)
     positions.value = null
     holders.value = null
-    feeReceivers.value = null
   }
   nowSec.value = Date.now() / 1000
 }
+async function loadFeeReceivers() {
+  try {
+    const response = await fetch('/api/fee-receivers')
+    const body = await response.json().catch(() => null)
+    if (!response.ok) throw new Error(body?.error ?? `Server responded ${response.status}`)
+    feeReceivers.value = body
+  } catch (e) {
+    console.error('[analytics] fee receivers', e)
+    feeReceivers.value = null
+  }
+}
 let timer
-onMounted(() => { load(); loadPoints(); timer = setInterval(load, 60_000) })
+onMounted(() => { load(); loadFeeReceivers(); loadPoints(); timer = setInterval(() => { load(); loadFeeReceivers() }, 60_000) })
 onUnmounted(() => clearInterval(timer))
 
 async function copyFeeReceiver(label, value) {
@@ -171,7 +180,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
         <div v-for="r in reserves" :key="r.token.token_id" class="n-tr sm or-grid">
           <div class="n-cell n-asset" data-label="Feed">
             <TokenIcon :token="r.token" size="sm" />
-            <div><div>{{ r.token.name }}</div><a class="sub-link" :href="explorer(r.token.priceFeed)" target="_blank" rel="noopener noreferrer">{{ r.token.feedNote }} ↗</a></div>
+            <div><div>{{ r.token.name }}</div><a class="sub-link" :href="explorer(r.token.priceFeed)" target="_blank" rel="noopener noreferrer">{{ r.token.feedNote }} ↗&#xFE0E;</a></div>
           </div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-muted" data-label="Last update">{{ ago(r.oracleTs, nowSec * 1000) }}</div>
@@ -237,7 +246,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
         <div v-if="holders === null" class="n-empty">Depositors are temporarily unavailable.</div>
         <div v-else-if="x.rows?.length === 0" class="n-empty">No deposits in this vault yet.</div>
         <div v-for="h in x.rows ?? []" :key="h.owner" class="n-tr sm vh-grid">
-          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(h.owner)" target="_blank" rel="noopener noreferrer">{{ short(h.owner, 6) }} ↗</a></div>
+          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(h.owner)" target="_blank" rel="noopener noreferrer">{{ short(h.owner, 6) }} ↗&#xFE0E;</a></div>
           <div class="n-cell n-num" data-label="Shares in wallet">{{ amt(h.wallet, 4) }}</div>
           <div class="n-cell n-num" data-label="Staked in vault farm">{{ h.staked > 0 ? amt(h.staked, 4) : '—' }}</div>
           <div class="n-cell n-num" data-label="Value">{{ usd(h.value) }}</div>
@@ -254,7 +263,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
         <div v-if="positions === null" class="n-empty">Open positions are temporarily unavailable.</div>
         <div v-else-if="positions?.length === 0" class="n-empty">No open positions in this market yet.</div>
         <div v-for="p in positions ?? []" :key="p.owner" class="n-tr sm po-grid">
-          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗</a></div>
+          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗&#xFE0E;</a></div>
           <div class="n-cell n-num" data-label="Deposits">{{ usd(p.deposits) }}</div>
           <div class="n-cell n-num" data-label="Debt">{{ usd(p.debt) }}</div>
           <div class="n-cell n-num" data-label="LTV">{{ pct(p.ltv, 1) }}</div>

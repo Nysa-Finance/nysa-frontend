@@ -374,7 +374,7 @@ assert.deepEqual(loop.verifyAtomicLoopFeeDeltas(
 ), [{ account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '300' }])
 assert.throws(() => loop.verifyAtomicLoopFeeDeltas(
   [{ account: 'treasury-usdy', mint: usdy, amountBaseUnits: '100', bps: 10 }],
-  [{ account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '99' }],
+  [{ account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '89' }],
 ), /fee account balance delta/i)
 
 assert.equal(typeof loop.buildAtomicMultiplyOpenApplication, 'function')
@@ -566,7 +566,7 @@ assert.deepEqual(loop.obligationSimulationBalances(hydratedObligation), {
 }, 'simulation exports exact raw cToken state and the SDK-hydrated liquidity amount for the full obligation')
 
 const simulationBuilt = {
-  feeEvents: [{ account: 'treasury-usdy', mint: usdy, amountBaseUnits: '10', bps: 10 }],
+  feeEvents: [{ account: 'treasury-usdy', mint: usdy, amountBaseUnits: '100', bps: 10 }],
   ownerTokenAccounts: [
     { account: 'owner-usdc', mint: usdc },
     { account: 'owner-usdy', mint: usdy },
@@ -587,7 +587,7 @@ const validOpenSimulation = {
   ok: true, positionOwner: wallet, positionCollateralAmount: '150', positionDebtAmount: '50',
   positionCollateralBaseUnits: '150000000', positionCollateralCTokenBaseUnits: '90000000', positionDebtBaseUnits: '50000000',
   tokenDeltas: [
-    { account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '10' },
+    { account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '100' },
     { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '-100000000' },
     { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '0' },
   ],
@@ -597,7 +597,7 @@ assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: si
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
   tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'treasury-usdy'
-    ? { ...item, deltaBaseUnits: '9' } : item),
+    ? { ...item, deltaBaseUnits: '89' } : item),
 } }), false, 'the exact composed fee-account delta must verify before open authorization')
 const roundedSimulationBuilt = {
   ...simulationBuilt,
@@ -642,7 +642,7 @@ const validCloseSimulation = {
   ok: true, positionOwner: wallet, remainingDebtBaseUnits: '0', positionCollateralAmount: '0',
   obligationBalances: { deposits: [], borrows: [] },
   tokenDeltas: [
-    { account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '10' },
+    { account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '100' },
     { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '30000000' },
     { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '0' },
   ],

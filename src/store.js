@@ -8,13 +8,14 @@ import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
 import { confirmedSwapAmountFromTransaction, pendingSwapChainOutcome, persistSignedSwapBeforeRelay } from './swap-recovery.js'
 import { assertCanStartLendingAction, canResumeSetupRecovery, cancelConfirmedSetupRecovery, classifyPendingTransaction, markSetupTransactionConfirmed, pendingTransactionMatches, recoverConfirmedSetupTransaction, resumeConfirmedSetupContinuation, startVisibleReconciliationLoop } from './pending-reconciliation.js'
-import { tok, tokensOf, vaultById } from './config.js'
+import { tok, tokensOf, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
 import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { loopPositionFullyClosed } from './loop-positions.js'
 import { event, skipNextPageview } from './analytics.js'
 import {
   isIOS, DEEPLINK_WALLETS, MWA_NAME, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
 } from './wallets.js'
+import { createWalletConnectWallet } from './walletconnect.js'
 
 const TOS_KEY = 'nysaTosAccepted.v1'
 const WALLET_KEY = 'connectedWallet'
@@ -89,6 +90,7 @@ export const state = reactive({
   address: null,
   balances: {}, // token_id -> units in wallet
   balancesBaseUnits: {}, // token_id -> exact confirmed SPL balance
+  sol: null, // wallet SOL balance used to explain network fee requirements before building
   positions: {}, // token_id -> { supplied, borrowed, maxWithdraw } units
   positionsBaseUnits: {}, // token_id -> exact protocol-computed max withdraw amount
   loopPositions: [], // separately identified Multiply positions; never merged into vanilla token-keyed fields
@@ -99,6 +101,7 @@ export const state = reactive({
   walletName: null,
   wallets: [], // detected Wallet Standard wallets
   connectOpen: false,
+  connectError: null, // shown when the connect window reopens (WalletConnect failed while Reown's modal was up)
   points: { board: null, error: null }, // Farm Points leaderboard
   // Phone wallets reached by deeplink (iOS): a transaction waiting for the user to approve it in the wallet app, or its
   // outcome after they come back. { status: 'ready'|'sending'|'success'|'error', label, wallet, url?, signature?, error? }
@@ -117,13 +120,16 @@ export const state = reactive({
 let wallet = null
 let account = null
 const usable = (w) => w.chains.includes(CHAIN) && 'standard:connect' in w.features && 'solana:signAndSendTransaction' in w.features
+// WalletConnect: wallet apps on another device (QR code) or on the phone; signed there, sent by our backend.
+const sendSigned = async (tx) => (await api('/api/tx/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tx, wallet: account.address }) })).signature
+const walletConnect = WALLETCONNECT_PROJECT_ID ? markRaw(createWalletConnectWallet(sendSigned)) : null
 function scanWallets() {
   const ws = getWallets().get().filter(usable)
-  state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom')].map(markRaw)
+  state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom'), ...(walletConnect ? [walletConnect] : [])].map(markRaw)
 }
 
 // iOS Safari has no wallet extensions: offer Phantom / Solflare through their deeplink protocol instead.
-export const deeplinkWallets = () => (isIOS && !state.wallets.length ? DEEPLINK_WALLETS : [])
+export const deeplinkWallets = () => (isIOS && !state.wallets.some((w) => !w.walletconnect) ? DEEPLINK_WALLETS : [])
 const deeplinkWallet = (name) => ({ name, deeplink: true })
 
 export function acceptTos() {
@@ -169,15 +175,6 @@ export function rowOf(id) {
   const r = state.reserves[id]
   if (!r) return null
   return { reserve: r, walletBalance: state.balances[id] ?? 0, ...(state.positions[id] ?? { supplied: 0, borrowed: 0, maxWithdraw: 0 }) }
-}
-
-export function marketSummary(m) {
-  let s = 0, b = 0
-  for (const t of tokensOf(m)) {
-    s += state.reserves[t.token_id]?.supplyUsd ?? 0
-    b += state.reserves[t.token_id]?.borrowUsd ?? 0
-  }
-  return { totalSuppliedUsd: state.loaded ? s : null, totalBorrowedUsd: state.loaded ? b : null }
 }
 
 // ---- market: pushed by the backend; polled from /api/market while the stream is down or refused ----
@@ -228,12 +225,19 @@ function listenMarket() {
 }
 
 // ---- connected wallet ----
+// 502/503/504: the backend is not answering, e.g. restarting during a deploy (a few seconds). Asked once more, except
+// for sending a signed transaction, which is never sent twice.
+const UNREACHABLE = [502, 503, 504]
 async function api(path, init) {
-  const res = await fetch(path, init)
+  let res = await fetch(path, init)
+  if (UNREACHABLE.includes(res.status) && path !== '/api/tx/send') {
+    await new Promise((r) => setTimeout(r, 2500))
+    res = await fetch(path, init)
+  }
   const body = await res.json().catch(() => ({}))
   if (res.status === 403 && body.blocked) refuseWallet()
   if (!res.ok) {
-    const error = new Error(body.error ?? `Server responded ${res.status}`)
+    const error = new Error(body.error ?? (UNREACHABLE.includes(res.status) ? 'Nysa\'s server is not reachable right now, please try again in a few seconds.' : `Server responded ${res.status}`))
     error.status = res.status
     throw error
   }
@@ -255,6 +259,7 @@ export async function loadAccount(fresh = false) {
     if (state.address !== addr) return // switched wallet meanwhile
     state.balances = a.balances
     state.balancesBaseUnits = a.balancesBaseUnits ?? {}
+    state.sol = a.sol ?? null
     state.positions = a.positions
     state.positionsBaseUnits = a.positionsBaseUnits ?? {}
     state.loopPositions = a.loopPositions ?? []
@@ -276,6 +281,7 @@ function setAccount(w, acc) {
   state.walletName = acc ? w.name : null
   state.balances = {}
   state.balancesBaseUnits = {}
+  state.sol = null
   state.positions = {}
   state.positionsBaseUnits = {}
   state.loopPositions = []
@@ -300,7 +306,7 @@ async function connectWith(w, silent) {
 export async function connectWallet(w) {
   await connectWith(w, false)
   // via: how the wallet was reached — browser extension, Android app (Mobile Wallet Adapter) or iOS app (deeplink)
-  event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : { wallet: w.name, via: 'extension' })
+  event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : w.walletconnect ? { wallet: 'WalletConnect', via: 'walletconnect' } : { wallet: w.name, via: 'extension' })
   state.connectOpen = false
 }
 
@@ -1191,6 +1197,8 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
   let owner
   try {
     if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
+    // No SOL at all: every transaction would fail (fees are paid in SOL).
+    if (state.sol === 0) throw new Error('This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.')
     if (state.setupRecoveryBusy && !resumeFromSetupSignature) {
       throw pendingActionError('An account setup action is being resumed. Finish or cancel that action first.')
     }
@@ -1501,7 +1509,7 @@ export function loadPoints() {
 }
 export const myPoints = () => state.points.board?.rows.find((r) => r.address === state.address) ?? null
 
-// Reserve history for Realized APY (recorded by the snapshot every 12 hours). Loaded once per page view.
+// Reserve history for Realized APY (recorded by the snapshot twice a day). Loaded once per page view.
 let historyReq = null
 export function loadApyHistory() {
   historyReq ??= api('/api/apy-history').catch((e) => { historyReq = null; throw e })

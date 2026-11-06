@@ -229,7 +229,8 @@ function sdkPositionExposure(position) {
   const liabilityPriceUsd = positiveDecimal(position.liabilityPriceUsd, 'liability USD price')
   const borrowFeeRatio = positiveDecimal(position.borrowFeeRatio ?? 0, 'borrow fee ratio', true)
   const collateralValue = collateralAmount.mul(collateralPriceUsd)
-  const debt = debtBorrowAmount.mul(new PreciseDecimal(1).add(borrowFeeRatio)).mul(liabilityPriceUsd)
+  const debtAmount = debtBorrowAmount.mul(new PreciseDecimal(1).add(borrowFeeRatio))
+  const debt = debtAmount.mul(liabilityPriceUsd)
   if (!collateralValue.gt(0) || !debt.lt(collateralValue)) throw new LoopPreviewError('SDK position has no positive collateral equity.')
   const equity = collateralValue.minus(debt)
   const projectedLtvPct = debt.div(collateralValue).mul(100)
@@ -241,6 +242,8 @@ function sdkPositionExposure(position) {
     projectedLtvPct: decimalText(projectedLtvPct),
     source: 'kamino-sdk-net-route',
     collateralAmount: decimalText(collateralAmount),
+    borrowAmount: decimalText(debtBorrowAmount),
+    debtAmount: decimalText(debtAmount),
     collateralMint: position.collateralMint,
     collateralPriceUsd: decimalText(collateralPriceUsd),
     liabilityMint: position.liabilityMint,

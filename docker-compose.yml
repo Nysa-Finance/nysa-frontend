@@ -7,6 +7,7 @@ services:
     environment: # only what the app needs (not the tunnel or Plausible secrets)
       SOLANA_RPC: ${SOLANA_RPC:-}
       VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:-} # old name, still accepted
+      SOLANA_RPC_FALLBACK: ${SOLANA_RPC_FALLBACK:-} # empty = public mainnet RPC
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
@@ -24,7 +25,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM caddy:2.11.6@sha256:3422ce6de165df66534f9b9ba50efaf457114ec961763cc52f5dbdaac2972d73
+        FROM caddy:2.11.7@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e
         COPY Caddyfile /etc/caddy/Caddyfile
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
@@ -40,7 +41,7 @@ services:
     logging: *logs
 
   tunnel:
-    image: cloudflare/cloudflared:2026.9.3@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
     command: tunnel --no-autoupdate run # public hostname -> http://caddy:80 is set in the Cloudflare dashboard
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
@@ -78,7 +79,7 @@ services:
 
   plausible_db:
     # Plausible CE supports Postgres 16; a major upgrade needs a dump/restore (18 refuses 16's data files).
-    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    image: postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
     environment:
       POSTGRES_PASSWORD: postgres # reachable only from the analytics network
     volumes:
@@ -92,7 +93,7 @@ services:
 
   plausible_events_db:
     # Plausible CE ships 24.12; this data already ran on 26.6 (Dependabot), and going back two majors is riskier than staying.
-    image: clickhouse/clickhouse-server:26.6.8.7-alpine@sha256:cc35536b7f4a2e552576cffa19b165e182b6e1df7695aa453d4d64b5ed15b713
+    image: clickhouse/clickhouse-server:26.9.27.3-alpine@sha256:9468dda1c09a4f41a47554722a083fe620ebc766b66b63b3ca0511f9e64f132b
     environment:
       CLICKHOUSE_SKIP_USER_SETUP: 1
     volumes:

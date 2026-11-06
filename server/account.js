@@ -69,6 +69,14 @@ export async function readWalletObligations({ wallet, marketConfig, market, vani
   }
   return { obligation: reads[0].value, loopPositions, loopPositionReadStatus }
 }
+// What the obligation can borrow / withdraw of a reserve, in token units, as Kamino computes it at `now`: the panels'
+// limits, and checked before building (tx.js) to say what fits instead of failing the simulation. null if unknown.
+export function maxOf(kind, ob, market, reserve, now) {
+  try {
+    const f = num(reserve.getMintFactor()) || 1
+    return num(kind === 'borrow' ? ob.getMaxBorrowAmount(market, reserve.address, now, false) : ob.getMaxWithdrawAmount(market, reserve.address, now).maxWithdrawAmount) / f
+  } catch { return null }
+}
 
 export async function ataOf(owner, mint, tokenProgram) {
   const [ata] = await getProgramDerivedAddress({ programAddress: ATA_PROGRAM, seeds: [enc.encode(owner), enc.encode(tokenProgram), enc.encode(mint)] })
@@ -123,6 +131,7 @@ export function pendingRewards(farmStates, userStates) {
 async function readAccount(wallet) {
   const owner = address(wallet)
   const balances = {}, balancesBaseUnits = {}, positions = {}, positionsBaseUnits = {}, claimable = {}, loopPositions = [], loopPositionReadStatus = {}
+  let sol = 0
   for (const m of LIVE) {
     const { market, now, farms: farmStates } = getLive(m)
     const tokens = tokensOf(m)
@@ -133,7 +142,9 @@ async function readAccount(wallet) {
     const atas = await Promise.all(tokens.map((t) => ataOf(owner, address(t.mint), reserveOf(market, t).getLiquidityTokenProgram())))
     const farmAddrs = ob ? [...farmStates.keys()] : []
     const userPdas = await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress)))
-    const accounts = await fetchEncodedAccounts(rpc, [...atas, ...userPdas])
+    const accounts = await fetchEncodedAccounts(rpc, [...atas, ...userPdas, owner])
+    const self = accounts.at(-1) // the wallet itself: its SOL pays every transaction's fees
+    sol = self.exists ? Number(self.lamports) / 1e9 : 0
     tokens.forEach((t, i) => {
       balancesBaseUnits[t.token_id] = tokenAmountBaseUnits(accounts[i])
       balances[t.token_id] = Number(balancesBaseUnits[t.token_id]) / 10 ** t.decimals
@@ -162,9 +173,11 @@ async function readAccount(wallet) {
       })
       positions[t.token_id] = { supplied, borrowed, maxWithdraw: Number(maxWithdraw) / 10 ** t.decimals }
       positionsBaseUnits[t.token_id] = { maxWithdraw }
+      const maxBorrow = ob && m.loans.includes(t.token_id) ? maxOf('borrow', ob, market, r, now) : null
+      positions[t.token_id].maxBorrow = maxBorrow
     }
   }
-  return { balances, balancesBaseUnits, positions, positionsBaseUnits, loopPositions, loopPositionReadStatus, claimable, vaults: await vaultPositions(owner) }
+  return { balances, balancesBaseUnits, positions, positionsBaseUnits, loopPositions, loopPositionReadStatus, claimable, sol, vaults: await vaultPositions(owner) }
 }
 
 // Each owner's shares in a vault: in the wallet (shares ATA) and staked in the vault farm, where Kamino's UI puts

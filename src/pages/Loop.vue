@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sendLoopAction, sendLoopSetup, state } from '../store.js'
 import { TOKENS } from '../config.js'
-import { pct, usd } from '../logic.js'
+import { amt, pct, usd } from '../logic.js'
 import { formatBaseUnits } from '../swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
 import { selectedLoopCloseReadiness } from '../loop-positions.js'
@@ -57,8 +57,9 @@ const entryBlockers = computed(() => {
   const reasons = preview.value
     ? [...(preview.value.unavailableReasons ?? []), ...(openReadiness.value?.unavailableReasons ?? [])]
     : [...(strategies.value[0]?.unavailableReasons ?? []), ...(strategy.value?.actions?.open?.unavailableReasons ?? [])]
-  const filtered = reasons.filter((reason) => !(carryAcknowledged.value
-    && ['carry-acknowledgement-required', 'preview-acknowledgement-invalid'].includes(reason.code)))
+  const acknowledgementReasons = ['carry-acknowledgement-required', 'preview-acknowledgement-invalid']
+  const visibleReasons = preview.value ? reasons : reasons.filter((reason) => !acknowledgementReasons.includes(reason.code))
+  const filtered = visibleReasons.filter((reason) => !(carryAcknowledged.value && acknowledgementReasons.includes(reason.code)))
   return [...new Map(filtered.map((reason) => [reason.message, reason])).values()]
 })
 
@@ -178,6 +179,11 @@ async function closeLoop() {
 }
 
 const feeLabel = (fee) => `${formatBaseUnits(BigInt(fee.amountBaseUnits), fee.mint === usdc.mint ? usdc.decimals : usdy.decimals)} ${fee.mint === usdc.mint ? usdc.name : usdy.name}`
+const tokenAmountLabel = (value, token) => {
+  if (typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value)) return 'Unavailable'
+  const amount = Number(value)
+  return Number.isFinite(amount) ? `${amt(amount, token.decimals)} ${token.name}` : 'Unavailable'
+}
 onMounted(() => { loadStrategies(); loadSetupStatus() })
 </script>
 
@@ -222,11 +228,12 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
     <section v-if="preview?.exposure" class="review-section" aria-labelledby="loop-review-title">
       <div class="review-heading"><h3 id="loop-review-title">Review estimate</h3><span v-if="preview.carry?.estimatedCarryPct != null" class="n-chip" :class="Number(preview.carry.estimatedCarryPct) > 0 ? 'ok' : 'warn'">{{ Number(preview.carry.estimatedCarryPct) > 0 ? '+' : '' }}{{ preview.carry.estimatedCarryPct }}% carry</span></div>
       <div class="n-stats stat-4 review-stats">
-        <div class="n-stat"><div class="k">Net equity value</div><div class="v">{{ preview.exposure.equity }} USD</div></div>
-        <div class="n-stat"><div class="k">Collateral value</div><div class="v">{{ preview.exposure.grossCollateral }} USD</div></div>
-        <div class="n-stat"><div class="k">Debt value</div><div class="v">{{ preview.exposure.debt }} USD</div></div>
+        <div class="n-stat"><div class="k">Estimated USDY supplied</div><div class="v">{{ preview.exposure.source === 'kamino-sdk-net-route' ? tokenAmountLabel(preview.exposure.collateralAmount, usdy) : 'Unavailable' }}</div></div>
+        <div class="n-stat"><div class="k">USDC borrow principal</div><div class="v">{{ preview.exposure.source === 'kamino-sdk-net-route' ? tokenAmountLabel(preview.exposure.borrowAmount, usdc) : 'Unavailable' }}</div></div>
+        <div class="n-stat"><div class="k">Total estimated USDC debt</div><div class="v">{{ preview.exposure.source === 'kamino-sdk-net-route' ? tokenAmountLabel(preview.exposure.debtAmount, usdc) : 'Unavailable' }}</div><div class="s">Includes borrow origination fee</div></div>
         <div class="n-stat"><div class="k">Projected LTV</div><div class="v">{{ pct(Number(preview.risk?.projectedLtvPct)) }} <span class="stat-limit">/ {{ pct(Number(preview.limits?.projectedLtvPct)) }} limit</span></div></div>
       </div>
+      <p class="valuation-note">USD valuations: equity {{ usd(Number(preview.exposure.equity)) }} · collateral {{ usd(Number(preview.exposure.grossCollateral)) }} · debt {{ usd(Number(preview.exposure.debt)) }}. {{ preview.exposure.source === 'kamino-sdk-net-route' ? 'Token amounts are SDK-derived estimates.' : 'Token quantities are unavailable until a live route quote is verified.' }}</p>
 
       <div class="economics-row">
         <div class="economics-item"><span>Estimated leverage</span><b>{{ preview.exposure.leverage ?? preview.carry?.basedOnLeverage ?? leverage }}×</b></div>
@@ -275,11 +282,9 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
     </div>
   </section>
 
-  <section class="n-panel position-panel">
+  <section v-if="positions.length" class="n-panel position-panel">
     <div class="panel-heading"><div><h2>Your positions</h2><p class="n-muted">Select a position to review its full-close readiness.</p></div><span class="n-chip">{{ positions.length }}</span></div>
-    <p v-if="!state.address" class="n-muted position-empty">Connect a wallet to load positions.</p>
-    <p v-else-if="!positions.length" class="n-muted position-empty">No active Nysa Multiply positions.</p>
-    <div v-else class="n-table">
+    <div class="n-table">
       <div class="n-thead position-grid"><div>Position</div><div>Collateral</div><div>Debt</div><div>Health factor</div><div></div></div>
       <div v-for="position in positions" :key="position.id" class="n-tr position-grid" :class="{ selected: selectedPosition?.id === position.id }">
         <div class="n-cell" data-label="Position"><b>{{ position.market.name }}</b><span class="position-address">{{ position.obligation.address.slice(0, 8) }}…{{ position.obligation.address.slice(-4) }}</span></div>

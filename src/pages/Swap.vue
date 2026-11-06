@@ -62,6 +62,15 @@ const feeAmount = computed(() => {
   const token = tokens.find((candidate) => candidate.mint === fee.mint)
   return token ? `${formatBaseUnits(BigInt(fee.amountBaseUnits), token.decimals)} ${token.name}` : null
 })
+const tokenBalanceLabel = (token) => {
+  if (!state.address) return 'Connect wallet to see balance'
+  if (state.walletError) return 'Confirmed balance unavailable'
+  const balance = state.balancesBaseUnits?.[token.token_id]
+  if ((typeof balance !== 'string' && typeof balance !== 'bigint') || !/^\d+$/.test(String(balance))) {
+    return 'Confirmed balance unavailable'
+  }
+  return `Balance ${formatBaseUnits(BigInt(balance), token.decimals)} ${token.name}`
+}
 const costDisclosure = computed(() => buildIntent.value?.costDisclosure ?? null)
 const solCost = (lamports) => lamports == null ? 'Unavailable' : `${formatBaseUnits(BigInt(lamports), 9)} SOL`
 const unavailableReasons = computed(() => [
@@ -523,94 +532,104 @@ onUnmounted(() => { clearInterval(clockTimer); quoteRequests.invalidate() })
     <p class="n-sub">Review a Jupiter route between assets in Nysa’s active USDY market.</p>
   </div>
 
-  <section class="n-panel swap-panel">
-    <label class="field">
-      <span>{{ flowType === 'withdraw-sell' && primaryStatus !== 'confirmed' ? 'USDY to withdraw' : 'You pay' }}</span>
-      <div class="asset-input">
-        <input v-model="amount" :readonly="flowType === 'withdraw-sell' && primaryStatus === 'confirmed'" inputmode="decimal" autocomplete="off" aria-label="Swap amount" />
-        <select v-model="inputId" :disabled="!!flowType" aria-label="Input asset">
-          <option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option>
-        </select>
-      </div>
-    </label>
-    <button class="flip" :disabled="!!flowType" aria-label="Switch swap assets" @click="flipPair">↕</button>
-    <label class="field">
-      <span>You receive</span>
-      <div class="asset-input">
-        <input :value="quoteFresh ? formatBaseUnits(BigInt(quote.outputAmountBaseUnits), outputToken.decimals) : '—'" readonly aria-label="Estimated output" />
-        <select v-model="outputId" :disabled="!!flowType" aria-label="Output asset">
-          <option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option>
-        </select>
-      </div>
-    </label>
-    <label class="field slippage-field">
-      <span>Slippage limit</span>
-      <div class="slippage">{{ (slippageBps / 100).toFixed(2) }}%</div>
-      <input v-model.number="slippageBps" type="range" min="0" max="50" step="1" aria-label="Slippage limit in basis points" />
-    </label>
-    <button v-if="flowType === 'withdraw-sell' && primaryStatus !== 'confirmed'" class="n-btn-grad quote-button" :disabled="withdrawalDisabled" @click="withdrawFreeUsdY">
-      {{ primaryStatus === 'pending' ? 'Confirming withdrawal…' : primaryStatus === 'confirmed-amount-unknown' ? 'Verifying confirmed amount…' : 'Withdraw free USDY' }}
-    </button>
-    <button v-else class="n-btn-grad quote-button" :disabled="busy || inputId === outputId || !state.address || readiness?.quoteEnabled === false" @click="requestQuote">
-      {{ busy ? 'Getting route…' : 'Get quote' }}
-    </button>
-    <p class="helper">Quotes expire after 15 seconds. One Nysa fee of 10 bps applies per swap, regardless of route hops.</p>
-    <p v-if="flowType === 'withdraw-sell' && primaryStatus !== 'confirmed'" class="helper follow-up">
-      <template v-if="withdrawLimitStatus === 'ready'">Fresh free-withdrawal allowance: {{ formatBaseUnits(BigInt(withdrawLimitBaseUnits), tokenById['svm-usdy'].decimals) }} USDY, updated {{ new Date(withdrawLimitUpdatedAt).toLocaleString() }} at slot {{ withdrawLimitSlot }}.</template>
-      <template v-else-if="withdrawLimitStatus === 'loading'">Refreshing the free-withdrawal allowance…</template>
-      <template v-else>Fresh free-withdrawal allowance is unavailable. Withdrawals stay disabled until the market and obligation refresh succeeds.</template>
-      Locked collateral cannot be withdrawn through this flow.
-      <button v-if="withdrawLimitStatus === 'unavailable' && state.address" class="n-btn-sm ghost" @click="refreshWithdrawLimit">Refresh allowance</button>
-    </p>
-    <p v-if="flowType === 'acquire-supply'" class="helper follow-up">After a swap confirms, you may optionally supply the confirmed USDY amount. The app will not use locked collateral.</p>
-    <p v-if="flowMessage" class="helper follow-up">{{ flowMessage }}</p>
-  </section>
+  <div v-if="error" class="n-banner warn page-alert" role="status">{{ error }}</div>
+  <div v-if="!state.address" class="n-banner page-alert">Connect a wallet to request a route quote.</div>
+  <div v-if="state.swapPending" class="n-banner warn page-alert" role="status">A swap signature is pending or its balance outcome is unknown. Check the signature before retrying.</div>
 
-  <div v-if="error" class="n-banner warn" role="status">{{ error }}</div>
-  <div v-if="!state.address" class="n-banner">Connect a wallet to request a route quote.</div>
-  <div v-if="state.swapPending" class="n-banner warn" role="status">A swap signature is pending or its balance outcome is unknown. Check the signature before retrying.</div>
+  <div class="swap-workspace">
+    <section class="n-panel swap-panel">
+      <div class="panel-heading"><h2>Swap details</h2></div>
+      <label class="field">
+        <span>{{ flowType === 'withdraw-sell' && primaryStatus !== 'confirmed' ? 'USDY to withdraw' : 'You pay' }}</span>
+        <div class="asset-input">
+          <input v-model="amount" :readonly="flowType === 'withdraw-sell' && primaryStatus === 'confirmed'" inputmode="decimal" autocomplete="off" aria-label="Swap amount" />
+          <select v-model="inputId" :disabled="!!flowType" aria-label="Input asset">
+            <option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option>
+          </select>
+        </div>
+        <span class="balance-label" aria-live="polite">{{ tokenBalanceLabel(inputToken) }}</span>
+      </label>
+      <button class="flip" :disabled="!!flowType" aria-label="Switch swap assets" @click="flipPair">↕</button>
+      <label class="field">
+        <span>You receive</span>
+        <div class="asset-input">
+          <input :value="quoteFresh ? formatBaseUnits(BigInt(quote.outputAmountBaseUnits), outputToken.decimals) : '—'" readonly aria-label="Estimated output" />
+          <select v-model="outputId" :disabled="!!flowType" aria-label="Output asset">
+            <option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option>
+          </select>
+        </div>
+        <span class="balance-label" aria-live="polite">{{ tokenBalanceLabel(outputToken) }}</span>
+      </label>
+      <label class="field slippage-field">
+        <span>Slippage limit</span>
+        <div class="slippage">{{ (slippageBps / 100).toFixed(2) }}%</div>
+        <input v-model.number="slippageBps" type="range" min="0" max="50" step="1" aria-label="Slippage limit in basis points" />
+      </label>
+      <button v-if="flowType === 'withdraw-sell' && primaryStatus !== 'confirmed'" class="n-btn-grad quote-button" :disabled="withdrawalDisabled" @click="withdrawFreeUsdY">
+        {{ primaryStatus === 'pending' ? 'Confirming withdrawal…' : primaryStatus === 'confirmed-amount-unknown' ? 'Verifying confirmed amount…' : 'Withdraw free USDY' }}
+      </button>
+      <button v-else class="n-btn-grad quote-button" :disabled="busy || inputId === outputId || !state.address || readiness?.quoteEnabled === false" @click="requestQuote">
+        {{ busy && !quote ? 'Getting route…' : 'Get quote' }}
+      </button>
+      <p class="helper">Quotes expire after 15 seconds. One Nysa fee of 10 bps applies per swap, regardless of route hops.</p>
+      <p v-if="flowType === 'withdraw-sell' && primaryStatus !== 'confirmed'" class="helper follow-up">
+        <template v-if="withdrawLimitStatus === 'ready'">Fresh free-withdrawal allowance: {{ formatBaseUnits(BigInt(withdrawLimitBaseUnits), tokenById['svm-usdy'].decimals) }} USDY, updated {{ new Date(withdrawLimitUpdatedAt).toLocaleString() }} at slot {{ withdrawLimitSlot }}.</template>
+        <template v-else-if="withdrawLimitStatus === 'loading'">Refreshing the free-withdrawal allowance…</template>
+        <template v-else>Fresh free-withdrawal allowance is unavailable. Withdrawals stay disabled until the market and obligation refresh succeeds.</template>
+        Locked collateral cannot be withdrawn through this flow.
+        <button v-if="withdrawLimitStatus === 'unavailable' && state.address" class="n-btn-sm ghost" @click="refreshWithdrawLimit">Refresh allowance</button>
+      </p>
+      <p v-if="flowType === 'acquire-supply'" class="helper follow-up">After a swap confirms, you may optionally supply the confirmed USDY amount. The app will not use locked collateral.</p>
+      <p v-if="flowMessage" class="helper follow-up">{{ flowMessage }}</p>
+    </section>
 
-  <section v-if="quote" class="n-panel route-panel">
-    <div class="panel-heading">
-      <h2>Route review</h2>
-      <span class="n-chip" :class="quoteFresh ? 'fresh' : 'stale'">{{ quoteFresh ? 'Quote active' : 'Quote expired' }}</span>
-    </div>
-    <div class="route-summary">
-      <div><span>Minimum received</span><b>{{ formatBaseUnits(BigInt(quote.minimumOutputBaseUnits), outputToken.decimals) }} {{ outputToken.name }}</b></div>
-      <div><span>Nysa fee · 10 bps</span><b>{{ feeAmount ?? 'Unavailable' }}</b></div>
-      <div><span>Price impact</span><b>{{ Number(quote.priceImpactPct).toFixed(3) }}%</b></div>
-      <div><span>Slippage limit</span><b>{{ (quote.slippageBps / 100).toFixed(2) }}%</b></div>
-    </div>
-    <div v-if="quote.routePlan.length" class="route-legs">
-      <div v-for="(leg, index) in quote.routePlan" :key="`${leg.label}-${index}`" class="route-leg">
-        <span>{{ leg.label }}</span><span>{{ leg.percent == null ? '—' : `${leg.percent}%` }}</span>
+    <section class="n-panel route-panel">
+      <div class="panel-heading">
+        <h2>Route review</h2>
+        <span v-if="quote" class="n-chip" :class="quoteFresh ? 'fresh' : 'stale'">{{ quoteFresh ? 'Quote active' : 'Quote expired' }}</span>
+        <span v-else class="n-chip">Awaiting quote</span>
       </div>
-    </div>
-    <p class="footnote">Provider route: {{ quote.provider }}. {{ localForkMode ? 'Surfpool-local mode checks cloned executable programs and simulated fee deltas before allowing a disposable wallet to sign.' : 'Route quote is shown for review; unverified programs and fee-account balance deltas cannot be signed.' }}</p>
-    <button v-if="!buildIntent" class="n-btn-grad quote-button" :disabled="busy || !quoteFresh || !state.address || readiness?.executionEnabled !== true" @click="buildSwapTransaction">
-      {{ busy ? 'Building and simulating…' : 'Build transaction' }}
-    </button>
-  </section>
+      <template v-if="quote">
+        <div class="route-summary">
+          <div><span>Minimum received</span><b>{{ formatBaseUnits(BigInt(quote.minimumOutputBaseUnits), outputToken.decimals) }} {{ outputToken.name }}</b></div>
+          <div><span>Nysa fee · 10 bps</span><b>{{ feeAmount ?? 'Unavailable' }}</b></div>
+          <div><span>Price impact</span><b>{{ Number(quote.priceImpactPct).toFixed(3) }}%</b></div>
+          <div><span>Slippage limit</span><b>{{ (quote.slippageBps / 100).toFixed(2) }}%</b></div>
+        </div>
+        <div v-if="quote.routePlan.length" class="route-legs">
+          <div v-for="(leg, index) in quote.routePlan" :key="`${leg.label}-${index}`" class="route-leg">
+            <span>{{ leg.label }}</span><span>{{ leg.percent == null ? '—' : `${leg.percent}%` }}</span>
+          </div>
+        </div>
+        <p class="footnote">Provider route: {{ quote.provider }}. {{ localForkMode ? 'Surfpool-local mode checks cloned executable programs and simulated fee deltas before allowing a disposable wallet to sign.' : 'Route quote is shown for review; unverified programs and fee-account balance deltas cannot be signed.' }}</p>
+        <p v-if="!quoteFresh" class="review-state" role="status">This quote expired. Get a fresh quote from the swap panel before building a transaction.</p>
+        <button v-if="!buildIntent && quoteFresh" class="n-btn-grad quote-button" :disabled="busy || !state.address || readiness?.executionEnabled !== true" @click="buildSwapTransaction">
+          {{ busy ? 'Building and simulating…' : 'Build transaction' }}
+        </button>
+      </template>
+      <p v-else-if="busy" class="review-state">{{ buildIntent ? 'Building and simulating the transaction…' : 'Getting a route quote…' }}</p>
+      <p v-else class="review-state">Enter an amount and request a quote to review route, fees, and minimum received.</p>
 
-  <section class="n-panel status-panel">
-    <div class="panel-heading"><h2>Execution readiness</h2><span class="n-chip blocked">{{ executionEnabled ? 'Ready' : 'Disabled' }}</span></div>
-    <div v-if="costDisclosure" class="cost-disclosure" aria-label="Estimated swap costs">
-      <p><span>Base network fee</span><b>{{ solCost(costDisclosure.baseNetworkFeeLamports) }}</b></p>
-      <p><span>Priority fee</span><b>{{ solCost(costDisclosure.priorityFeeLamports) }}</b></p>
-      <p><span>New token account rent (upper bound)</span><b>{{ solCost(costDisclosure.accountRentLamports) }}</b></p>
-      <p v-if="costDisclosure.accountRentEstimateKind === 'upper-bound'" class="cost-unavailable">Assumes each route setup account is new; existing token accounts may lower the rent charged.</p>
-      <p v-if="costDisclosure.status !== 'known'" class="cost-unavailable">One or more cost estimates are unavailable. Review the wallet’s final transaction cost before approval.</p>
-    </div>
-    <p v-if="executionEnabled" class="n-muted">{{ localForkMode ? 'The server simulated this exact route on local Surfpool and verified its fee delta. Review the route before signing with a disposable wallet.' : 'The server simulated this exact route and authorized its transaction message. Confirm the route details above before signing.' }}</p>
-    <ul v-else-if="unavailableReasons.length" class="reason-list">
-      <li v-for="(reason, index) in unavailableReasons" :key="`${reason.code}-${index}`">{{ reason.message }}</li>
-    </ul>
-    <p v-else class="n-muted">Swap execution is disabled until route, fee, and wallet checks pass.</p>
-    <button v-if="buildIntent" class="n-btn-grad" :disabled="!executionEnabled || signing || !!state.swapPending" :title="executionEnabled ? 'Sign the reviewed route' : 'Swap execution is not approved'" @click="signSwap">
-      {{ signing ? 'Waiting for wallet…' : 'Sign swap' }}
-    </button>
-    <button v-else class="n-btn-grad" disabled title="Build and simulate an approved route first">Sign swap</button>
-  </section>
+      <div class="execution-review">
+        <div class="panel-heading"><h3>Execution readiness</h3><span class="n-chip" :class="executionEnabled ? 'ready' : 'blocked'">{{ executionEnabled ? 'Ready' : 'Not ready' }}</span></div>
+        <div v-if="costDisclosure" class="cost-disclosure" aria-label="Estimated swap costs">
+          <p><span>Base network fee</span><b>{{ solCost(costDisclosure.baseNetworkFeeLamports) }}</b></p>
+          <p><span>Priority fee</span><b>{{ solCost(costDisclosure.priorityFeeLamports) }}</b></p>
+          <p><span>New token account rent (upper bound)</span><b>{{ solCost(costDisclosure.accountRentLamports) }}</b></p>
+          <p v-if="costDisclosure.accountRentEstimateKind === 'upper-bound'" class="cost-unavailable">Assumes each route setup account is new; existing token accounts may lower the rent charged.</p>
+          <p v-if="costDisclosure.status !== 'known'" class="cost-unavailable">One or more cost estimates are unavailable. Review the wallet’s final transaction cost before approval.</p>
+        </div>
+        <p v-if="executionEnabled" class="n-muted">{{ localForkMode ? 'The server simulated this exact route on local Surfpool and verified its fee delta. Review the route before signing with a disposable wallet.' : 'The server simulated this exact route and authorized its transaction message. Confirm the route details above before signing.' }}</p>
+        <ul v-else-if="unavailableReasons.length" class="reason-list">
+          <li v-for="(reason, index) in unavailableReasons" :key="`${reason.code}-${index}`">{{ reason.message }}</li>
+        </ul>
+        <p v-else class="n-muted">Swap execution is disabled until route, fee, and wallet checks pass.</p>
+        <button v-if="buildIntent && quoteFresh && quote?.executable" class="n-btn-grad sign-button" :disabled="!executionEnabled || signing || !!state.swapPending" :title="executionEnabled ? 'Sign the reviewed route' : 'Swap execution is not approved'" @click="signSwap">
+          {{ signing ? 'Waiting for wallet…' : 'Sign swap' }}
+        </button>
+      </div>
+    </section>
+  </div>
 
   <section v-if="followUpFlow?.status === 'offer-next' && flowType === 'acquire-supply'" class="n-panel status-panel">
     <h2>Swap confirmed</h2>
@@ -627,38 +646,48 @@ onUnmounted(() => { clearInterval(clockTimer); quoteRequests.invalidate() })
 </template>
 
 <style scoped>
-.swap-panel { display: grid; grid-template-columns: 1fr 42px 1fr; gap: 14px; align-items: end; }
+.swap-workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: stretch; gap: 20px; }
+.swap-panel { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+.swap-panel .panel-heading { margin: 0; }
+.swap-panel .panel-heading h2 { margin: 0; font-size: 17px; }
 .field { display: grid; gap: 8px; color: var(--n-text-2); font-size: 13px; }
-.asset-input { display: flex; align-items: center; gap: 10px; border: 1px solid var(--n-border); border-radius: 12px; background: var(--n-bg-2); padding: 0 10px 0 14px; }
+.asset-input { display: flex; align-items: center; gap: 10px; border: 1px solid var(--n-line); border-radius: 12px; background: var(--n-bg-2); padding: 0 10px 0 14px; }
+.asset-input:focus-within { border-color: var(--n-pink); box-shadow: 0 0 0 2px #ec008c33; }
 .asset-input input { min-width: 0; width: 100%; padding: 14px 0; border: 0; outline: 0; color: var(--n-text); background: transparent; font: inherit; font-size: 18px; font-variant-numeric: tabular-nums; }
 .asset-input select { border: 0; color: var(--n-text); background: var(--n-bg-2); font: inherit; font-weight: 600; padding: 10px 6px; }
-.flip { height: 42px; border: 1px solid var(--n-border); border-radius: 50%; color: var(--n-text-2); background: var(--n-bg-2); font-size: 20px; cursor: pointer; }
-.slippage-field { grid-column: 1 / 3; grid-template-columns: 1fr auto; align-items: center; }
+.balance-label { color: var(--n-text-3); font-size: 12px; }
+.flip { height: 42px; border: 1px solid var(--n-line); border-radius: 50%; color: var(--n-text-2); background: var(--n-bg-2); font-size: 20px; cursor: pointer; }
+.flip:focus-visible { outline: 2px solid var(--n-pink); outline-offset: 2px; }
+.slippage-field { grid-template-columns: 1fr auto; align-items: center; }
 .slippage-field > span { grid-column: 1; }
-.slippage-field > input { grid-column: 1 / 3; width: 100%; accent-color: var(--n-pink); }
+.slippage-field > input { grid-column: 1 / -1; width: 100%; accent-color: var(--n-pink); }
 .slippage { color: var(--n-text); font-variant-numeric: tabular-nums; }
 .quote-button { min-height: 44px; }
 .helper,.footnote { margin: 0; color: var(--n-text-3); font-size: 12px; line-height: 1.6; }
-.helper { grid-column: 1 / -1; }
-.route-panel,.status-panel { margin-top: 20px; }
+.page-alert { margin-bottom: 14px; }
+.route-panel { margin-top: 0; }
+.status-panel { margin-top: 20px; }
+.execution-review { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--n-line); }
+.execution-review .panel-heading h3 { margin: 0; font-size: 15px; }
+.review-state { min-height: 72px; margin: 0; display: flex; align-items: center; color: var(--n-text-3); font-size: 13px; line-height: 1.55; }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
 .panel-heading h2 { margin: 0; font-size: 17px; }
 .n-chip.fresh { color: var(--n-green); }
-.n-chip.stale,.n-chip.blocked { color: var(--n-yellow); }
+.n-chip.stale,.n-chip.blocked { color: var(--n-amber); }
 .route-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
 .route-summary > div { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--n-text-3); }
 .route-summary b { color: var(--n-text); text-align: right; font-variant-numeric: tabular-nums; }
-.route-legs { display: grid; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--n-border); }
+.route-legs { display: grid; gap: 8px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--n-line); }
 .route-leg { display: flex; justify-content: space-between; color: var(--n-text-2); font-size: 13px; }
 .footnote { margin-top: 16px; }
 .reason-list { display: grid; gap: 8px; margin: 0 0 18px; padding-left: 18px; color: var(--n-text-2); font-size: 13px; line-height: 1.5; }
-.cost-disclosure { display: grid; gap: 7px; margin: 0 0 16px; padding: 12px; border: 1px solid var(--n-border); border-radius: 10px; color: var(--n-text-3); font-size: 12px; }
+.cost-disclosure { display: grid; gap: 7px; margin: 0 0 16px; padding: 12px; border: 1px solid var(--n-line); border-radius: 10px; color: var(--n-text-3); font-size: 12px; }
 .cost-disclosure p { display: flex; justify-content: space-between; gap: 12px; margin: 0; }
 .cost-disclosure b { color: var(--n-text); font-variant-numeric: tabular-nums; }
 .cost-disclosure .cost-unavailable { display: block; line-height: 1.5; }
-.status-panel > .n-btn-grad { min-width: 160px; }
+@media (max-width: 860px) { .swap-workspace { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 620px) {
-  .swap-panel { grid-template-columns: 1fr 38px 1fr; gap: 10px; }
+  .swap-panel { gap: 14px; }
   .asset-input { padding-left: 10px; gap: 4px; }
   .asset-input input { font-size: 16px; }
   .asset-input select { max-width: 88px; font-size: 12px; }

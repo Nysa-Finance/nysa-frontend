@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange, pieSlices, arcPath } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange, pieSlices, arcPath, num, underLimit } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -27,13 +27,18 @@ const b = parsePoints('address,cumulative_points,last_supplied_usd,last_snapshot
 assert.deepEqual(b.rows.map((r) => [r.address, r.rank]), [['A', 1], ['B', 2]])
 assert.equal(b.updatedTs, 200)
 
-// Farm Points: $1000 held for 1.5 days → 1500 points; balance now 200; newcomer C starts at 0.
+// Farm Points accrue on the lower balance of the interval: A held $1000 for 1.5 days → 1500 points; B went from 1000 to
+// 200 (only 200 stayed the whole time) → 300; the sniper S was in at the last snapshot and is out now → 0; D added
+// $500 since (it counts from the next snapshot) → 1500; newcomer C starts at 0.
 const day = 86400
-const snap = snapshotPoints([{ address: 'A', points: 10, supplied: 1000, ts: 0 }], new Map([['A', 200], ['C', 50]]), 1.5 * day)
-assert.deepEqual(snap.find((r) => r.address === 'A'), { address: 'A', points: 1510, supplied: 200, ts: 1.5 * day })
+const prev = [['A', 1000], ['B', 1000], ['S', 10_000], ['D', 1000]].map(([address, supplied]) => ({ address, points: 10, supplied, ts: 0 }))
+const snap = snapshotPoints(prev, new Map([['A', 1000], ['B', 200], ['D', 1500], ['C', 50]]), 1.5 * day)
+const ptsOf = (a) => snap.find((r) => r.address === a).points
+assert.deepEqual([ptsOf('A'), ptsOf('B'), ptsOf('S'), ptsOf('D')], [1510, 310, 10, 1510])
+assert.deepEqual(snap.find((r) => r.address === 'S'), { address: 'S', points: 10, supplied: 0, ts: 1.5 * day })
 assert.deepEqual(snap.find((r) => r.address === 'C'), { address: 'C', points: 0, supplied: 50, ts: 1.5 * day })
 // Round-trips through the CSV the leaderboard reads.
-assert.deepEqual(parsePoints(pointsCsv(snap)).rows.map((r) => [r.address, r.points]), [['A', 1510], ['C', 0]])
+assert.deepEqual(parsePoints(pointsCsv(snap)).rows.map((r) => [r.address, r.points]), [['A', 1510], ['D', 1510], ['B', 310], ['S', 10], ['C', 0]])
 
 assert.equal(hfText(Infinity), '∞')
 assert.equal(hfText(1.234), '1.23')
@@ -102,4 +107,12 @@ assert.equal((arcPath(50, 50, 40, 25, 0, 2 * Math.PI).match(/M/g) ?? []).length,
 // 99.99998% (all invested but a few micro-USDC): drawn as a full circle, not as an arc whose ends coincide.
 const nearFull = pieSlices([4.5546, 0.000001])[0]
 assert.equal((arcPath(50, 50, 40, 25, nearFull.start, nearFull.end).match(/M/g) ?? []).length, 2)
+// Typed amounts: comma or dot as the decimal separator; anything ambiguous or invalid is 0 (no amount).
+assert.equal(num('586,985732'), 586.985732)
+assert.equal(num(' 0.5 '), 0.5)
+for (const bad of ['1.000,5', '1,000.5', 'abc', '-3', '', null]) assert.equal(num(bad), 0, String(bad))
+// Offered maxima stay LIMIT_MARGIN (0.1%) under Kamino's limit, floored to the token's decimals.
+assert.equal(underLimit(0.836779, 6), 0.835942)
+assert.equal(underLimit(1000, 6), 999)
+assert.equal(underLimit(0, 6), 0)
 console.log('logic ok')

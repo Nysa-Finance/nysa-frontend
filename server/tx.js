@@ -3,7 +3,7 @@
 // holds keys. First-time setup (Kamino user accounts) or oversized transactions come back in two steps: the client
 // sends the setup transaction, waits for it, then asks again and gets the action itself (`final: true`).
 import Decimal from 'decimal.js'
-import { KaminoAction, KaminoVault, U64_MAX, obligationFarmStatePda, buildComputeBudgetIx } from '@kamino-finance/klend-sdk'
+import { KaminoAction, KaminoVault, U64_MAX, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
@@ -11,17 +11,19 @@ import {
   getBase64EncodedWireTransaction, getTransactionDecoder, fetchEncodedAccounts,
 } from '@solana/kit'
 import { createRequire } from 'node:module'
-import { marketById, vaultById, tokensOf, tok } from '../src/config.js'
-import { rpc } from './rpc.js'
-import { getLive, getVault, reserveOf, farms, refreshSoon, refreshMarketForExecution, NONE } from './market.js'
+import { LIVE, marketById, vaultById, tokensOf, tok } from '../src/config.js'
+import { floorTo } from '../src/logic.js'
+import { rpc, NONE } from './rpc.js'
+import { getLive, getVault, reserveOf, farms, refreshSoon, refreshMarketForExecution } from './market.js'
 import { vaultClient } from './vault.js'
-import { obligationType, pendingRewards, ataOf, vaultShares, maxWithdrawFromObligation } from './account.js'
+import { obligationType, pendingRewards, ataOf, vaultShares, maxWithdrawFromObligation, maxOf } from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
 import { confirmedTokenDeltas } from './token-deltas.js'
 import { assertRawWithdrawalWithinAllowance, requestedTokenBaseUnits, requestedWithdrawalBaseUnits } from './withdrawal.js'
 import { relaySignedTransaction } from './send-safety.js'
 
 const require = createRequire(import.meta.url)
+const klendErrors = require('@kamino-finance/klend-sdk/dist/@codegen/klend/errors/custom.js')
 const { decodeUserState } = require('@kamino-finance/farms-sdk')
 
 const MAX_TX_BYTES = 1232
@@ -53,13 +55,41 @@ async function fetchLuts(luts) {
   return out
 }
 
-async function compile(owner, ixs, luts) {
-  const { context, value: blockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send()
+// ---- compute budget: ours, sized from the simulation, so wallets don't replace it ----
+// A transaction without a priority fee gets the wallet's own budget: some set the compute limit to exactly what their
+// simulation used (e.g. 135,664 for 135,643), and a borrow that needs a little more at execution fails with
+// "exceeded CUs meter". Every transaction we build carries a limit with a margin and a priority fee instead.
+const COMPUTE_BUDGET = 'ComputeBudget111111111111111111111111111111'
+const MAX_CU = 1_400_000 // Solana's per-transaction maximum: the first simulation never runs out
+const cuWithMargin = (used) => Math.min(MAX_CU, Math.ceil(used * 1.3) + 20_000)
+const budgetIx = (data) => ({ programAddress: address(COMPUTE_BUDGET), accounts: [], data })
+function cuLimitIx(units) { const d = new Uint8Array(5); d[0] = 2; new DataView(d.buffer).setUint32(1, units, true); return budgetIx(d) }
+function cuPriceIx(microLamports) { const d = new Uint8Array(9); d[0] = 3; new DataView(d.buffer).setBigUint64(1, BigInt(microLamports), true); return budgetIx(d) }
+
+// Priority fee in micro-lamports per compute unit: the 75th percentile of what recent transactions writing our reserves
+// paid, within [PRIORITY_MIN, PRIORITY_MAX]. Cached 30 s. (300k CU at 10,000 = 3,000 lamports, 0.000003 SOL.)
+const PRIORITY_MIN = 10_000, PRIORITY_MAX = 1_000_000
+let fee = { at: 0, value: PRIORITY_MIN }
+async function priorityFee() {
+  if (Date.now() - fee.at < 30_000) return fee.value
+  try {
+    const recent = await rpc.getRecentPrioritizationFees(LIVE.flatMap((m) => tokensOf(m).map((t) => address(t.reserve)))).send()
+    const paid = recent.map((f) => Number(f.prioritizationFee)).filter((f) => f > 0).sort((a, b) => a - b)
+    fee = { at: Date.now(), value: Math.min(PRIORITY_MAX, Math.max(PRIORITY_MIN, paid[Math.floor(paid.length * 0.75)] ?? 0)) }
+  } catch (e) { console.warn('[tx] priority fee', e?.message); fee = { at: Date.now(), value: fee.value } }
+  return fee.value
+}
+
+// Any compute-budget instruction in `ixs` (klend-sdk adds one) is replaced by ours: `units` limit + priority fee.
+// The result can be rebuilt with another limit (`withLimit`), which simulated() does once it knows the real usage.
+async function compile(owner, ixs, luts, units = MAX_CU) {
+  const body = ixs.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET)
+  const [{ context, value: blockhash }, price] = await Promise.all([rpc.getLatestBlockhash({ commitment: 'confirmed' }).send(), priorityFee()])
   const msg = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayer(owner, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstructions(ixs, m),
+    (m) => appendTransactionMessageInstructions([cuLimitIx(units), cuPriceIx(price), ...body], m),
     (m) => (Object.keys(luts).length ? compressTransactionMessageUsingAddressLookupTables(m, luts) : m),
   )
   const tx = compileTransaction(msg)
@@ -69,6 +99,7 @@ async function compile(owner, ixs, luts) {
     tx: getBase64EncodedWireTransaction(tx),
     messageBytes: getTransactionDecoder().decode(encoded).messageBytes,
     minContextSlot: Number(context.slot),
+    withLimit: (u) => compile(owner, ixs, luts, u),
   }
 }
 
@@ -121,14 +152,37 @@ const LIQ_SLIPPAGE = 0.01 // the built liquidation must pay out at least 99% of 
 
 // Simulate before handing it to the wallet, so a failing transaction surfaces as a readable error instead of a
 // wallet warning (and is never sent).
+// Then the compute limit is set from what the simulation used, with a margin.
 async function simulated(compiled) {
   if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
   const { value } = await rpc.simulateTransaction(compiled.tx, { encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true }).send()
-  if (value.err) simulationError(value.logs ?? [])
-  return compiled
+  if (value.err) simulationError(value.logs ?? [], value.err)
+  const used = Number(value.unitsConsumed ?? 0)
+  const { withLimit, ...tuned } = used > 0 ? await compiled.withLimit(cuWithMargin(used)) : compiled
+  return tuned
 }
-function simulationError(logs) {
+// The wallet pays network fees and new accounts' rent in SOL, even for a USDC action: without SOL the simulation fails
+// before any program runs (no log to show), or when creating the first token account ("insufficient lamports").
+const NO_SOL = 'This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.'
+const NO_SOL_ERRORS = ['AccountNotFound', 'InsufficientFundsForFee', 'InsufficientFundsForRent']
+// Kamino lending errors users hit, in plain words; any other klend error shows its SDK message.
+const KLEND_ERRORS = {
+  6008: 'There isn\'t enough liquidity in this market for that amount right now.',
+  6011: 'That\'s more than you can withdraw right now: your loan needs this collateral. Try a smaller amount.',
+  6013: 'That\'s above your borrow limit right now (prices and interest move every block). Try a slightly smaller amount.',
+  6093: 'That would bring your loan closer to liquidation than Kamino allows. Try a smaller amount.',
+  6119: 'That would make your loan liquidatable. Try a smaller amount.',
+}
+function simulationError(logs, err) {
+  const code = typeof err === 'string' ? err : Object.keys(err ?? {})[0]
+  if (NO_SOL_ERRORS.includes(code) || logs.some((l) => /insufficient lamports/i.test(l))) throw new UserError(NO_SOL)
   if (logs.some((l) => /ObligationHealthy|healthy and cannot be liquidated/i.test(l))) throw new UserError('This loan is healthy again (or was just liquidated), so it can\'t be liquidated right now.')
+  const failed = [...logs].reverse().find((l) => / failed: custom program error: 0x/.test(l))
+  if (failed?.startsWith(`Program ${PROGRAM_ID} `)) {
+    const n = parseInt(failed.split('0x')[1], 16)
+    const msg = KLEND_ERRORS[n] ?? klendErrors.fromCode(n)?.msg
+    if (msg) throw new UserError(msg)
+  }
   const hint = [...logs].reverse().find((l) => /Error Message|failed|insufficient/i.test(l))
   throw new UserError(`Simulation failed${hint ? ': ' + hint.replace(/^Program log: /, '') : ''}`)
 }
@@ -140,7 +194,7 @@ async function simulatedBalances(compiled, accounts) {
     encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true,
     accounts: { addresses: accounts, encoding: 'base64' },
   }).send()
-  if (value.err) simulationError(value.logs ?? [])
+  if (value.err) simulationError(value.logs ?? [], value.err)
   return value.accounts.map((a) => (a ? Buffer.from(a.data[0], 'base64').readBigUInt64LE(64) : 0n))
 }
 
@@ -152,6 +206,13 @@ async function lending(kind, owner, m, t, amount, all, amountBaseUnits) {
   const reserve = reserveOf(market, t)
   const ob = await market.getObligationByWallet(owner, obligationType())
   if (kind !== 'deposit' && !ob) throw new UserError('No Kamino position found for this wallet in this market')
+  if (!all && kind === 'borrow') {
+    const max = maxOf('borrow', ob, market, reserve, now)
+    if (max != null && amount > max) {
+      const fits = `${floorTo(max, t.decimals)} ${t.name}`
+      throw new UserError(`That's above your borrow limit: you can borrow up to ${fits} right now.`)
+    }
+  }
   let base
   if (kind === 'withdraw') {
     const suppliedScaled = String(ob.getDepositByReserve(reserve.address)?.amount ?? '0')
@@ -223,7 +284,7 @@ export async function liquidationInfo(m, borrower) {
   const ob = await market.getObligationByWallet(address(borrower), obligationType())
   return liquidationLimits(market, ob, reserveOf(market, debt), debt, coll)
 }
-export function liquidationLimits(market, ob, repay, debt, coll) {
+function liquidationLimits(market, ob, repay, debt, coll) {
   const pos = ob?.getBorrowByReserve(repay.address)
   if (!pos || pos.amount.lte(0)) throw new UserError('This wallet has no open loan in this market')
   const s = ob.refreshedStats, ms = market.state
@@ -282,7 +343,6 @@ export async function buildTx(req) {
 
 // ---- Earn vaults (kVaults): deposit the vault's token for shares, withdraw by redeeming shares ----
 const VAULT_SLIPPAGE = 0.005 // a deposit must mint at least 99.5% of the shares the current share value gives
-const VAULT_CU = 600_000 // deposit + invest refreshes every allocated reserve: more than the 200k default
 
 async function vaultAction(kind, owner, v, amount, all) {
   const live = getVault(v.id)
@@ -294,7 +354,7 @@ async function vaultAction(kind, owner, v, amount, all) {
     // As the program prices it: share value including vested rewards, minus the crank funds taken from the deposit.
     const minShares = vaultClient.estimateSharesFromTokens(state, new Decimal(amount), now, reserves, VAULT_SLIPPAGE * 10_000).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
     const d = await vaultClient.depositIxs(signer, kv, new Decimal(amount), reserves, null, null, undefined, undefined, minShares)
-    const deposit = [buildComputeBudgetIx(VAULT_CU), ...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
+    const deposit = [...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
     // Then invest what the vault holds into its reserves, so deposits earn right away: Kamino's crank does this for
     // vaults listed in its UI; until then this is the fallback. `invest` lets the program size each reserve's amount
     // on-chain, after the deposit (investAllReservesIxs sizes it from the state before, and fails). The SDK only emits
@@ -324,7 +384,7 @@ async function vaultAction(kind, owner, v, amount, all) {
   if (held.lte(0)) throw new UserError('You have no shares in this vault')
   const wanted = all ? held : Decimal.min(held, new Decimal(amount).div(perShare.toString()).toDecimalPlaces(shareDp, Decimal.ROUND_UP))
   const w = await vaultClient.withdrawIxs(signer, kv, wanted, now, reserves, staked > 0 ? farm?.state ?? null : null, null)
-  return { ...(await simulated(await compile(owner, [buildComputeBudgetIx(VAULT_CU), ...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs], luts))), final: true }
+  return { ...(await simulated(await compile(owner, [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs], luts))), final: true }
 }
 
 async function build({ kind, wallet, market: marketId, token: tokenId, amount, amountBaseUnits, all, borrower, preview, vault: vaultId }) {

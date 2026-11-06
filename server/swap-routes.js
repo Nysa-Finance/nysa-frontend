@@ -8,6 +8,7 @@ const U64_MAX = (1n << 64n) - 1n
 export class SwapRouteError extends Error {}
 
 const positiveBaseUnits = (value) => typeof value === 'string' && /^\d+$/.test(value) && BigInt(value) > 0n && BigInt(value) <= U64_MAX
+const marketIsActive = (market) => !!market && market.visible !== false && LIVE.some((candidate) => candidate.id === market.id)
 
 export function parseSwapQuoteRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new SwapRouteError('Invalid swap quote request.')
@@ -31,13 +32,14 @@ export function parseSwapQuoteRequest(body) {
 
 export function swapPairAvailability({ market, vaults = {}, snapshotUpdatedAt = 0, inputMint, outputMint, now = Date.now() } = {}) {
   const reasons = []
-  if (!market || !market.visible) reasons.push({ code: 'market-inactive', message: 'The Nysa market is not active.' })
+  const active = marketIsActive(market)
+  if (!active) reasons.push({ code: 'market-inactive', message: 'The Nysa market is not active.' })
   const pair = market?.pairs?.find(({ collateral, liability }) => {
     const mints = [TOKENS[collateral]?.mint, TOKENS[liability]?.mint]
     return mints.includes(inputMint) && mints.includes(outputMint) && inputMint !== outputMint
   })
   if (!pair) reasons.push({ code: 'pair-not-allowlisted', message: 'The selected mint pair is not enabled by an active Nysa market.' })
-  if (pair && market?.visible) {
+  if (pair && active) {
     const collateral = TOKENS[pair.collateral]
     const liability = TOKENS[pair.liability]
     const allocated = Object.values(vaults ?? {}).some((vault) => (vault?.allocations ?? []).some((allocation) =>

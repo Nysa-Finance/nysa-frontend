@@ -1,7 +1,7 @@
-// Snapshot every 12 hours (00:00 and 12:00 UTC, scheduled by server/main.js), from one fresh read of the Nysa Kamino market(s) and vaults:
+// Snapshot every hour, at a random minute (scheduled by server/main.js), from one fresh read of the Nysa Kamino market(s) and vaults:
 // 1. Farm Points: accrue supplied USD × days per wallet ("supplied" = USDC lent + USDY collateral + Earn vault shares).
-// 2. History for Realized APY: value of one deposit share, per reserve (liquidity per cToken) and per vault (tokens
-//    per share), with APYs and utilization.
+// 2. History for Realized APY, at the first snapshot of each 12-hour UTC block (00:00–12:00, 12:00–24:00): value of one
+//    deposit share, per reserve (liquidity per cToken) and per vault (tokens per share), with APYs and utilization.
 // Run once by hand: `docker compose exec app node server/snapshot.js`.
 import { pathToFileURL } from 'node:url'
 import { getCurrentLedgerInstant } from '@kamino-finance/klend-sdk'
@@ -15,6 +15,8 @@ import { vaultShares } from './account.js'
 import { refreshIndex } from './updates.js'
 import { indexedPositionSummary } from './positions.js'
 import { read, write, POINTS, HISTORY } from './storage.js'
+
+const HALF_DAY = 12 * 3600
 
 // Unix time of an account's first transaction (a reserve's creation). Only needed once per reserve.
 async function firstTxTime(addr) {
@@ -43,6 +45,7 @@ export async function readMarkets(history, {
   const index = await indexReader()
   const now = await ledgerReader()
   const ts = Number(now.blockTime)
+  const due = (h) => !h.points.length || Math.floor(ts / HALF_DAY) > Math.floor(h.points.at(-1).ts / HALF_DAY)
   const markets = new Map()
   for (const m of configuredMarkets) {
     const market = await marketLoader(m)
@@ -60,6 +63,7 @@ export async function readMarkets(history, {
       const r = market.getReserveByAddress(address(t.reserve))
       if (!r) continue
       const h = (history.tokens[t.token_id] ??= { inception: null, points: [] })
+      if (!due(h)) continue
       h.inception ??= await firstTxTimeReader(r.address) // share value starts at exactly 1 when a reserve is created
       h.points.push({
         ts,
@@ -70,17 +74,17 @@ export async function readMarkets(history, {
       })
     }
   }
-  for (const v of configuredVaults) await vaultDayReader(v, markets, now, ts, index, history, balances)
+  for (const v of configuredVaults) await vaultDayReader(v, markets, now, ts, index, history, balances, due)
   return balances
 }
 
 // A vault's share value for Realized APY (exactly 1 when the vault was created), and its depositors' shares in USD
 // (in the wallet and staked in the vault farm) added to their Farm Points balance. Depositors come from the
 // transaction index.
-async function readVaultDay(v, markets, now, ts, index, history, balances) {
+async function readVaultDay(v, markets, now, ts, index, history, balances, due) {
   const { live, view } = await readVault(v, markets, now, {})
   const h = ((history.vaults ??= {})[v.id] ??= { inception: Number(live.state.creationTimestamp), points: [] })
-  h.points.push({ ts, rate: Number(live.perShare.toString()), supplyApy: view.apy })
+  if (due(h)) h.points.push({ ts, rate: Number(live.perShare.toString()), supplyApy: view.apy })
   const token = Object.values(TOKENS).find((t) => t.mint === String(live.state.tokenMint))
   const reserve = token && markets.get(LIVE.find((m) => tokensOf(m).includes(token))?.kaminoMarket)?.getReserveByAddress(address(token.reserve))
   const price = reserve ? reserve.getOracleMarketPrice().toNumber() : 1

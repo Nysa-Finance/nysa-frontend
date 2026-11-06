@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test:e2e": "node e2e/fork.test.js",
     "test": "node src/logic.test.js && node src/wallets.test.js && node src/swap-fees.test.js && node src/swap-flow.test.js && node src/swap-flow-state.test.js && node src/swap-recovery.test.js && node src/swap-quote-request.test.js && node src/pending-reconciliation.test.js && node src/wallet-handoff.test.js && node src/store-action-lock-required.test.js && node src/store-feature-action-lock.test.js && node src/store-loop-action.test.js && node src/store-deeplink-recovery.test.js && node src/store-lending-intent.test.js && node src/store-swap-reconciliation.test.js && node src/store-lending-capability.test.js && node src/store-action-reservation.test.js && node src/store-action-preparing-recovery.test.js && node src/loop-preview-request.test.js && node src/loop-policy.test.js && node scripts/simulate-swap-fees.test.js && node scripts/verify-loop-fork.test.js && node server/strategy.test.js && node server/program-policy.test.js && node server/swap.test.js && node server/swap-routes.test.js && node server/tx-intent.test.js && node server/lending-intents.test.js && node server/tx-status.test.js && node server/send-safety.test.js && node server/swap-execution.test.js && node server/orca-route-validation.test.js && node server/swap-costs.test.js && node server/account.test.js && node server/positions.test.js && node server/loop-execution.test.js && node server/loop-preview-validation.test.js && node server/loop-consumers.test.js && node server/token-deltas.test.js && node server/withdrawal.test.js && node server/loop.test.js && node server/request-signal.test.js && node server/updates.test.js && node server/screening.test.js && node server/relay.test.js && node server/refresh.test.js && node vendor/bigint-buffer/test.js",
     "server": "node --env-file-if-exists=.env server/main.js",
     "simulate:swap-fees": "node scripts/simulate-swap-fees.js",
@@ -21,12 +22,14 @@
     "@kamino-finance/klend-sdk": "^12.0.0",
     "@orca-so/whirlpools-client": "5.0.0",
     "@plausible-analytics/tracker": "^0.4.6",
+    "@reown/appkit": "1.8.24",
     "@solana-mobile/wallet-standard-mobile": "^0.6.0",
     "@solana-program/address-lookup-table": "^0.7.0",
     "@solana-program/token": "^0.5.1",
     "@solana-program/token-2022": "^0.4.2",
     "@solana/kit": "^2.3.0",
     "@wallet-standard/app": "^1.1.1",
+    "@walletconnect/universal-provider": "2.23.7",
     "decimal.js": "^10.6.0",
     "tweetnacl": "^1.0.3",
     "vue": "^3.5.0",
@@ -38,10 +41,11 @@
   },
   "overrides": {
     "uuid": "^11.1.1",
-    "toml": "^4.3.0",
+    "toml": "^5.0.1",
     "jayson": "^5.0.0",
     "bigint-buffer": "file:./vendor/bigint-buffer",
     "react-native": "file:./vendor/no-react-native",
-    "@react-native-async-storage/async-storage": "file:./vendor/no-async-storage"
+    "@react-native-async-storage/async-storage": "file:./vendor/no-async-storage",
+    "zod": "^4.6.7"
   }
 }

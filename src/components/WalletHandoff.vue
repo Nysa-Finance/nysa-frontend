@@ -57,6 +57,8 @@ async function checkLocalExpiry() {
       <div class="ho-actions">
         <a class="ho-link" :href="txUrl(pendingAction.signature)" target="_blank" rel="noopener noreferrer">View transaction ↗</a>
         <button v-if="pendingAction.canCheckLocalExpiry" class="ho-link" :disabled="checkingLocalExpiry" @click="checkLocalExpiry">{{ checkingLocalExpiry ? 'Checking Surfpool…' : 'Check dropped local transaction' }}</button>
+        <button class="ho-link" @click="dismissHandoff">Dismiss</button>
+        <button class="ho-link" @click="dismissHandoff">Dismiss</button>
       </div>
     </div>
     <div v-if="state.lendingSetupRecovery" class="ho error" role="status">
