@@ -115,11 +115,12 @@ export async function exportLoopForkReport({ env = process.env, output = DEFAULT
       collateral: 'USDY',
       debt: 'USDC',
       open: [
-        'Fetch a fresh server-side quote and verify the selected router route and fee account.',
-        'Swap the funding amount from USDC into USDY through the router; deduct the configured 10 bps fee from route output and credit the USDY treasury ATA.',
-        'Compose the router acquisition with Kamino Multiply instructions: flash borrow, deposit collateral, borrow debt, and flash repay in one atomic transaction.',
+        'Use USDY from the wallet as the opening collateral funding amount.',
+        'Build one fee-bearing USDC-to-USDY route for the borrowed leverage amount, then compose it with one atomic Kamino Multiply pass: flash borrow, deposit collateral, borrow debt, and flash repay.',
+        'The USDY-funded open does not include a separate initial USDC-to-USDY acquisition swap; the target leverage is not a repeated loop count.',
         'If any instruction fails, Solana rolls back the full transaction, including token and fee-account changes.',
       ],
+      historicalRunNote: 'The pasted transaction signatures and balances below are historical local-fork evidence; confirm their inputs before treating them as proof of the current USDY-funded open path.',
       close: [
         'Build a fresh full-close quote from the current position.',
         'Compose Kamino flash liquidity, collateral withdrawal, router USDY-to-USDC sale, debt repayment, and flash repay in one atomic transaction.',

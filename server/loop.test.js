@@ -118,7 +118,7 @@ const appPreview = {
   exposure: { collateralPriceUsd: '1.09', liabilityPriceUsd: '1' }, limits: { projectedLtvPct: 80, maxLeverage: 1.5 },
   applicationContext: {
     wallet, fundingAmount: '100', fundingBaseUnits: '100000000', leverage: 1.5,
-    acquisitionQuote: appRoute, leverageQuote: { ...appRoute, inputAmountBaseUnits: '50000000' },
+    leverageQuote: { ...appRoute, inputAmountBaseUnits: '50000000' },
     callbacks: { beginComposition() { appOpenBegan = true }, sealQuotes() { appOpenSealed = true } },
   },
 }
@@ -127,14 +127,13 @@ let appOpenSdkInputs, appCloseSdkInputs
 const finalOpenApplication = await loop.buildLoopOpenApplication({
   wallet, amount: '100', leverage: 1.5, preview: appPreview, flashBorrowType: 'debt',
   refreshMarket: async () => {}, contextReader: appContext,
-  applicationBuilder: async ({ sdkInputs, acquisitionQuote, callbacks }) => {
+  applicationBuilder: async ({ sdkInputs, callbacks }) => {
     appOpenSdkInputs = sdkInputs
-    assert.equal(acquisitionQuote, appRoute)
     assert.equal(callbacks, appPreview.applicationContext.callbacks)
     return {
       atomic: true, instructions: [appInstruction], lookupTables: [], feeEvents: [], simulationAccounts: [],
       quotePlan: {
-        acquisitionQuote: appRoute, leverageQuote: appPreview.applicationContext.leverageQuote,
+        acquisitionQuote: null, leverageQuote: appPreview.applicationContext.leverageQuote,
         leverageSwapInputBaseUnits: appPreview.sdk.leverageSwapInputBaseUnits,
         leverageSwapMinimumOutputBaseUnits: appPreview.sdk.leverageSwapMinimumOutputBaseUnits,
         flashBorrowFee: appPreview.sdk.flashBorrowFee, collateralToDeposit: appPreview.sdk.collateralToDeposit,
@@ -388,25 +387,24 @@ const routeFixture = (inputMint, outputMint, feeAccount) => ({
   programIds: [wallet, usdy], instructions: [instruction], addressesByLookupTableAddress: {},
 })
 const routeLookupTable = 'SysvarC1ock11111111111111111111111111111111'
-const initialApplicationRoute = {
+const leverageApplicationRoute = {
   ...routeFixture(usdc, usdy, 'TreasuryUSDY111111111111111111111111111111'),
   addressesByLookupTableAddress: { [routeLookupTable]: [wallet] },
 }
 const openApplication = await loop.buildAtomicMultiplyOpenApplication({
   wallet,
-  acquisitionQuote: initialApplicationRoute,
   sdkInputs: { ...openInput, owner: 'owner' },
   callbacks: compositionCallbacks,
   validateRoute: async () => {},
-  builder: async () => [{ ixs: [instruction], lookupTables: [], quote: { ...initialApplicationRoute, inputAmountBaseUnits: '50000000' } }],
+  builder: async () => [{ ixs: [instruction], lookupTables: [], quote: { ...leverageApplicationRoute, inputAmountBaseUnits: '50000000' } }],
 })
 assert.equal(openApplication.atomic, true)
-assert.equal(openApplication.quotePlan.acquisitionQuote.executable, false,
-  'direct application composition accepts a validator-approved candidate without claiming final economic execution')
-assert.equal(openApplication.quotePlan.acquisitionQuote.compositionValidated, true,
-  'direct application builders revalidate and mark the exact route before composition')
-assert.equal(openApplication.instructions.length, 2, 'acquisition and Multiply instructions share one transaction')
-assert.equal(openApplication.feeEvents.length, 2)
+assert.equal(openApplication.quotePlan.acquisitionQuote, null,
+  'USDY-funded application has no initial acquisition route')
+assert.equal(openApplication.quotePlan.leverageQuote.compositionValidated, true,
+  'direct application builders revalidate and mark the exact leverage route before composition')
+assert.equal(openApplication.instructions.length, 1, 'the SDK Multiply transaction has no initial acquisition instructions')
+assert.equal(openApplication.feeEvents.length, 1)
 assert.deepEqual(openApplication.addressesByLookupTableAddress, { [routeLookupTable]: [wallet] },
   'final local compilation can verify the exact lookup-table addresses used by every composed route')
 const staleCompositionCallbacks = createKaminoSwapCallbacks({
@@ -430,7 +428,7 @@ const staleSdkQuote = await staleCompositionCallbacks.quoter({
 }, [])
 const exactCompositionNow = Date.now() + 1000
 const composedAmountApplication = await loop.buildAtomicMultiplyOpenApplication({
-  wallet, acquisitionQuote: initialApplicationRoute, sdkInputs: { ...openInput, owner: 'owner' }, callbacks: staleCompositionCallbacks,
+  wallet, sdkInputs: { ...openInput, owner: 'owner' }, callbacks: staleCompositionCallbacks,
   validateRoute: async () => {}, now: exactCompositionNow,
   builder: async () => {
     await staleCompositionCallbacks.swapper({
@@ -445,7 +443,7 @@ const composedAmountApplication = await loop.buildAtomicMultiplyOpenApplication(
 assert.equal(composedAmountApplication.quotePlan.leverageQuote.inputAmountBaseUnits, '50000000',
   'fee-aware application economics use the exact changed-amount route composed by the SDK swapper, not its earlier quote')
 assert.equal(composedAmountApplication.quotePlan.leverageQuote.fee.amountBaseUnits, '45000')
-assert.equal(composedAmountApplication.feeEvents[1].amountBaseUnits, '45000', 'the collected fee matches the route actually composed')
+assert.equal(composedAmountApplication.feeEvents[0].amountBaseUnits, '45000', 'the collected fee matches the route actually composed')
 const setupAta = address('SysvarRent111111111111111111111111111111111')
 const setupCompute = { programAddress: address('ComputeBudget111111111111111111111111111111'), accounts: [], data: new Uint8Array([3]) }
 const duplicateSetupCompute = { ...setupCompute, data: Uint8Array.from(setupCompute.data) }
@@ -468,12 +466,8 @@ const sdkFlashRepay = (borrowInstructionIndex) => flashRepayReserveLiquidity({ l
   ...flashCommon, reserveDestinationLiquidity: setupAta, userSourceLiquidity: setupAta,
 }, [], flashProgram)
 const sdkEconomicInstruction = { ...instruction, programAddress: address('SysvarC1ock11111111111111111111111111111111') }
-const setupRoute = {
-  ...initialApplicationRoute,
-  instructions: [setupCompute, setupAtaInstruction, instruction],
-}
 const setupComposition = await loop.buildAtomicMultiplyOpenApplication({
-  wallet, acquisitionQuote: setupRoute, sdkInputs: { ...openInput, owner: 'owner' }, callbacks: compositionCallbacks,
+  wallet, sdkInputs: { ...openInput, owner: 'owner' }, callbacks: compositionCallbacks,
   validateRoute: async () => {},
   builder: async () => [{
     ixs: [duplicateSetupCompute, setupAtaInstruction, sdkFlashBorrow, sdkEconomicInstruction, sdkFlashRepay(2)],
@@ -483,13 +477,13 @@ const setupComposition = await loop.buildAtomicMultiplyOpenApplication({
 assert.equal(setupComposition.instructions.filter((ix) => String(ix.programAddress) === String(setupCompute.programAddress)).length, 1,
   'composed open deduplicates repeated SDK/router compute budget instructions')
 assert.equal(setupComposition.instructions.filter((ix) => String(ix.programAddress) === String(setupAtaInstruction.programAddress)).length, 1,
-  'composed open deduplicates associated token setup across acquisition and Multiply')
+  'composed open retains one associated token setup from the Multiply SDK')
 const composedBorrowIndex = setupComposition.instructions.findIndex((ix) => Buffer.from(ix.data).subarray(0, 8).equals(Buffer.from(sdkFlashBorrow.data).subarray(0, 8)))
 const composedRepay = setupComposition.instructions.find((ix) => Buffer.from(ix.data).subarray(0, 8).equals(Buffer.from(sdkFlashRepay(0).data).subarray(0, 8)))
-assert.equal(composedBorrowIndex, 3, 'acquisition setup is included before the flash borrow')
-assert.equal(composedRepay.data[16], composedBorrowIndex, 'SDK flash repay borrowInstructionIndex rebases after acquisition instructions are prepended')
+assert.equal(composedBorrowIndex, 2, 'SDK compute-budget and token-account setup precede the flash borrow')
+assert.equal(composedRepay.data[16], composedBorrowIndex, 'SDK flash repay borrowInstructionIndex remains valid after instruction normalization')
 await assert.rejects(loop.buildAtomicMultiplyOpenApplication({
-  wallet, acquisitionQuote: initialApplicationRoute, sdkInputs: openInput, callbacks: compositionCallbacks,
+  wallet, sdkInputs: openInput, callbacks: compositionCallbacks,
   validateRoute: async () => {},
   builder: async () => [{ ixs: [instruction] }, { ixs: [instruction] }],
 }), /one Kamino SDK transaction|single atomic/i)
@@ -588,12 +582,16 @@ const validOpenSimulation = {
   positionCollateralBaseUnits: '150000000', positionCollateralCTokenBaseUnits: '90000000', positionDebtBaseUnits: '50000000',
   tokenDeltas: [
     { account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '100' },
-    { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '-100000000' },
-    { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '0' },
+    { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '0' },
+    { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '-100000000' },
   ],
 }
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: validOpenSimulation }), true,
   'an open simulation must match the approved preview and its projected leverage/LTV bounds')
+assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
+  ...validOpenSimulation,
+  tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy' ? { ...item, deltaBaseUnits: '-99999999' } : item),
+} }), true, 'a verified USDY swap surplus may reduce the wallet debit without exceeding authorized funding')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
   tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'treasury-usdy'
@@ -627,12 +625,12 @@ assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: si
 } }), false, 'a simulated open with higher debt is outside the signed preview')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation, tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdc' ? { ...item, deltaBaseUnits: '-100000001' } : item),
-} }), false, 'a simulated open must spend exactly the approved funding amount')
+} }), false, 'an open may not debit the wallet USDC account')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
   tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy'
-    ? { ...item, deltaBaseUnits: '-1' } : item),
-} }), false, 'a lower acquisition fill cannot consume pre-existing wallet USDY to cover collateral')
+    ? { ...item, deltaBaseUnits: '-100000001' } : item),
+} }), false, 'the transaction may not debit more USDY than the user approved')
 
 const simulationCloseBuilt = {
   ...simulationBuilt,
@@ -713,14 +711,13 @@ const strategy = { enabled: false, unavailableReasons: [{ code: 'no-approval', m
 const preview = buildLoopPreview({
   fundingAmount: '1000', leverage: 1.5, strategy,
   maxBorrowLtvPct: 90, liquidationLtvPct: 95,
-  acquisitionQuote: { fee: { mint: usdy, amountBaseUnits: '1000', bps: 10 } },
   leverageQuote: { fee: { mint: usdy, amountBaseUnits: '2000', bps: 10 } },
 })
 assert.equal(preview.exposure.grossCollateral, '1500')
 assert.equal(preview.exposure.debt, '500')
 assert.equal(preview.limits.projectedLtvPct, 38)
 assert.equal(preview.risk.projectedLtvPct, '33.33333333333333333333333333333333333333')
-assert.equal(preview.fees.length, 2)
+assert.equal(preview.fees.length, 1)
 assert.equal(preview.available, false)
 assert.ok(preview.unavailableReasons.some((x) => x.code === 'no-approval'))
 
@@ -728,7 +725,6 @@ const adverseRoutePreview = buildLoopPreview({
   fundingAmount: '100', leverage: 1.5, strategy,
   maxBorrowLtvPct: 90, liquidationLtvPct: 95,
   riskInputs: { slippageBps: 50, priceImpactPct: 0.2, quoteAgeSeconds: 1, oracleAgeSeconds: 1, oracleHeartbeatSeconds: 60 },
-  acquisitionQuote: { fee: { mint: usdc, amountBaseUnits: '1000', bps: 10 } },
   leverageQuote: { fee: { mint: usdy, amountBaseUnits: '1000', bps: 10 } },
   feePricesUsd: { [usdc]: 1, [usdy]: 0.8 },
   sdkPosition: {
@@ -761,7 +757,7 @@ const acknowledgementStrategy = {
   },
 }
 const acknowledgementRisk = { slippageBps: 50, priceImpactPct: 0.2, quoteAgeSeconds: 1, oracleAgeSeconds: 1, oracleHeartbeatSeconds: 60 }
-const acquisitionQuote = {
+const leverageRouteFixture = {
   provider: 'jupiter-v2-build', providerVersion: 'swap-v2-build', quoteAt: 1_800_000_000_000,
   inputMint: usdc, outputMint: usdy, inputAmountBaseUnits: '100000000', outputAmountBaseUnits: '89910000',
   minimumOutputBaseUnits: '89460450', slippageBps: 50, priceImpactPct: 0.2,
@@ -770,9 +766,9 @@ const acquisitionQuote = {
     inputMint: usdc, outputMint: usdy, inAmount: '100000000', outAmount: '90000000' } }],
 }
 const leverageQuote = {
-  ...acquisitionQuote, quoteAt: 1_800_000_000_100, inputAmountBaseUnits: '50000000', outputAmountBaseUnits: '44955000',
+  ...leverageRouteFixture, quoteAt: 1_800_000_000_100, inputAmountBaseUnits: '50000000', outputAmountBaseUnits: '44955000',
   minimumOutputBaseUnits: '44730225', fee: { bps: 10, mint: usdy, amountBaseUnits: '45000' },
-  routePlan: [{ percent: 100, swapInfo: { ...acquisitionQuote.routePlan[0].swapInfo, ammKey: 'AnotherOrcaPool111111111111111111111',
+  routePlan: [{ percent: 100, swapInfo: { ...leverageRouteFixture.routePlan[0].swapInfo, ammKey: 'AnotherOrcaPool111111111111111111111',
     inAmount: '50000000', outAmount: '45000000' } }],
 }
 const acknowledgementPosition = {
@@ -783,7 +779,7 @@ const acknowledgementPosition = {
 const makeAcknowledgementPreview = (overrides = {}) => buildLoopPreview({
   fundingAmount: '100', leverage: 1.5, strategy: acknowledgementStrategy,
   maxBorrowLtvPct: 90, liquidationLtvPct: 95, riskInputs: acknowledgementRisk,
-  acquisitionQuote, leverageQuote, feePricesUsd: { [usdc]: 1, [usdy]: 1 }, sdkPosition: acknowledgementPosition,
+  leverageQuote, feePricesUsd: { [usdc]: 1, [usdy]: 1 }, sdkPosition: acknowledgementPosition,
   ...overrides,
 })
 const finalAcknowledgementPreview = makeAcknowledgementPreview()
@@ -792,14 +788,14 @@ assert.equal(finalAcknowledgementPreview.available, true, 'a complete route prev
 assert.equal(finalAcknowledgementPreview.carry.acknowledgementPolicyVersion, 'nysa-loop-ack-v1')
 const acknowledgementKeyArgs = {
   strategy: acknowledgementStrategy, fundingAmount: '100', leverage: 1.5,
-  acquisitionQuote, leverageQuote, preview: finalAcknowledgementPreview, sdkPosition: acknowledgementPosition,
+  leverageQuote, preview: finalAcknowledgementPreview, sdkPosition: acknowledgementPosition,
 }
 assert.notEqual(createLoopAcknowledgementKey({ ...acknowledgementKeyArgs, policyVersion: 'nysa-loop-ack-v2' }), finalAcknowledgementPreview.carry.acknowledgementKey)
 const changedAcknowledgementPreviews = [
   makeAcknowledgementPreview({ fundingAmount: '101' }),
   makeAcknowledgementPreview({ leverage: 1.4 }),
-  makeAcknowledgementPreview({ acquisitionQuote: { ...acquisitionQuote, routePlan: [{ ...acquisitionQuote.routePlan[0], swapInfo: { ...acquisitionQuote.routePlan[0].swapInfo, ammKey: 'DifferentOrcaPool1111111111111111111111' } }] } }),
-  makeAcknowledgementPreview({ acquisitionQuote: { ...acquisitionQuote, fee: { ...acquisitionQuote.fee, amountBaseUnits: '90001' } } }),
+  makeAcknowledgementPreview({ leverageQuote: { ...leverageQuote, routePlan: [{ ...leverageQuote.routePlan[0], swapInfo: { ...leverageQuote.routePlan[0].swapInfo, ammKey: 'DifferentOrcaPool1111111111111111111111' } }] } }),
+  makeAcknowledgementPreview({ leverageQuote: { ...leverageQuote, fee: { ...leverageQuote.fee, amountBaseUnits: '45001' } } }),
   makeAcknowledgementPreview({ sdkPosition: { ...acknowledgementPosition, flashFeeRatio: '0.002' } }),
   makeAcknowledgementPreview({ strategy: { ...acknowledgementStrategy, carry: { ...acknowledgementStrategy.carry, assumptions: { ...acknowledgementStrategy.carry.assumptions, collateralSupplyAprPct: 0.6 } } } }),
 ]

@@ -179,6 +179,17 @@ async function closeLoop() {
 }
 
 const feeLabel = (fee) => `${formatBaseUnits(BigInt(fee.amountBaseUnits), fee.mint === usdc.mint ? usdc.decimals : usdy.decimals)} ${fee.mint === usdc.mint ? usdc.name : usdy.name}`
+const leverageLabel = (value) => {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? `${numeric.toFixed(2)}×` : '—'
+}
+const walletBalanceLabel = (token) => {
+  if (!state.address) return 'Connect wallet'
+  if (state.walletError) return 'Unavailable'
+  const balance = state.balancesBaseUnits?.[token.token_id]
+  if ((typeof balance !== 'string' && typeof balance !== 'bigint') || !/^\d+$/.test(String(balance))) return 'Unavailable'
+  return `${formatBaseUnits(BigInt(balance), token.decimals)} ${token.name}`
+}
 const tokenAmountLabel = (value, token) => {
   if (typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value)) return 'Unavailable'
   const amount = Number(value)
@@ -206,14 +217,19 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
   <section class="n-panel entry-panel">
     <div class="panel-heading">
-      <div><h2>Open loop</h2><p class="n-muted">Choose funding and leverage, then review the estimate before signing.</p></div>
+      <div><h2>Open loop</h2><p class="n-muted">Fund with USDY collateral, then review the leverage and estimated position before signing.</p></div>
       <span class="n-chip" :class="preview?.available ? (openReadiness.executionEnabled && !setupRequired && !setupLoading ? 'ready' : 'warn') : ''">{{ preview?.available ? (openReadiness.executionEnabled && !setupRequired && !setupLoading ? 'Ready' : 'Review required') : 'Preview required' }}</span>
+    </div>
+
+    <div class="wallet-balances" aria-label="Wallet balances">
+      <div><span>USDY available to fund</span><b>{{ walletBalanceLabel(usdy) }}</b></div>
+      <div><span>USDC wallet balance</span><b>{{ walletBalanceLabel(usdc) }}</b></div>
     </div>
 
     <div class="form-grid">
       <label class="field">
-        <span>Funding amount</span>
-        <div class="input-with-unit"><input v-model="fundingAmount" inputmode="decimal" autocomplete="off" aria-label="Funding amount in USDC" /><span>USDC</span></div>
+        <span>USDY funding amount</span>
+        <div class="input-with-unit"><input v-model="fundingAmount" inputmode="decimal" autocomplete="off" aria-label="Funding amount in USDY" /><span>USDY</span></div>
       </label>
       <label class="field">
         <span>Target leverage</span>
@@ -233,12 +249,13 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         <div class="n-stat"><div class="k">Total estimated USDC debt</div><div class="v">{{ preview.exposure.source === 'kamino-sdk-net-route' ? tokenAmountLabel(preview.exposure.debtAmount, usdc) : 'Unavailable' }}</div><div class="s">Includes borrow origination fee</div></div>
         <div class="n-stat"><div class="k">Projected LTV</div><div class="v">{{ pct(Number(preview.risk?.projectedLtvPct)) }} <span class="stat-limit">/ {{ pct(Number(preview.limits?.projectedLtvPct)) }} limit</span></div></div>
       </div>
-      <p class="valuation-note">USD valuations: equity {{ usd(Number(preview.exposure.equity)) }} · collateral {{ usd(Number(preview.exposure.grossCollateral)) }} · debt {{ usd(Number(preview.exposure.debt)) }}. {{ preview.exposure.source === 'kamino-sdk-net-route' ? 'Token amounts are SDK-derived estimates.' : 'Token quantities are unavailable until a live route quote is verified.' }}</p>
+      <p class="valuation-note"><span>USD values</span><b>Equity {{ usd(Number(preview.exposure.equity)) }}</b><b>Collateral {{ usd(Number(preview.exposure.grossCollateral)) }}</b><b>Debt {{ usd(Number(preview.exposure.debt)) }}</b><span>{{ preview.exposure.source === 'kamino-sdk-net-route' ? 'Token amounts are estimates from the Kamino SDK.' : 'Token quantities need a verified live route quote.' }}</span></p>
 
       <div class="economics-row">
-        <div class="economics-item"><span>Estimated leverage</span><b>{{ preview.exposure.leverage ?? preview.carry?.basedOnLeverage ?? leverage }}×</b></div>
-        <div class="economics-item"><span>Estimated Nysa swap fees</span><b>{{ preview.feeTotalUsd != null ? usd(preview.feeTotalUsd) : 'Unavailable' }}</b></div>
-        <div v-if="preview.knownCostsTotalUsd != null" class="economics-item"><span>Known costs incl. borrow and flash fees</span><b>{{ usd(preview.knownCostsTotalUsd) }}</b></div>
+        <div class="economics-item"><span>Estimated leverage</span><b>{{ leverageLabel(preview.exposure.leverage ?? preview.carry?.basedOnLeverage ?? leverage) }}</b></div>
+        <div class="economics-item"><span>Loop execution</span><b>{{ preview.executionPlan?.loopPasses ?? 1 }} atomic transaction</b><small>One pass. Leverage describes position size, not repeated transactions.</small></div>
+        <div class="economics-item"><span>Router swaps · Nysa fee</span><b>{{ preview.executionPlan?.routerSwaps ?? 1 }} swap · {{ preview.feeTotalUsd != null ? usd(preview.feeTotalUsd) : 'fee unavailable' }}</b></div>
+        <div class="economics-item"><span>Borrow + flash fees</span><b>{{ preview.knownCostsTotalUsd != null ? usd(Math.max(0, preview.knownCostsTotalUsd - (preview.feeTotalUsd ?? 0))) : 'Unavailable' }}</b></div>
       </div>
 
       <div v-if="preview?.carry?.requiresAcknowledgement" class="carry-ack-block">
@@ -253,7 +270,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
           <p v-if="preview.risk?.healthFactor != null" class="detail-line">Health factor <b>{{ Number(preview.risk.healthFactor).toFixed(2) }}</b><span>Liquidation threshold {{ preview.risk.liquidationLtvPct }}% · liquidation price {{ usd(Number(preview.risk.liquidationPriceUsd)) }} per USDY</span></p>
           <p v-if="preview.carry?.assumptions" class="detail-line">Carry assumptions <b>{{ usdy.name }} supply {{ preview.carry.assumptions.collateralSupplyAprPct }}% − {{ usdc.name }} borrow {{ preview.carry.assumptions.liabilityBorrowAprPct }}%</b><span>Live reserve rates as of {{ preview.carry.asOf ?? 'unknown' }}</span></p>
           <div v-if="fees.length" class="fee-list">
-            <div v-for="fee in fees" :key="fee.action" class="fee-row"><span>{{ fee.action === 'initial-acquisition' ? 'Initial USDC to USDY swap' : 'Leverage swap' }}</span><b>{{ feeLabel(fee) }}</b></div>
+            <div v-for="fee in fees" :key="fee.action" class="fee-row"><span>Borrowed USDC to USDY router swap</span><b>{{ feeLabel(fee) }}</b></div>
           </div>
           <p class="footnote">10 bps is charged once per economic swap. DEX route hops do not add Nysa fees.</p>
         </div>
@@ -312,6 +329,10 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .entry-panel .panel-heading h2 { margin: 0 0 6px; font-size: 18px; }
 .entry-panel .panel-heading p { margin: 0; font-size: 13px; }
 .setup-error { color: var(--n-red); }
+.wallet-balances { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.wallet-balances > div { display: grid; gap: 5px; min-width: 0; padding: 13px 15px; border: 1px solid var(--n-line); border-radius: 12px; background: var(--n-bg-2); }
+.wallet-balances span,.economics-item small { color: var(--n-text-3); font-size: 12px; }
+.wallet-balances b { overflow-wrap: anywhere; font-size: 14px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 16px; align-items: end; }
 .field { display: grid; gap: 8px; color: var(--n-text-2); font-size: 13px; }
 .input-with-unit { display: flex; align-items: center; border: 1px solid var(--n-line-2); border-radius: 12px; background: var(--n-bg-2); padding: 0 13px; }
@@ -325,11 +346,15 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .review-stats { margin: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .review-stats .n-stat { padding: 17px 18px; }
 .review-stats .n-stat .k { margin-bottom: 6px; font-size: 10px; }
-.review-stats .n-stat .v { font-size: 20px; overflow-wrap: anywhere; }
+.review-stats .n-stat .v { font-size: clamp(17px, 1.8vw, 20px); line-height: 1.35; overflow-wrap: anywhere; }
 .stat-limit { color: var(--n-text-3); font-size: 12px; font-weight: 400; letter-spacing: 0; }
-.economics-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 14px; }
-.economics-item { display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border: 1px solid var(--n-line); border-radius: 6px; color: var(--n-text-3); font-size: 12px; }
-.economics-item b { color: var(--n-text); text-align: right; font-variant-numeric: tabular-nums; }
+.valuation-note { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 14px; margin: 10px 0 0; color: var(--n-text-3); font-size: 12px; line-height: 1.5; }
+.valuation-note b { color: var(--n-text-2); font-weight: 500; }
+.valuation-note > span:last-child { flex-basis: 100%; font-size: 11px; }
+.economics-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.economics-item { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 13px 14px; border: 1px solid var(--n-line); border-radius: 8px; color: var(--n-text-3); font-size: 12px; line-height: 1.4; }
+.economics-item b { color: var(--n-text); text-align: left; font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.economics-item small { color: var(--n-text-3); font-size: 11px; line-height: 1.45; }
 .carry-ack-block { margin-top: 14px; padding: 13px 14px; border: 1px solid #e8b33966; border-radius: 6px; background: #e8b3390c; }
 .carry-ack { margin: 0; color: var(--n-amber); font-size: 12px; }
 .carry-ack-checkbox { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; color: var(--n-text-2); font-size: 12px; }
@@ -370,17 +395,22 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .panel-heading h2 { margin: 0; font-size: 17px; }
 .n-chip.ready,.n-chip.ok { color: var(--n-green); }
 .mode-banner { margin-top: 18px; }
+@media (max-width: 1080px) {
+  .review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .economics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 860px) {
   .strategy-grid { grid-template-columns: 1fr; }
   .strategy-grid .n-cell { justify-content: flex-start; }
   .position-grid { grid-template-columns: 1fr; }
   .position-select { justify-content: flex-start; }
-  .review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 @media (max-width: 600px) {
+  .wallet-balances { grid-template-columns: 1fr; }
   .form-grid { grid-template-columns: 1fr; }
   .preview-button { width: 100%; }
   .review-stats { grid-template-columns: 1fr !important; }
+  .economics-row { grid-template-columns: 1fr; }
   .entry-action { align-items: stretch; flex-direction: column; }
   .entry-action > .n-btn-grad { width: 100%; }
   .setup-inline { grid-template-columns: 1fr; }

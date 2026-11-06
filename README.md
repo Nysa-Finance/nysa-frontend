@@ -95,6 +95,7 @@ amount into an optional next action. Locked collateral is never treated as walle
 
 `/loop` previews USDY collateral / USDC debt strategies and includes guarded separate Kamino metadata setup, atomic
 Multiply open/full-close builders, identified position management, signed-intent relay, and pending-close reconciliation.
+Loop opening is funded directly in USDY; the single borrowed-USDC-to-USDY leverage swap uses the shared fee router.
 The economic actions remain unavailable while the supported-route, program evidence, complete local-fork, fee-account,
 and wallet-acceptance gates are open. A confirmed close is not reported as complete until a fresh account read proves
 zero raw debt and collateral. Metadata initialization is a separate non-economic transaction and does not charge the
@@ -104,7 +105,8 @@ Run `npm run simulate:swap-fees -- --scenario scripts/scenarios/swap-fees.synthe
 hypothetical fee business scenario. Edit the synthetic inputs to compare sizes, frequency and direct costs; outputs are
 not a forecast. Append `--json` for a machine-readable report. `npm run verify:loop-fork` is a separate local-only check.
 It rejects non-loopback endpoints and needs a configured local mainnet fork, an ephemeral test wallet funded with local-fork
-USDC, and initialized disposable USDC/USDY treasury token accounts. After the loopback guard passes, the verifier may sign
+USDY for Loop opening (plus USDC for standalone router scenarios), and initialized disposable USDC/USDY treasury token
+accounts. After the loopback guard passes, the verifier may sign
 and submit test transactions only to that local validator to check the SDK Multiply open/full-close path, fee deltas, flash
 repayment, and forced-failure rollback. Never point it at a public RPC or put a production key in its inputs. The ordinary
 fee-aware v0 open measures 1,453 bytes without lookup compression. The verifier prepares a temporary local address lookup
