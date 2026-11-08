@@ -144,6 +144,19 @@ the minute is unpredictable, so depositing just before a snapshot and withdrawin
 Only wallets with deposits in the Nysa market(s) and vaults listed in `src/config.js` are tracked. Run a snapshot by hand:
 `docker compose exec app node server/snapshot.js`.
 
+Backup: `.github/workflows/points-backup.yml` copies the points CSV to Cloudflare R2 every 6 hours, read from the VPS over
+SSH (Cloudflare's Bot Fight Mode blocks `/api/points` for the Actions runners): `farm-points/latest.csv`
+plus a dated copy per change (`farm-points/YYYY/MM/DD/HHMMSSZ.csv`). The run fails, and GitHub emails it, if the site is
+unreachable or the total points went down (the last good copy is kept). Setup: an R2 bucket and an R2 API token with Object Read &
+Write on that bucket only; in the repo settings, secrets `R2_ENDPOINT` (the bucket's S3 API URL without the bucket name:
+`https://<account id>.eu.r2.cloudflarestorage.com` for an EU bucket), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and
+variable `R2_BUCKET`; and secret `VPS_POINTS_SSH_KEY`, a key the VPS lets run only the read (in `/home/deploy/.ssh/authorized_keys`:
+`command="cd /home/deploy/nysa && docker compose exec -T app cat /data/farm-points/points_state.csv",restrict ssh-ed25519 …`).
+To restore: download `latest.csv` (Cloudflare dashboard → R2 → bucket → farm-points), copy it to the
+VPS project directory, then
+`docker compose exec -T app sh -c 'cat > /data/farm-points/points_state.csv' < latest.csv`.
+An older copy loses no accrual: the next snapshot credits the whole gap since its `last_snapshot_ts` (on the lower balance).
+
 ## Realized APY
 The first snapshot of each 12-hour UTC block also appends, per reserve, the value of one deposit share (liquidity per Kamino cToken), the APYs and the
 utilization to `market-history/history.json`, plus the reserve's creation time (share value is exactly 1 then); and per
