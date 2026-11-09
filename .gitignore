@@ -4,6 +4,7 @@ node_modules
 dist
 .DS_Store
 .claude
+.superpowers
 .vercel
 
 # VPS deploy
