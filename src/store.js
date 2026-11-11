@@ -10,7 +10,7 @@ import { tok, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
 import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { event, skipNextPageview } from './analytics.js'
 import {
-  isIOS, DEEPLINK_WALLETS, MWA_NAME, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
+  fromBase64, isIOS, DEEPLINK_WALLETS, MWA_NAME, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
 } from './wallets.js'
 import { createWalletConnectWallet } from './walletconnect.js'
 
@@ -252,7 +252,6 @@ async function eagerConnect() {
 }
 
 // ---- transactions: built by the backend, signed and sent by the wallet ----
-const fromBase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
 
 async function confirmed(signature) {
   const until = Date.now() + CONFIRM_TIMEOUT_MS
@@ -305,7 +304,7 @@ async function resumeDeeplink(ret) {
   }
   state.handoff = { status: 'sending', label }
   try {
-    const { signature } = await api('/api/tx/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tx: ret.signed, wallet: account.address }) })
+    const signature = await sendSigned(ret.signed)
     await confirmed(signature)
     if (pending.final) {
       state.handoff = { status: 'success', label, signature }
@@ -344,43 +343,22 @@ async function runAction(params) {
   throw new Error('Account setup did not complete, please try again')
 }
 
-// kind: deposit | withdraw | borrow | repay. Returns the confirmed signature.
-export async function sendKaminoAction(kind, { market, token, amount, all }) {
-  try {
-    const params = { kind, market: market.id, token: token.token_id, amount, all }
-    const sig = await runAction(params)
-    trackSuccess(params) // Deposit | Withdraw | Borrow | Repay
-    return sig
-  } catch (e) {
-    event('Transaction failed', { action: kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
-    throw e
-  }
-}
-
-// Earn vault: deposit the vault's token for shares, or withdraw `amount` of it (all: every share). Confirmed signature.
-export async function sendVaultAction(kind, vault, { amount, all }) {
-  const params = { kind, vault: vault.id, amount, all }
+// Runs an action and records the outcome (analytics). Returns the confirmed signature.
+async function act(params) {
   try {
     const sig = await runAction(params)
     trackSuccess(params)
     return sig
   } catch (e) {
-    event('Transaction failed', { action: kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
+    event('Transaction failed', { action: params.kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
     throw e
   }
 }
-
-export async function claimRewards(market) {
-  const params = { kind: 'claim', market: market.id }
-  try {
-    const sig = await runAction(params)
-    trackSuccess(params)
-    return sig
-  } catch (e) {
-    event('Transaction failed', { action: 'claim', reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
-    throw e
-  }
-}
+// kind: deposit | withdraw | borrow | repay.
+export const sendKaminoAction = (kind, { market, token, amount, all }) => act({ kind, market: market.id, token: token.token_id, amount, all })
+// Earn vault: deposit the vault's token for shares, or withdraw `amount` of it (all: every share).
+export const sendVaultAction = (kind, vault, { amount, all }) => act({ kind, vault: vault.id, amount, all })
+export const claimRewards = (market) => act({ kind: 'claim', market: market.id })
 
 // Liquidation of someone else's unhealthy loan: how much can be repaid, a quote (simulated on-chain), then the action.
 export const loadLiquidationInfo = (market, borrower) => api(`/api/liquidation/${market.id}/${borrower}`)
@@ -388,17 +366,7 @@ export async function previewLiquidation(market, borrower, amount) {
   if (!account) throw new Error('Connect a Solana wallet to continue.')
   return (await buildTx({ kind: 'liquidate', market: market.id, borrower, amount, preview: true })).quote
 }
-export async function liquidate(market, borrower, amount) {
-  const params = { kind: 'liquidate', market: market.id, borrower, amount }
-  try {
-    const sig = await runAction(params)
-    trackSuccess(params)
-    return sig
-  } catch (e) {
-    event('Transaction failed', { action: 'liquidate', reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
-    throw e
-  }
-}
+export const liquidate = (market, borrower, amount) => act({ kind: 'liquidate', market: market.id, borrower, amount })
 
 // ---- read-only data from the backend ----
 // Farm Points leaderboard (shared by the modal, Portfolio and Analytics). Loaded once per page view.
@@ -412,24 +380,16 @@ export function loadPoints() {
 }
 export const myPoints = () => state.points.board?.rows.find((r) => r.address === state.address) ?? null
 
-// Reserve history for Realized APY (recorded by the snapshot twice a day). Loaded once per page view.
-let historyReq = null
-export function loadApyHistory() {
-  historyReq ??= api('/api/apy-history').catch((e) => { historyReq = null; throw e })
-  return historyReq
-}
-
-// Admin changes to the market and its reserves (decoded on-chain by the backend). Loaded once per page view.
-let updatesReq = null
-export function loadMarketUpdates() {
-  updatesReq ??= api('/api/market-updates').catch((e) => { updatesReq = null; throw e })
-  return updatesReq
-}
+// One request per page view, shared by every caller; asked again after a failure.
+const once = (path) => { let req = null; return () => (req ??= api(path).catch((e) => { req = null; throw e })) }
+// Reserve history for Realized APY (recorded by the snapshot twice a day).
+export const loadApyHistory = once('/api/apy-history')
+// Admin changes to the market and its reserves (decoded on-chain by the backend).
+export const loadMarketUpdates = once('/api/market-updates')
 
 // Every open position, riskiest first (hf null = no debt).
 // Market positions (obligations) and each vault's holders ({ [vaultId]: [{ owner, wallet, staked }] } or null).
 export const loadAnalytics = () => api('/api/analytics')
-export const loadPositions = () => loadAnalytics().then((a) => a.positions)
 // Every liquidation in the live markets, newest first (decoded on-chain by the backend).
 export const loadLiquidations = () => api('/api/liquidations').then((a) => a.liquidations)
 
