@@ -30,6 +30,9 @@ const pointsOpen = ref(false)
 const updates = ref(null)
 const updatesError = ref(null)
 onMounted(() => loadMarketUpdates().then((d) => (updates.value = d.updates.filter((u) => u.source === m.value?.kaminoMarket))).catch((e) => (updatesError.value = e.message)))
+// Geoblocked here (server/main.js): only repaying and withdrawing. The server enforces it; this only says so up front.
+const geoBlocked = ref(false)
+onMounted(() => m.value?.geoBlocked && fetch('/api/geo').then((r) => r.json()).then((g) => (geoBlocked.value = g.blocked)).catch(() => {}))
 const back = () => (history.state?.back ? router.back() : router.push({ name: 'borrow' }))
 
 function openDd() {
@@ -158,13 +161,14 @@ function openDd() {
 
       <aside class="side">
         <RouterLink v-if="mode === 'withdraw'" :to="{ name: 'market-detail', params: { id: m.id } }" class="side-switch">← Back to borrowing</RouterLink>
+        <p v-if="geoBlocked" class="geo-note">This market is not available in your country (United States, Canada and sanctioned countries). You can still repay a loan and withdraw collateral.</p>
         <LendPanel
           v-if="mode === 'withdraw'" :key="'l' + route.fullPath" :market="m" :tokens="loans" :all-tokens="tokens"
           initial-tab="withdraw" :initial-asset="route.query.asset" withdraw-only
         />
         <BorrowPanel
-          v-else :key="'b' + route.fullPath" :market="m" :collateral-tokens="collateral" :loan-tokens="loans"
-          :initial-tab="route.query.tab" :initial-asset="route.query.asset"
+          v-else :key="'b' + route.fullPath + geoBlocked" :market="m" :collateral-tokens="collateral" :loan-tokens="loans"
+          :initial-tab="route.query.tab" :initial-asset="route.query.asset" :repay-only="geoBlocked"
         />
       </aside>
     </div>
@@ -179,6 +183,7 @@ function openDd() {
 .side { position: sticky; top: 96px; }
 .side-switch { display: inline-block; margin-bottom: 12px; font-size: 13px; color: var(--n-text-3); }
 .side-switch:hover { color: var(--n-pink); }
+.geo-note { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--n-line); border-radius: 8px; font-size: 13px; line-height: 1.5; color: var(--n-text-2); }
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
 .farm-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ec008c59; border-radius: 8px; background: #ec008c0f; }
