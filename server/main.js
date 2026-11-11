@@ -73,6 +73,15 @@ function blocked(res, wallet, { failClosed }) {
   return false
 }
 
+// Geoblocking: markets flagged `geoBlocked` (config.js) can't be entered from these countries (CF-IPCountry: Cloudflare's
+// country for the visitor's IP; T1 = Tor). Supplying, borrowing and liquidating are refused there; repaying and
+// withdrawing stay open, so nobody is locked out of their own funds.
+// ponytail: country by IP only, a VPN gets through; regions (Crimea, Donetsk, Luhansk) need Cloudflare's location headers.
+const GEO_BLOCKED = new Set(['US', 'CA', 'CU', 'IR', 'KP', 'SY', 'RU', 'BY', 'T1'])
+const GEO_KINDS = new Set(['deposit', 'borrow', 'liquidate'])
+const geoBlocked = (req) => GEO_BLOCKED.has(req.headers['cf-ipcountry'])
+const GEO_REFUSED = { error: 'This market is not available in your country (United States, Canada and sanctioned countries). You can still repay and withdraw.', geoBlocked: true }
+
 // ---- Server-Sent Events: the market snapshot on connect and after every refresh ----
 // Streams are capped per client IP too, so one client can't take every slot; a browser turned away polls /api/market.
 const clients = new Set()
@@ -128,6 +137,7 @@ const routes = [
     if (b.kind === 'liquidate' && !isAddress(String(b.borrower))) throw new UserError('Invalid borrower address')
     if (blocked(res, b.wallet, { failClosed: true })) return
     if (b.kind === 'liquidate' && isSanctioned(b.borrower)) return send(res, 403, BLOCKED_LOAN)
+    if (GEO_KINDS.has(b.kind) && marketById(b.market)?.geoBlocked && geoBlocked(req)) return send(res, 403, GEO_REFUSED)
     try {
       send(res, 200, await buildTx({ kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: Number(b.amount), all: !!b.all, borrower: b.borrower, preview: !!b.preview, vault: b.vault }))
     } catch (e) {
@@ -159,6 +169,7 @@ const routes = [
     const [positions, vaults] = await Promise.all([getPositions(), getVaultHolders().catch((e) => { console.error('[analytics] vault holders', e?.message); return null })])
     send(res, 200, { positions, vaults }, { maxAge: 30 })
   }],
+  ['GET', /^\/api\/geo$/, (req, res) => send(res, 200, { blocked: geoBlocked(req) })],
   ['GET', /^\/api\/market-updates$/, async (req, res) => send(res, 200, await marketUpdates(), { maxAge: 60 })],
   ['GET', /^\/api\/liquidations$/, async (req, res) => send(res, 200, await marketLiquidations(), { maxAge: 60 })],
   ['GET', /^\/api\/points$/, async (req, res) => send(res, 200, (await read(POINTS)) ?? EMPTY_POINTS, { type: 'text/csv; charset=utf-8', maxAge: 300 })],
