@@ -52,6 +52,8 @@ const amount = (n, t) => {
   const v = Number(n) / 10 ** t.decimals
   return v > 0 && v < 1 ? `${+v.toPrecision(3)} ${t.name}` : compact(v, t.name) // small minimums stay visible (0.001 USDC)
 }
+// Capacity per interval; an interval of 0 turns the cap off (klend).
+const withdrawalCap = (v, t) => (u64(v, 8) ? `${amount(u64(v), t)} per ${secs(u64(v, 8))}` : 'off')
 function curve(v) {
   const pts = []
   for (let i = 0; i + 8 <= v.length; i += 8) {
@@ -75,8 +77,8 @@ const RESERVE = {
   UpdateDepositLimit: ['Supply cap', (v, t) => amount(u64(v), t)],
   UpdateBorrowLimit: ['Borrow cap', (v, t) => amount(u64(v), t)],
   UpdateBorrowLimitOutsideElevationGroup: ['Borrow cap outside elevation groups', (v, t) => amount(u64(v), t)],
-  UpdateDepositWithdrawalCap: ['Deposit withdrawal cap', (v, t) => `${amount(u64(v), t)} per ${secs(u64(v, 8))}`],
-  UpdateDebtWithdrawalCap: ['Debt withdrawal cap', (v, t) => `${amount(u64(v), t)} per ${secs(u64(v, 8))}`],
+  UpdateDepositWithdrawalCap: ['Deposit withdrawal cap', withdrawalCap],
+  UpdateDebtWithdrawalCap: ['Debt withdrawal cap', withdrawalCap],
   UpdateBorrowRateCurve: ['Interest rate curve', curve],
   UpdateBorrowFactor: ['Borrow factor', (v) => pctOf(u64(v))],
   UpdateReserveStatus: ['Reserve status', (v) => ['Active', 'Obsolete', 'Hidden'][v[0]] ?? String(v[0])],
@@ -191,7 +193,7 @@ const bool = (v) => (v[0] ? 'on' : 'off')
 const VAULT_FIELDS = {
   PerformanceFeeBps: ['Performance fee', (v) => bps(u64(v))],
   ManagementFeeBps: ['Management fee', (v) => bps(u64(v))],
-  DepositCap: ['Deposit cap', (v, t) => amount(u64(v), t)],
+  DepositCap: ['Deposit cap', (v, t) => (u64(v) ? amount(u64(v), t) : 'unlimited')], // 0 = uncapped
   MinDepositAmount: ['Min deposit', (v, t) => amount(u64(v), t)],
   MinWithdrawAmount: ['Min withdrawal', (v, t) => amount(u64(v), t)],
   MinInvestAmount: ['Min invest amount', (v, t) => amount(u64(v), t)],
