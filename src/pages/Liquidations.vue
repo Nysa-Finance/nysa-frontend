@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, riskOf, bonusText, loadPositions, loadLiquidations } from '../store.js'
+import { state, riskOf, bonusText, loadAnalytics, loadLiquidations } from '../store.js'
 import { LIVE, tok, explorer, txUrl } from '../config.js'
 import { pct, amt, compact, short, hfText, hfColor } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -16,7 +16,7 @@ const loans = ref(undefined) // undefined = loading, null = unavailable
 const history = ref(undefined)
 const target = ref(null) // borrower whose loan is being liquidated (modal)
 async function load() {
-  const [p, l] = await Promise.allSettled([loadPositions(), loadLiquidations()])
+  const [p, l] = await Promise.allSettled([loadAnalytics().then((a) => a.positions), loadLiquidations()])
   loans.value = p.status === 'fulfilled' ? p.value.filter((x) => x.debt > 0) : null
   history.value = l.status === 'fulfilled' ? l.value : null
 }
