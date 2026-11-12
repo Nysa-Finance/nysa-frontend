@@ -101,7 +101,6 @@ function serviceForCapturedBuild(built, intentStore, counters = {}) {
     buildRoute: async () => built,
     compile: async () => { counters.compile = (counters.compile ?? 0) + 1; throw new Error('must reject before compile') },
     simulate: async () => { counters.simulate = (counters.simulate ?? 0) + 1; throw new Error('must reject before simulation') },
-    readAccounts: async (keys) => keys.map((key) => ({ exists: false, address: key })),
     intentStore,
     now: () => Date.now(),
   })
@@ -110,11 +109,9 @@ function serviceForCapturedBuild(built, intentStore, counters = {}) {
 const capturedIntentStore = createSwapIntentStore({ now: () => Date.now(), idFactory: () => 'captured-route-intent' })
 const capturedCounters = {}
 await assert.rejects(serviceForCapturedBuild(capturedBuilt, capturedIntentStore, capturedCounters).build(capturedRequest),
-  /WhirlpoolSwapV2.*(account|owner|data|invalid)|Jupiter.*account/i,
-  'captured Jupiter route_v2 fixture has no positive on-chain account proof and must fail closed')
-assert.equal(capturedCounters.compile ?? 0, 0, 'Whirlpool route without readable positive account state must fail before compile and intent issue')
-assert.equal(capturedCounters.simulate ?? 0, 0, 'Whirlpool route without readable positive account state must fail before simulation')
-assert.equal(capturedIntentStore.size(), 0, 'Whirlpool route without readable positive account state must fail before authorization intent issue')
+  /must reject before compile/, 'the captured live Jupiter route_v2 passes route validation and reaches compilation')
+assert.equal(capturedCounters.compile, 1, 'the captured live route reaches compilation')
+assert.equal(capturedIntentStore.size(), 0, 'no intent is issued before compilation and simulation succeed')
 
 const adversarialCapturedBuilds = [
   ['executable moved while still present', (instruction) => {
@@ -239,9 +236,8 @@ const route = {
 assert.equal(Buffer.from(jupiterRouteData).subarray(0, 8).toString('hex'), 'bb64facc31c4af14',
   'captured Jupiter V6 route_v2 has its Anchor instruction discriminator')
 assert.equal(routeInstruction.accounts.length, 27, 'the fixture includes actual DEX remaining accounts')
-const missingOrcaAccounts = async (keys) => keys.map((key) => ({ exists: false, address: key }))
-await assert.rejects(validateProviderSwapInstructions(body, route, { readAccounts: missingOrcaAccounts }), /WhirlpoolSwapV2.*(account|owner|data|invalid)/i,
-  'route_v2 requires account state reads even after instruction roles pass')
+await assert.rejects(validateProviderSwapInstructions(body, route), /WhirlpoolSwapV2.*(account|owner|data|invalid)/i,
+  'route_v2 user accounts must be the wallet ATAs')
 const routeWithoutOptionalDestination = {
   ...route,
   swapInstruction: {
@@ -252,7 +248,7 @@ const routeWithoutOptionalDestination = {
   },
 }
 routeWithoutOptionalDestination.instructions = [routeWithoutOptionalDestination.swapInstruction]
-await assert.rejects(validateProviderSwapInstructions(body, routeWithoutOptionalDestination, { readAccounts: missingOrcaAccounts }), /WhirlpoolSwapV2.*(account|owner|data|invalid)/i)
+await assert.rejects(validateProviderSwapInstructions(body, routeWithoutOptionalDestination), /WhirlpoolSwapV2.*(account|owner|data|invalid)/i)
 assert.equal(Buffer.from(jupiterRouteData).toString('hex'), 'bb64facc31c4af1440420f000000000052390d000000000032000a000000010000002f000010270001',
   'the captured Jupiter V6 route_v2 bytes bind amounts, bps, and WhirlpoolSwapV2')
 const legacyStep = Buffer.from([0x11, 0x01, 100, 0, 1])

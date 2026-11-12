@@ -4,20 +4,14 @@ import {
   getAddressDecoder, getCompiledTransactionMessageDecoder, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from '@solana/kit'
-import { AccountState, TOKEN_PROGRAM_ADDRESS, getMintDecoder, getMintSize, getTokenDecoder, getTokenSize } from '@solana-program/token'
+import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
 import { fetchAddressLookupTable } from '@solana-program/address-lookup-table'
-import {
-  DYNAMIC_TICK_ARRAY_DISCRIMINATOR, ORACLE_DISCRIMINATOR, TICK_ARRAY_DISCRIMINATOR, WHIRLPOOL_DISCRIMINATOR,
-  WHIRLPOOL_PROGRAM_ADDRESS, getOracleAddress, getOracleDecoder, getOracleSize,
-  getDynamicTickArrayDecoder, getDynamicTickArrayEncoder, getTickArrayAddress, getTickArrayDecoder, getTickArraySize,
-  getWhirlpoolDecoder, getWhirlpoolSize,
-} from '@orca-so/whirlpools-client'
 import { ataOf } from './account.js'
 import { rpc } from './rpc.js'
 import { parseSwapQuoteRequest, publicSwapQuote, SWAP_QUOTE_MAX_AGE_MS } from './swap-routes.js'
 import { swapCostDisclosure } from './swap-costs.js'
-import { evaluateProgramPolicy } from './program-policy.js'
+import { evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
 
 const MAX_TX_BYTES = 1232
 const SYSTEM_PROGRAM = '11111111111111111111111111111111'
@@ -28,6 +22,7 @@ const COMPUTE_BUDGET_PROGRAM = 'ComputeBudget111111111111111111111111111111'
 const JUPITER_V6_PROGRAM = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'
 const JUPITER_V6_EVENT_AUTHORITY = 'D8cy77BBepLMngZx6ZukaTff5hCt1HrWyKk3Hnd9oitf'
 const JUPITER_ROUTE_V2_DISCRIMINATOR = Buffer.from('bb64facc31c4af14', 'hex')
+const WHIRLPOOL_PROGRAM = ROUTE_PROGRAM_IDS_BY_LABEL.Whirlpool[0]
 const SIGNER_ROLES = new Set([AccountRole.READONLY_SIGNER, AccountRole.WRITABLE_SIGNER])
 const ROUTE_INSTRUCTION_MAX = 1
 const MAX_COMPUTE_UNITS = 1_400_000
@@ -216,13 +211,9 @@ export function decodeJupiterV6RouteInstruction(instruction, request, built) {
 
 const JUPITER_V6_DESTINATION_TOKEN_ACCOUNT_PLACEHOLDER = JUPITER_V6_PROGRAM
 const SPL_MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'
-// The captured Jupiter route has ten common metas, its optional destination slot, and the Orca program at index 11.
-const ORCA_ROUTE_COMMON_ACCOUNT_COUNT = 12
-const ORCA_SWAP_V2_ACCOUNT_COUNT = 15
-const ORCA_ROUTE_V2_ACCOUNT_COUNT = ORCA_ROUTE_COMMON_ACCOUNT_COUNT + ORCA_SWAP_V2_ACCOUNT_COUNT
-const ORCA_TICK_ARRAY_SIZE = 88
-const ORCA_MIN_TICK_INDEX = -443_636
-const ORCA_MAX_TICK_INDEX = 443_636
+// The captured Jupiter route has ten common metas, its optional destination slot, and the Orca program at index 11,
+// followed by WhirlpoolSwapV2's 15 accounts.
+const ORCA_ROUTE_V2_ACCOUNT_COUNT = 27
 
 function routeMeta(instruction, index, expectedAddress, expectedRole, label) {
   const meta = instruction.accounts[index]
@@ -231,158 +222,12 @@ function routeMeta(instruction, index, expectedAddress, expectedRole, label) {
   }
 }
 
-function requireEncodedAccount(accountsByAddress, accountAddress, label) {
-  const account = accountsByAddress.get(String(accountAddress))
-  if (!account || account.address == null || String(account.address) !== String(accountAddress)) {
-    throw new SwapExecutionError(`WhirlpoolSwapV2 ${label} account read is missing or out of order.`)
-  }
-  return account
-}
-
-function requirePresentAccount(accountsByAddress, accountAddress, label, owner) {
-  const account = requireEncodedAccount(accountsByAddress, accountAddress, label)
-  if (account.exists !== true || String(account.programAddress) !== String(owner) || !(account.data instanceof Uint8Array)) {
-    throw new SwapExecutionError(`WhirlpoolSwapV2 ${label} account owner or data is invalid.`)
-  }
-  return account
-}
-
-function decodeTokenAccount(accountsByAddress, accountAddress, { mint, authority, label, allowMissing = false }) {
-  const encoded = requireEncodedAccount(accountsByAddress, accountAddress, label)
-  if (allowMissing && encoded.exists === false && encoded.programAddress == null
-    && (encoded.data == null || encoded.data instanceof Uint8Array && encoded.data.length === 0)) return null
-  if (allowMissing && encoded.exists === true && String(encoded.programAddress) === SYSTEM_PROGRAM
-    && encoded.data instanceof Uint8Array && encoded.data.length === 0) return null
-  const account = requirePresentAccount(accountsByAddress, accountAddress, label, TOKEN_PROGRAM_ADDRESS)
-  if (account.data.length !== getTokenSize()) throw new SwapExecutionError(`WhirlpoolSwapV2 ${label} token-account data size is invalid.`)
-  let token
-  try { token = getTokenDecoder().decode(account.data) }
-  catch { throw new SwapExecutionError(`WhirlpoolSwapV2 ${label} token-account data is invalid.`) }
-  if (String(token.mint) !== String(mint) || String(token.owner) !== String(authority) || token.state !== AccountState.Initialized) {
-    throw new SwapExecutionError(`WhirlpoolSwapV2 ${label} token-account mint, authority, or state is invalid.`)
-  }
-  return token
-}
-
-function decodeMintAccount(accountsByAddress, mintAddress) {
-  const account = requirePresentAccount(accountsByAddress, mintAddress, 'mint', TOKEN_PROGRAM_ADDRESS)
-  if (account.data.length !== getMintSize()) throw new SwapExecutionError('WhirlpoolSwapV2 mint data size is invalid.')
-  let mint
-  try { mint = getMintDecoder().decode(account.data) }
-  catch { throw new SwapExecutionError('WhirlpoolSwapV2 mint data is invalid.') }
-  if (mint.isInitialized !== true) throw new SwapExecutionError('WhirlpoolSwapV2 mint is not initialized.')
-  return mint
-}
-
-function decodeWhirlpoolAccount(accountsByAddress, poolAddress) {
-  const account = requirePresentAccount(accountsByAddress, poolAddress, 'pool', WHIRLPOOL_PROGRAM_ADDRESS)
-  if (account.data.length !== getWhirlpoolSize()
-    || Buffer.compare(Buffer.from(account.data.subarray(0, 8)), Buffer.from(WHIRLPOOL_DISCRIMINATOR)) !== 0) {
-    throw new SwapExecutionError('WhirlpoolSwapV2 pool discriminator or data size is invalid.')
-  }
-  try { return getWhirlpoolDecoder().decode(account.data) }
-  catch { throw new SwapExecutionError('WhirlpoolSwapV2 pool data is invalid.') }
-}
-
-function routeTickArrayStartIndexes(tickCurrentIndex, tickSpacing, aToB) {
-  if (!Number.isSafeInteger(tickCurrentIndex) || tickCurrentIndex < ORCA_MIN_TICK_INDEX || tickCurrentIndex > ORCA_MAX_TICK_INDEX
-    || !Number.isSafeInteger(tickSpacing) || tickSpacing < 1 || tickSpacing > 65_535) {
-    throw new SwapExecutionError('WhirlpoolSwapV2 pool tick state is outside Orca bounds.')
-  }
-  const ticksInArray = ORCA_TICK_ARRAY_SIZE * tickSpacing
-  const base = Math.floor(tickCurrentIndex / ticksInArray) * ticksInArray
-  const offsets = aToB
-    ? [0, -1, -2]
-    : tickCurrentIndex + tickSpacing >= base + ticksInArray ? [1, 2, 3] : [0, 1, 2]
-  const isValidStart = (start) => {
-    if (start < ORCA_MIN_TICK_INDEX) {
-      if (start > ORCA_MIN_TICK_INDEX) return false
-      const minimumArrayStart = ORCA_MIN_TICK_INDEX - (ORCA_MIN_TICK_INDEX % ticksInArray + ticksInArray)
-      return start === minimumArrayStart
-    }
-    return start <= ORCA_MAX_TICK_INDEX && start % ticksInArray === 0
-  }
-  const starts = offsets.map((offset) => base + offset * ticksInArray).filter(isValidStart)
-  if (starts.length !== 3) throw new SwapExecutionError('WhirlpoolSwapV2 tick sequence is unsupported at the pool boundary.')
-  return starts
-}
-
-function isSystemEmptyAccount(account) {
-  if (account.exists === false) return account.programAddress == null && (account.data == null || account.data instanceof Uint8Array && account.data.length === 0)
-  return account.exists === true && String(account.programAddress) === SYSTEM_PROGRAM
-    && account.data instanceof Uint8Array && account.data.length === 0
-}
-
-async function validateTickArray(accountsByAddress, instruction, poolAddress, startTickIndex, index) {
-  const [expectedAddress] = await getTickArrayAddress(address(poolAddress), startTickIndex)
-  if (String(instruction.accounts[23 + index]?.address) !== String(expectedAddress)
-    || instruction.accounts[23 + index]?.role !== AccountRole.WRITABLE) {
-    throw new SwapExecutionError(`WhirlpoolSwapV2 tick array ${index} PDA or sequence is invalid.`)
-  }
-  const account = requireEncodedAccount(accountsByAddress, expectedAddress, `tick array ${index}`)
-  if (isSystemEmptyAccount(account)) return
-  if (account.exists !== true || String(account.programAddress) !== String(WHIRLPOOL_PROGRAM_ADDRESS)
-    || !(account.data instanceof Uint8Array)) {
-    throw new SwapExecutionError(`WhirlpoolSwapV2 tick array ${index} owner, discriminator, or data is invalid.`)
-  }
-
-  const discriminator = account.data.subarray(0, 8)
-  const isDynamic = Buffer.compare(Buffer.from(discriminator), Buffer.from(DYNAMIC_TICK_ARRAY_DISCRIMINATOR)) === 0
-  const isStatic = Buffer.compare(Buffer.from(discriminator), Buffer.from(TICK_ARRAY_DISCRIMINATOR)) === 0
-  if (!isDynamic && !isStatic) throw new SwapExecutionError(`WhirlpoolSwapV2 tick array ${index} owner, discriminator, or data is invalid.`)
-
-  let tickArray
-  try {
-    if (isDynamic) {
-      tickArray = getDynamicTickArrayDecoder().decode(account.data)
-      const canonicalData = getDynamicTickArrayEncoder().encode(tickArray)
-      if (Buffer.compare(Buffer.from(canonicalData), Buffer.from(account.data)) !== 0
-        || tickArray.ticks.length !== ORCA_TICK_ARRAY_SIZE
-        || tickArray.tickBitmap >> BigInt(ORCA_TICK_ARRAY_SIZE) !== 0n
-        || tickArray.ticks.some((tick, tickIndex) => {
-          const bitmapInitialized = (tickArray.tickBitmap & (1n << BigInt(tickIndex))) !== 0n
-          return bitmapInitialized !== (tick.__kind === 'Initialized')
-        })) throw new Error('Dynamic tick-array bytes or bitmap are not canonical')
-    } else {
-      if (account.data.length !== getTickArraySize()) throw new Error('Static tick-array data size is invalid')
-      tickArray = getTickArrayDecoder().decode(account.data)
-    }
-  } catch { throw new SwapExecutionError(`WhirlpoolSwapV2 tick array ${index} data is invalid.`) }
-  if (tickArray.startTickIndex !== startTickIndex || String(tickArray.whirlpool) !== String(poolAddress)) {
-    throw new SwapExecutionError(`WhirlpoolSwapV2 tick array ${index} start tick or pool is invalid.`)
-  }
-}
-
-function validateOracle(accountsByAddress, instruction, poolAddress, oracleAddress) {
-  routeMeta(instruction, 26, oracleAddress, AccountRole.WRITABLE, 'oracle')
-  const account = requireEncodedAccount(accountsByAddress, oracleAddress, 'oracle')
-  if (isSystemEmptyAccount(account)) return
-  if (account.exists !== true || String(account.programAddress) !== String(WHIRLPOOL_PROGRAM_ADDRESS)
-    || !(account.data instanceof Uint8Array) || account.data.length !== getOracleSize()
-    || Buffer.compare(Buffer.from(account.data.subarray(0, 8)), Buffer.from(ORACLE_DISCRIMINATOR)) !== 0) {
-    throw new SwapExecutionError('WhirlpoolSwapV2 oracle owner, discriminator, or data is invalid.')
-  }
-  let oracle
-  try { oracle = getOracleDecoder().decode(account.data) }
-  catch { throw new SwapExecutionError('WhirlpoolSwapV2 oracle data is invalid.') }
-  if (String(oracle.whirlpool) !== String(poolAddress)) throw new SwapExecutionError('WhirlpoolSwapV2 oracle pool relationship is invalid.')
-}
-
-async function readWhirlpoolRouteAccounts(keys, readAccounts) {
-  const requested = keys.map((key) => address(key))
-  let values
-  try {
-    if (typeof readAccounts === 'function') values = await readAccounts(requested)
-    else if (rpc) values = await fetchEncodedAccounts(rpc, requested, { commitment: 'confirmed' })
-    else throw new Error('RPC unavailable')
-  } catch { throw new SwapExecutionError('WhirlpoolSwapV2 on-chain accounts could not be read.') }
-  if (!Array.isArray(values) || values.length !== requested.length) {
-    throw new SwapExecutionError('WhirlpoolSwapV2 on-chain account read returned an incomplete account set.')
-  }
-  return new Map(requested.map((key, index) => [String(key), values[index]]))
-}
-
-async function validateJupiterV2WhirlpoolRoute(instruction, request, built, { deriveAta = ataOf, readAccounts, createdAtas = new Set() } = {}) {
+/**
+ * Check the route's account layout without reading chain state: every account that decides where the user's tokens
+ * and the fee go (signer, user ATAs, mints, fee account, programs, pool) is pinned here. The pool's vaults, tick arrays
+ * and oracle are Orca's own on-chain constraints against that pool, and the amounts are proven by the simulation.
+ */
+async function validateJupiterV2WhirlpoolRoute(instruction, request, built, deriveAta = ataOf) {
   const decoded = decodeJupiterV6RouteInstruction(instruction, request, built)
   if (decoded.routeSteps.length !== 1
     || built.routePlan.length !== 1 || built.routePlan[0]?.swapInfo?.label !== 'Whirlpool'
@@ -393,11 +238,11 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, { de
   if (instruction.accounts.length !== ORCA_ROUTE_V2_ACCOUNT_COUNT) {
     throw new SwapExecutionError('Jupiter V6 WhirlpoolSwapV2 route_v2 must contain exactly 27 accounts with no trailing metadata.')
   }
-  const account = (index) => String(instruction.accounts[index]?.address ?? '')
+  const ata = async (mint) => deriveAta(address(request.wallet), address(mint), TOKEN_PROGRAM_ADDRESS)
   // Admit only classic SPL Token mints. Token-2022 TLV extensions and transfer hooks need their own verified CPI contract.
   routeMeta(instruction, 0, request.wallet, AccountRole.READONLY_SIGNER, 'user authority')
-  routeMeta(instruction, 1, await deriveAta(address(request.wallet), address(request.inputMint), TOKEN_PROGRAM_ADDRESS), AccountRole.WRITABLE, 'user source token account')
-  routeMeta(instruction, 2, await deriveAta(address(request.wallet), address(request.outputMint), TOKEN_PROGRAM_ADDRESS), AccountRole.WRITABLE, 'user destination token account')
+  routeMeta(instruction, 1, await ata(request.inputMint), AccountRole.WRITABLE, 'user source token account')
+  routeMeta(instruction, 2, await ata(request.outputMint), AccountRole.WRITABLE, 'user destination token account')
   routeMeta(instruction, 3, request.inputMint, AccountRole.READONLY, 'source mint')
   routeMeta(instruction, 4, request.outputMint, AccountRole.READONLY, 'destination mint')
   routeMeta(instruction, 5, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'source token program')
@@ -406,69 +251,23 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, { de
   routeMeta(instruction, 8, JUPITER_V6_EVENT_AUTHORITY, AccountRole.READONLY, 'event authority')
   routeMeta(instruction, 9, JUPITER_V6_PROGRAM, AccountRole.READONLY, 'Jupiter program account')
   routeMeta(instruction, 10, built.feeAccount, AccountRole.WRITABLE, 'platform fee account')
-  routeMeta(instruction, 11, WHIRLPOOL_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca program')
+  routeMeta(instruction, 11, WHIRLPOOL_PROGRAM, AccountRole.READONLY, 'Orca program')
   routeMeta(instruction, 12, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca token program A')
   routeMeta(instruction, 13, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca token program B')
   routeMeta(instruction, 14, SPL_MEMO_PROGRAM, AccountRole.READONLY, 'Orca memo program')
   routeMeta(instruction, 15, request.wallet, AccountRole.READONLY, 'Orca token authority')
   routeMeta(instruction, 16, built.routePlan[0].swapInfo.ammKey, AccountRole.WRITABLE, 'Orca pool')
-
-  const poolAddress = account(16)
-  const mintAAddress = account(17)
-  const mintBAddress = account(18)
-  const userAccountAAddress = account(19)
-  const vaultAAddress = account(20)
-  const userAccountBAddress = account(21)
-  const vaultBAddress = account(22)
-  const oracleAddressFromMeta = account(26)
-  const accountsByAddress = await readWhirlpoolRouteAccounts([
-    poolAddress, mintAAddress, mintBAddress, userAccountAAddress, vaultAAddress,
-    userAccountBAddress, vaultBAddress, account(23), account(24), account(25), oracleAddressFromMeta,
-  ], readAccounts)
-
-  const whirlpool = decodeWhirlpoolAccount(accountsByAddress, poolAddress)
-  const aIsInput = mintAAddress === String(request.inputMint)
-  const bIsInput = mintBAddress === String(request.inputMint)
-  if (!(aIsInput && mintBAddress === String(request.outputMint) || bIsInput && mintAAddress === String(request.outputMint))) {
-    throw new SwapExecutionError('WhirlpoolSwapV2 pool mints do not match the requested pair.')
+  // Orca orders a pool's mints as A/B; the swap direction must send the input mint in and the output mint out.
+  const aIsInput = String(instruction.accounts[17]?.address) === String(request.inputMint)
+  const [mintA, mintB] = aIsInput ? [request.inputMint, request.outputMint] : [request.outputMint, request.inputMint]
+  if (decoded.routeSteps[0].aToB !== aIsInput) throw new SwapExecutionError('WhirlpoolSwapV2 direction does not match the source and destination mints.')
+  routeMeta(instruction, 17, mintA, AccountRole.READONLY, 'Orca mint A')
+  routeMeta(instruction, 18, mintB, AccountRole.READONLY, 'Orca mint B')
+  routeMeta(instruction, 19, await ata(mintA), AccountRole.WRITABLE, 'Orca user token account A')
+  routeMeta(instruction, 21, await ata(mintB), AccountRole.WRITABLE, 'Orca user token account B')
+  for (const [index, label] of [[20, 'vault A'], [22, 'vault B'], [23, 'tick array 0'], [24, 'tick array 1'], [25, 'tick array 2'], [26, 'oracle']]) {
+    if (instruction.accounts[index]?.role !== AccountRole.WRITABLE) throw new SwapExecutionError(`Jupiter V6 WhirlpoolSwapV2 ${label} account role is invalid.`)
   }
-  const aToB = decoded.routeSteps[0].aToB
-  if (aToB !== aIsInput) throw new SwapExecutionError('WhirlpoolSwapV2 direction does not match the source and destination mints.')
-  if (String(whirlpool.tokenMintA) !== mintAAddress || String(whirlpool.tokenMintB) !== mintBAddress
-    || String(whirlpool.tokenVaultA) !== vaultAAddress || String(whirlpool.tokenVaultB) !== vaultBAddress) {
-    throw new SwapExecutionError('WhirlpoolSwapV2 pool mint or vault relationships do not match its accounts.')
-  }
-  routeMeta(instruction, 17, whirlpool.tokenMintA, AccountRole.READONLY, 'Orca mint A')
-  routeMeta(instruction, 18, whirlpool.tokenMintB, AccountRole.READONLY, 'Orca mint B')
-  routeMeta(instruction, 19, userAccountAAddress, AccountRole.WRITABLE, 'Orca user token account A')
-  routeMeta(instruction, 20, whirlpool.tokenVaultA, AccountRole.WRITABLE, 'Orca vault A')
-  routeMeta(instruction, 21, userAccountBAddress, AccountRole.WRITABLE, 'Orca user token account B')
-  routeMeta(instruction, 22, whirlpool.tokenVaultB, AccountRole.WRITABLE, 'Orca vault B')
-
-  decodeMintAccount(accountsByAddress, mintAAddress)
-  decodeMintAccount(accountsByAddress, mintBAddress)
-  const expectedUserAtaA = String(await deriveAta(address(request.wallet), address(mintAAddress), TOKEN_PROGRAM_ADDRESS))
-  const expectedUserAtaB = String(await deriveAta(address(request.wallet), address(mintBAddress), TOKEN_PROGRAM_ADDRESS))
-  if (userAccountAAddress !== expectedUserAtaA || userAccountBAddress !== expectedUserAtaB) {
-    throw new SwapExecutionError('WhirlpoolSwapV2 user token accounts are not the requested wallet ATAs.')
-  }
-  const expectedOutputAta = String(await deriveAta(address(request.wallet), address(request.outputMint), TOKEN_PROGRAM_ADDRESS))
-  const outputAtaCreated = createdAtas.has(expectedOutputAta)
-  decodeTokenAccount(accountsByAddress, userAccountAAddress, {
-    mint: mintAAddress, authority: request.wallet, label: 'user token account A',
-    allowMissing: userAccountAAddress === expectedOutputAta && outputAtaCreated,
-  })
-  decodeTokenAccount(accountsByAddress, userAccountBAddress, {
-    mint: mintBAddress, authority: request.wallet, label: 'user token account B',
-    allowMissing: userAccountBAddress === expectedOutputAta && outputAtaCreated,
-  })
-  decodeTokenAccount(accountsByAddress, vaultAAddress, { mint: mintAAddress, authority: poolAddress, label: 'vault A' })
-  decodeTokenAccount(accountsByAddress, vaultBAddress, { mint: mintBAddress, authority: poolAddress, label: 'vault B' })
-
-  const tickStarts = routeTickArrayStartIndexes(whirlpool.tickCurrentIndex, whirlpool.tickSpacing, aToB)
-  for (let index = 0; index < tickStarts.length; index++) await validateTickArray(accountsByAddress, instruction, poolAddress, tickStarts[index], index)
-  const [oracleAddress] = await getOracleAddress(address(poolAddress))
-  validateOracle(accountsByAddress, instruction, poolAddress, oracleAddress)
 }
 
 async function validateAssociatedTokenCreate(request, instruction, deriveAta) {
@@ -548,7 +347,7 @@ function validateRoutePlan(built) {
 }
 
 /** Admit one provider router instruction, exact payer ATAs, bounded compute settings and no extra economics. */
-export async function validateProviderSwapInstructions(request, built, { deriveAta = ataOf, readAccounts } = {}) {
+export async function validateProviderSwapInstructions(request, built, { deriveAta = ataOf } = {}) {
   if (!Array.isArray(built?.instructions) || built.instructions.length === 0 || built.instructions.length > 80) {
     throw new SwapExecutionError('Swap provider returned an invalid instruction set.')
   }
@@ -632,7 +431,7 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
       throw new SwapExecutionError('Compute-budget instructions are allowed only in the provider compute group.')
     }
   }
-  await validateJupiterV2WhirlpoolRoute(swapInstruction, request, built, { deriveAta, readAccounts, createdAtas: pairAtas })
+  await validateJupiterV2WhirlpoolRoute(swapInstruction, request, built, deriveAta)
 }
 
 function validateCompiledSwapMessage(messageBytes, request, built, resolvedLookupTables = built.addressesByLookupTableAddress ?? {}) {
@@ -917,7 +716,6 @@ export function createSwapExecutionService({
   compile,
   simulate,
   intentStore,
-  readAccounts,
   onBuild = () => {},
   now = Date.now,
 } = {}) {
@@ -936,7 +734,7 @@ export function createSwapExecutionService({
         throw new TypeError('Enabled swap execution requires route, compiler, and simulation functions.')
       }
       const built = await buildRoute(request)
-      await validateProviderSwapInstructions(request, built, { readAccounts })
+      await validateProviderSwapInstructions(request, built)
       if (Number(built.priceImpactPct) > 1) throw new SwapExecutionError('Price impact exceeds Nysa’s 1% limit.')
       if (!built.programPolicy?.approved) throw new SwapExecutionError('Swap route contains an unreviewed program.')
       if (built.feeAccountMintVerified !== true || built.feeAccountMint !== request.outputMint && built.feeAccountMint !== request.inputMint) {
