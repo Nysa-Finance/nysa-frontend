@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { swapCostDisclosure } from './swap-costs.js'
+import { swapCostDisclosure } from './swap-execution.js'
 import { estimateSwapCosts } from './swap-execution.js'
 
 assert.deepEqual(swapCostDisclosure({ totalNetworkFeeLamports: '9007199254740999', priorityFeeLamports: '123', accountRentLamports: '2039280' }), {

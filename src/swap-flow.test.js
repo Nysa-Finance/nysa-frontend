@@ -8,8 +8,8 @@ assert.equal(amountToBaseUnits('18446744073709.551615', 6), '1844674407370955161
 assert.equal(baseUnitsToAmount('1234001', 6), '1.234001')
 assert.equal(baseUnitsToAmount('1000000', 6), '1')
 assert.equal(baseUnitsToAmount('1', 6), '0.000001')
-assert.throws(() => amountToBaseUnits('1e3', 6), /decimal amount/i)
-assert.throws(() => amountToBaseUnits('1.0000001', 6), /decimal amount/i)
+assert.throws(() => amountToBaseUnits('1e3', 6), /invalid amount/i)
+assert.throws(() => amountToBaseUnits('1.0000001', 6), /invalid amount/i)
 assert.throws(() => amountToBaseUnits('0', 6), /positive/i)
 assert.throws(() => amountToBaseUnits('18446744073709.551616', 6), /token amount limit/i)
 

@@ -1,30 +1,15 @@
+import { formatBaseUnits, parseBaseUnits } from './swap-fees.js'
+
 const U64_MAX = (1n << 64n) - 1n
 
-export function baseUnitsToAmount(value, decimals) {
-  if (typeof value !== 'string' || !/^\d+$/.test(value) || !Number.isSafeInteger(decimals) || decimals < 0 || decimals > 18) {
-    throw new TypeError('Invalid base-unit amount.')
-  }
-  const scale = 10n ** BigInt(decimals)
-  const units = BigInt(value)
-  const whole = units / scale
-  if (decimals === 0) return String(whole)
-  const fraction = String(units % scale).padStart(decimals, '0').replace(/0+$/, '')
-  return fraction ? `${whole}.${fraction}` : String(whole)
-}
+export const baseUnitsToAmount = (value, decimals) => formatBaseUnits(BigInt(value), decimals)
 
 /** Parse a user-entered decimal amount without floating-point rounding. */
 export function amountToBaseUnits(value, decimals) {
-  if (!Number.isSafeInteger(decimals) || decimals < 0 || decimals > 18
-    || typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value)) {
-    throw new TypeError('Invalid decimal amount.')
-  }
-  const [whole, fraction = ''] = value.split('.')
-  if (fraction.length > decimals) throw new TypeError('Invalid decimal amount precision.')
-  const baseUnits = BigInt(whole) * 10n ** BigInt(decimals)
-    + BigInt((fraction + '0'.repeat(decimals)).slice(0, decimals) || '0')
-  if (baseUnits <= 0n) throw new RangeError('Amount must be positive.')
-  if (baseUnits > U64_MAX) throw new RangeError('Amount exceeds the token amount limit.')
-  return String(baseUnits)
+  const units = parseBaseUnits(value, decimals)
+  if (units <= 0n) throw new RangeError('Amount must be positive.')
+  if (units > U64_MAX) throw new RangeError('Amount exceeds the token amount limit.')
+  return String(units)
 }
 
 /** Derive any optional next action only from the confirmed swap amount. */

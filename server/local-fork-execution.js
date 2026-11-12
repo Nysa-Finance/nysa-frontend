@@ -26,14 +26,6 @@ export function isLocalForkWallet(wallet, { env = process.env, rpcUrl = env.SOLA
   return false
 }
 
-export function localForkFeeAccount(mint, { env = process.env } = {}) {
-  const usdc = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
-  const usdy = 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6'
-  const account = mint === usdc ? env.LOCAL_FORK_FEE_ACCOUNT_USDC
-    : mint === usdy ? env.LOCAL_FORK_FEE_ACCOUNT_USDY : null
-  return account ? { account, mint } : null
-}
-
 export function localForkTreasuryAuthority({ env = process.env } = {}) {
   return env.LOCAL_FORK_TREASURY_AUTHORITY || null
 }
