@@ -1,4 +1,7 @@
-import { address, getBase58Decoder, getCompiledTransactionMessageDecoder, getTransactionDecoder } from '@solana/kit'
+import {
+  address, getBase58Decoder, getCompiledTransactionMessageDecoder, getTransactionDecoder, isSolanaError,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
+} from '@solana/kit'
 
 const base58 = getBase58Decoder()
 
@@ -44,7 +47,14 @@ export async function relaySignedTransaction({ tx, wallet, refuse, send, onSucce
   const signature = signedTransactionSignature(tx, wallet)
   let returned
   try { returned = await send(tx) }
-  catch (error) { throw new SendOutcomeUnknownError(signature, error) }
+  catch (error) {
+    // The RPC simulates before forwarding; a failed simulation means the transaction was never sent.
+    if (isSolanaError(error, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE)) {
+      const hint = (error.context?.logs ?? []).find((line) => /error|failed/i.test(line))
+      throw new DefiniteSendRefusal(`The network refused the transaction in simulation, so nothing was sent${hint ? `: ${hint.replace(/^Program log: /, '')}` : '.'}`)
+    }
+    throw new SendOutcomeUnknownError(signature, error)
+  }
   if (returned !== signature) throw new SendOutcomeUnknownError(signature, new Error('RPC returned a different signature.'))
   onSuccess(signature)
   return { signature }

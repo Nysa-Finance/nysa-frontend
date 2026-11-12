@@ -4,6 +4,7 @@ import {
   getBase58Decoder, getBase64EncodedWireTransaction, partiallySignTransaction, pipe,
   createTransactionMessage, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash,
 } from '@solana/kit'
+import { SolanaError, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE } from '@solana/kit'
 import { relaySignedTransaction, DefiniteSendRefusal, SendOutcomeUnknownError } from './send-safety.js'
 import { persistSignedSwapBeforeRelay } from '../src/swap-recovery.js'
 
@@ -31,6 +32,12 @@ await assert.rejects(relaySignedTransaction({
   send: async () => { requestReachedRpc = true; throw new Error('response socket closed after broadcast') },
 }), (error) => error instanceof SendOutcomeUnknownError && error.signature === signature && error.status === 502)
 assert.equal(requestReachedRpc, true, 'lost RPC response is classified only after invoking send')
+
+await assert.rejects(relaySignedTransaction({
+  tx, wallet: String(signer.address), refuse: async () => null,
+  send: async () => { throw new SolanaError(SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, { logs: ['Program log: Error: SlippageToleranceExceeded'] }) },
+}), (error) => error instanceof DefiniteSendRefusal && /simulation.*SlippageToleranceExceeded/.test(error.message),
+'a failed preflight simulation is a definite refusal: the RPC never forwarded the transaction')
 
 for (const stage of ['withdraw', 'supply']) {
   const persisted = []

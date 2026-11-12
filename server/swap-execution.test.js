@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { address, AccountRole, appendTransactionMessageInstructions, compileTransaction, compressTransactionMessageUsingAddressLookupTables, createTransactionMessage, getBase64EncodedWireTransaction, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from '@solana/kit'
+import { address, AccountRole, appendTransactionMessageInstructions, compileTransaction, generateKeyPairSigner, partiallySignTransaction, compressTransactionMessageUsingAddressLookupTables, createTransactionMessage, getBase64EncodedWireTransaction, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from '@solana/kit'
 import { createSwapExecutionService, createAuthorizedSwapSender, compileSwapTransaction, decodeJupiterV6RouteInstruction, assertSwapQuoteFresh, swapIntentStillAuthorized, SwapExecutionError, assertSwapSimulationEffects, validateProviderSwapInstructions } from './swap-execution.js'
-import { createSwapIntentStore } from './tx-intent.js'
+import { createSwapIntentStore, messageMatchesWithLighthouse } from './tx-intent.js'
 import { TOKENS } from '../src/config.js'
 import { ataOf } from './account.js'
 import { ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
@@ -617,5 +617,37 @@ assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: 
 assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true }), false,
   'a program off the approved list blocks relay even after a route was signed')
 assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: false, approvedPrograms }), false)
+
+// Phantom appends Lighthouse guard instructions when it signs: the swap relay accepts those and nothing else, and a
+// changed message is a definite refusal (SwapExecutionError, HTTP 400), not an unknown outcome.
+const guardPayer = await generateKeyPairSigner()
+const guardWallet = String(guardPayer.address)
+const swapMessage = (data, extra = []) => compileTransaction(pipe(
+  createTransactionMessage({ version: 0 }),
+  (m) => setTransactionMessageFeePayer(guardPayer.address, m),
+  (m) => setTransactionMessageLifetimeUsingBlockhash({ blockhash: BLOCKHASH, lastValidBlockHeight: 2n }, m),
+  (m) => appendTransactionMessageInstructions([
+    { programAddress: address(JUPITER_V6), accounts: [{ address: guardPayer.address, role: AccountRole.WRITABLE_SIGNER }], data: Uint8Array.of(data) },
+    ...extra,
+  ], m),
+))
+const lighthouseGuard = {
+  programAddress: address('L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95'),
+  accounts: [{ address: guardPayer.address, role: AccountRole.READONLY }], // asserts on an account already in the swap
+  data: Uint8Array.from([5, 0, 6, 0, 0]),
+}
+const signedWire = async (compiled) => getBase64EncodedWireTransaction(await partiallySignTransaction([guardPayer.keyPair], compiled))
+let guardIntent = 0
+const guardStore = createSwapIntentStore({ messageMatcher: messageMatchesWithLighthouse, idFactory: () => `guard-${++guardIntent}` })
+let guardRelayed = 0
+const guardSender = createAuthorizedSwapSender({ intentStore: guardStore, send: async () => ++guardRelayed })
+guardStore.issue({ wallet: guardWallet, messageBytes: swapMessage(1).messageBytes, metadata: {} })
+await guardSender({ tx: await signedWire(swapMessage(1, [lighthouseGuard])), wallet: guardWallet, intentId: 'guard-1' })
+assert.equal(guardRelayed, 1, 'a swap signed with an appended Lighthouse guard is relayed')
+guardStore.issue({ wallet: guardWallet, messageBytes: swapMessage(1).messageBytes, metadata: {} })
+await assert.rejects(guardSender({ tx: await signedWire(swapMessage(2, [lighthouseGuard])), wallet: guardWallet, intentId: 'guard-2' }),
+  (error) => error instanceof SwapExecutionError && /changed after authorization/i.test(error.message),
+  'a changed swap message is refused as a SwapExecutionError')
+assert.equal(guardRelayed, 1)
 
 console.log('swap execution guard ok')

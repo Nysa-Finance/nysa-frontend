@@ -11,6 +11,7 @@ import { ataOf } from './account.js'
 import { rpc } from './rpc.js'
 import { parseSwapQuoteRequest, publicSwapQuote, SWAP_QUOTE_MAX_AGE_MS } from './swap-routes.js'
 import { evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
+import { TransactionIntentError } from './tx-intent.js'
 
 const MAX_TX_BYTES = 1232
 const SYSTEM_PROGRAM = '11111111111111111111111111111111'
@@ -837,7 +838,7 @@ export function createAuthorizedSwapSender({ intentStore, send, authorize = asyn
     let intent
     try { intent = intentStore.assertAndConsume(intentId, wallet, messageBytes) }
     catch (error) {
-      if (error?.name === 'TransactionIntentError') throw new SwapExecutionError(error.message)
+      if (error instanceof TransactionIntentError) throw new SwapExecutionError(error.message)
       throw error
     }
     if (await authorize(intent) !== true) throw new SwapExecutionError('Swap route readiness changed after signing; rebuild after checks pass.')

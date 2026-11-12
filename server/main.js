@@ -28,7 +28,7 @@ import { LOOP_PREVIEW_MAX_AGE_MS, loopCarryStillCurrent, loopMarketRiskFromSnaps
 import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, swapPairAvailability, swapReadiness } from './swap-routes.js'
 import { runWithRequestAbortSignal } from './request-signal.js'
 import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransaction, createAuthorizedSwapSender, swapIntentStillAuthorized, validateProviderSwapInstructions, SwapExecutionError } from './swap-execution.js'
-import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash } from './tx-intent.js'
+import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash, messageMatchesWithLighthouse } from './tx-intent.js'
 import { createLendingTransactionIntentService } from './lending-intents.js'
 import { noteBuilt } from './relay.js'
 import { DefiniteSendRefusal, SendOutcomeUnknownError } from './send-safety.js'
@@ -246,7 +246,7 @@ function currentLoopActionReadiness(body, { previewAcknowledgementValid = false,
   })
 }
 
-const swapIntentStore = createSwapIntentStore()
+const swapIntentStore = createSwapIntentStore({ messageMatcher: messageMatchesWithLighthouse }) // Phantom's guard
 const lendingIntentStore = createLendingTransactionIntentStore({ ttlMs: 10 * 60_000 })
 const lendingTransactions = createLendingTransactionIntentService({
   intentStore: lendingIntentStore,

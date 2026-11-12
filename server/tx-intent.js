@@ -51,7 +51,7 @@ function messageDigest(messageBytes) {
 /** Permit a wallet to refresh only the recent blockhash on the non-economic Kamino metadata setup message. */
 export function loopSetupMessageMatchesIgnoringBlockhash(expectedBytes, candidateBytes, metadata) {
   if (metadata?.kind !== 'loop-setup') return false
-  if (lendingMessageMatchesWithLighthouse(expectedBytes, candidateBytes, { ignoreLifetimeToken: true })) return true
+  if (messageMatchesWithLighthouse(expectedBytes, candidateBytes, { ignoreLifetimeToken: true })) return true
   try {
     const decode = getCompiledTransactionMessageDecoder()
     const expected = decode.decode(expectedBytes)
@@ -147,8 +147,9 @@ function isReadOnlyLighthouseAssertion(instruction, accountKeys) {
     && accountIndices.every((index) => Number.isSafeInteger(index) && !!accountKeys[index])
 }
 
-/** Compare a wallet-modified lending message while allowing only appended Lighthouse guard instructions. */
-function lendingMessageMatchesWithLighthouse(originalBytes, candidateBytes, { ignoreLifetimeToken = false } = {}) {
+/** Compare a wallet-modified message (Phantom appends Lighthouse guard instructions when signing) while allowing only
+ * appended read-only Lighthouse assertions. */
+export function messageMatchesWithLighthouse(originalBytes, candidateBytes, { ignoreLifetimeToken = false } = {}) {
   let original, candidate
   try {
     const decode = getCompiledTransactionMessageDecoder().decode
@@ -288,7 +289,7 @@ export function createSwapIntentStore({ ttlMs = 15_000, maxEntries = MAX_ENTRIES
 
 /** Short-lived exact-message authorization for server-built ordinary and borrower-flow lending transactions. */
 export function createLendingTransactionIntentStore(options = {}) {
-  const store = createSwapIntentStore({ ...options, messageMatcher: lendingMessageMatchesWithLighthouse })
+  const store = createSwapIntentStore({ ...options, messageMatcher: messageMatchesWithLighthouse })
   return {
     issue(input = {}) {
       validateLendingBuildMetadata(input.metadata)
