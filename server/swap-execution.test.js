@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { address, AccountRole, appendTransactionMessageInstructions, compileTransaction, generateKeyPairSigner, partiallySignTransaction, compressTransactionMessageUsingAddressLookupTables, createTransactionMessage, getBase64EncodedWireTransaction, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from '@solana/kit'
+import { address, AccountRole, appendTransactionMessageInstructions, compileTransaction, generateKeyPairSigner, getCompiledTransactionMessageDecoder, getCompiledTransactionMessageEncoder, partiallySignTransaction, signBytes, compressTransactionMessageUsingAddressLookupTables, createTransactionMessage, getBase64EncodedWireTransaction, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from '@solana/kit'
 import { createSwapExecutionService, createAuthorizedSwapSender, compileSwapTransaction, decodeJupiterV6RouteInstruction, assertSwapQuoteFresh, swapIntentStillAuthorized, SwapExecutionError, assertSwapSimulationEffects, validateProviderSwapInstructions } from './swap-execution.js'
 import { createSwapIntentStore, messageMatchesWithLighthouse } from './tx-intent.js'
 import { TOKENS } from '../src/config.js'
@@ -649,5 +649,33 @@ await assert.rejects(guardSender({ tx: await signedWire(swapMessage(2, [lighthou
   (error) => error instanceof SwapExecutionError && /changed after authorization/i.test(error.message),
   'a changed swap message is refused as a SwapExecutionError')
 assert.equal(guardRelayed, 1)
+
+// What Phantom actually sends (captured on mainnet): the same instructions, its readonly static keys recompiled into a
+// different order with the Lighthouse program among them, and assertions using log level 4.
+const phantomBuilt = swapMessage(1, [
+  { programAddress: address(ATA_PROGRAM), accounts: [{ address: guardPayer.address, role: AccountRole.WRITABLE_SIGNER }], data: Uint8Array.of(1) },
+  { programAddress: address(MEMO), accounts: [], data: Uint8Array.of(9) },
+])
+const builtMessage = getCompiledTransactionMessageDecoder().decode(phantomBuilt.messageBytes)
+const builtKeys = builtMessage.staticAccounts.map(String)
+const readonlyStart = builtKeys.length - builtMessage.header.numReadonlyNonSignerAccounts
+const reorderedKeys = [...builtKeys.slice(0, readonlyStart), ...builtKeys.slice(readonlyStart).reverse(), 'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95']
+const remap = (index) => reorderedKeys.indexOf(builtKeys[index])
+const phantomMessageBytes = getCompiledTransactionMessageEncoder().encode({
+  ...builtMessage,
+  header: { ...builtMessage.header, numReadonlyNonSignerAccounts: builtMessage.header.numReadonlyNonSignerAccounts + 1 },
+  staticAccounts: reorderedKeys.map(address),
+  instructions: [
+    ...builtMessage.instructions.map((ix) => ({ ...ix, programAddressIndex: remap(ix.programAddressIndex), accountIndices: (ix.accountIndices ?? []).map(remap) })),
+    { programAddressIndex: reorderedKeys.length - 1, accountIndices: [0], data: Uint8Array.from(Buffer.from('06040300808a5e07000000000403000001000000000000000000', 'hex')) },
+  ],
+})
+assert.notDeepEqual(reorderedKeys.slice(0, builtKeys.length), builtKeys, 'the fixture reorders the readonly static keys')
+const phantomWire = Buffer.concat([ // wire format: one signature (shortvec 1), the signature, then the message
+  Uint8Array.of(1), await signBytes(guardPayer.keyPair.privateKey, phantomMessageBytes), phantomMessageBytes,
+]).toString('base64')
+guardStore.issue({ wallet: guardWallet, messageBytes: phantomBuilt.messageBytes, metadata: {} })
+await guardSender({ tx: phantomWire, wallet: guardWallet, intentId: 'guard-3' })
+assert.equal(guardRelayed, 2, 'Phantom\'s reordered static keys and log-level-4 Lighthouse assertions are relayed')
 
 console.log('swap execution guard ok')

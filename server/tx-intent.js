@@ -16,7 +16,6 @@ const LIGHTHOUSE_ASSERTION_ACCOUNT_COUNTS = new Map([
   [2, 1], [3, 1], [4, 2], [5, 1], [6, 1], [7, 1], [8, 1], [9, 1],
   [10, 1], [11, 1], [12, 1], [13, 1], [14, 1], [16, 3], [17, 1],
 ])
-const LIGHTHOUSE_LOG_LEVELS = new Set([0, 1, 2, 3, 16, 17, 18])
 
 const BORROWER_FLOW_ACTIONS = new Map([
   ['acquire-supply:supply', 'deposit'],
@@ -73,10 +72,6 @@ export function loopSetupMessageMatchesIgnoringBlockhash(expectedBytes, candidat
       && JSON.stringify(lookups(expected)) === JSON.stringify(lookups(candidate))
       && JSON.stringify(instructions(expected)) === JSON.stringify(instructions(candidate))
   } catch { return false }
-}
-
-function sameArray(left, right) {
-  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 function sameBytes(left, right) {
@@ -140,7 +135,8 @@ function instructionMatches(left, leftKeys, right, rightKeys) {
 
 function isReadOnlyLighthouseAssertion(instruction, accountKeys) {
   const data = instruction.data
-  if (!(data instanceof Uint8Array) || data.length < 3 || !LIGHTHOUSE_LOG_LEVELS.has(data[1])) return false
+  // data[0] is the variant; the log level that follows only changes what the assertion logs (Phantom uses 4).
+  if (!(data instanceof Uint8Array) || data.length < 3) return false
   const expectedAccounts = LIGHTHOUSE_ASSERTION_ACCOUNT_COUNTS.get(data[0])
   const accountIndices = instruction.accountIndices ?? []
   return expectedAccounts != null && accountIndices.length === expectedAccounts
@@ -170,7 +166,9 @@ export function messageMatchesWithLighthouse(originalBytes, candidateBytes, { ig
   const originalStaticSet = new Set(originalStatic)
   const addedStatic = candidateStatic.filter((account) => !originalStaticSet.has(account))
   if (addedStatic.length > 1 || addedStatic.some((account) => account !== LIGHTHOUSE_PROGRAM_ID)) return false
-  if (!sameArray(candidateStatic.filter((account) => !addedStatic.includes(account)), originalStatic)) return false
+  // Wallets recompile the message, which can reorder static keys (Phantom does); instructions are compared by address
+  // and every account must keep its role below, so only the set of keys must match.
+  if (candidateStatic.length !== originalStatic.length + addedStatic.length) return false
   if (candidateHeader.numReadonlyNonSignerAccounts !== originalHeader.numReadonlyNonSignerAccounts + addedStatic.length) return false
 
   const originalRoles = validStaticRoles(original)
