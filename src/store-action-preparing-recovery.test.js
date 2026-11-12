@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { getBase58Decoder } from '@solana/kit'
 import { installMockWebLocks } from './test-utils/mock-web-locks.js'
 
+// Node 25+ defines sessionStorage by default; the recovery path must work without it, so remove it.
+Object.defineProperty(globalThis, 'sessionStorage', { value: undefined, configurable: true, writable: true })
 assert.equal(typeof globalThis.sessionStorage, 'undefined', 'recovery test runs without sessionStorage')
 
 const walletAddress = '11111111111111111111111111111111'
