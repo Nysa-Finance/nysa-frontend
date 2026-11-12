@@ -222,6 +222,19 @@ function validateLendingBuildMetadata(metadata) {
   }
 }
 
+// What a wallet changed when it signed, for the log: only public message structure (accounts, programs, data).
+function messageSummary(bytes) {
+  try {
+    const message = getCompiledTransactionMessageDecoder().decode(bytes)
+    const keys = message.staticAccounts.map(String)
+    return {
+      blockhash: String(message.lifetimeToken), header: message.header, staticAccounts: keys,
+      lookups: lookupTables(message).map((t) => `${t.address.slice(0, 6)} w${t.writable.length} r${t.readonly.length}`),
+      instructions: message.instructions.map((ix) => `${keys[ix.programAddressIndex] ?? `#${ix.programAddressIndex}`} accts[${(ix.accountIndices ?? []).join(',')}] data ${Buffer.from(ix.data ?? []).toString('hex')}`),
+    }
+  } catch { return 'undecodable' }
+}
+
 /** Keep short-lived authorization for an exact server-built transaction message. */
 export function createSwapIntentStore({ ttlMs = 15_000, maxEntries = MAX_ENTRIES, now = Date.now, idFactory = randomUUID, messageMatcher = null } = {}) {
   if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0 || !Number.isSafeInteger(maxEntries) || maxEntries <= 0
@@ -273,6 +286,7 @@ export function createSwapIntentStore({ ttlMs = 15_000, maxEntries = MAX_ENTRIES
         try { normalizedMatch = messageMatcher(intent.messageBytes, messageBytes, intent.metadata) === true } catch { normalizedMatch = false }
       }
       if (!exactMatch && !normalizedMatch) {
+        if (intent.messageBytes) console.warn('[intent] signed message differs', JSON.stringify({ built: messageSummary(intent.messageBytes), signed: messageSummary(messageBytes) }))
         throw new TransactionIntentError('Signed transaction changed after authorization.')
       }
       intents.delete(id)
