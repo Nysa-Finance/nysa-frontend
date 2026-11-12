@@ -6,6 +6,7 @@ import { routeSwapDirection } from '../swap-flow-state.js'
 import { createLatestRequestGate } from '../swap-quote-request.js'
 import { loadAccount, signAndSendSwap, state } from '../store.js'
 import { TOKENS, txUrl } from '../config.js'
+import TokenIcon from '../components/TokenIcon.vue'
 import { formatBaseUnits } from '../swap-fees.js'
 
 const SLIPPAGES = [10, 30, 50] // bps; the server refuses more than 50
@@ -141,7 +142,7 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
     <div class="box">
       <div class="row"><span>Sell</span></div>
       <div class="row">
-        <span class="token"><img :src="input.icon" alt="" />{{ input.name }}</span>
+        <span class="token"><TokenIcon :token="input" size="sm" />{{ input.name }}</span>
         <input v-model="amount" :disabled="!!stage" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Amount to sell" />
       </div>
       <div class="row small">
@@ -158,7 +159,7 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
     <div class="box">
       <div class="row"><span>Buy</span></div>
       <div class="row">
-        <span class="token"><img :src="output.icon" alt="" />{{ output.name }}</span>
+        <span class="token"><TokenIcon :token="output" size="sm" />{{ output.name }}</span>
         <output :class="{ dim: !quote }" aria-label="Estimated amount to buy">{{ quote ? fmt(output, quote.outputAmountBaseUnits) : quoting ? '…' : '0' }}</output>
       </div>
       <div class="row small"><span>Available: {{ balanceOf(output) == null ? '-' : fmt(output, balanceOf(output)) }}</span></div>
@@ -197,7 +198,6 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--n-text-3); font-size: 12px; }
 .row.small .n-quick button { padding: 3px 10px; }
 .token { display: inline-flex; align-items: center; gap: 8px; color: var(--n-text); font-size: 17px; font-weight: 600; }
-.token img { width: 24px; height: 24px; border-radius: 50%; }
 .box input, .box output { min-width: 0; width: 100%; text-align: right; color: var(--n-text); font-size: 26px; font-variant-numeric: tabular-nums; outline: 0; }
 .box output.dim { color: var(--n-text-4); }
 .flip { align-self: center; margin: -18px 0; z-index: 1; width: 36px; height: 36px; border: 1px solid var(--n-line-2); border-radius: 10px; background: var(--n-bg-3); color: var(--n-text-2); font-size: 18px; }
