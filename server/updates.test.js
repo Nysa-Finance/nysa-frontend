@@ -11,6 +11,8 @@ assert.deepEqual(reserve('UpdateLoanToValuePct', '5c', USDY), { action: 'Max LTV
 assert.deepEqual(reserve('UpdateLiquidationThresholdPct', '5f', USDY), { action: 'Liquidation LTV', value: '95%' })
 assert.deepEqual(reserve('UpdateDepositLimit', '004429353a000000', USDC), { action: 'Supply cap', value: '250K USDC' })
 assert.deepEqual(reserve('UpdateBorrowLimitOutsideElevationGroup', 'ffffffffffffffff', USDC).value, 'unlimited')
+assert.deepEqual(reserve('UpdateDepositWithdrawalCap', '005cb2ec22000000' + '100e000000000000', USDC).value, '150K USDC per 1h')
+assert.deepEqual(reserve('UpdateDepositWithdrawalCap', '005cb2ec22000000' + '0000000000000000', USDC).value, 'off')
 assert.deepEqual(reserve('UpdateMaxLiquidationBonusBps', 'f401', USDC).value, '5%')
 assert.deepEqual(reserve('UpdateTokenInfoScopeChain', '1400e600ffffffff', USDC), { action: 'Oracle · Scope price chain', value: '20 → 230' })
 assert.deepEqual(reserve('UpdateTokenInfoPriceMaxAge', 'b400000000000000', USDC).value, '3m')
@@ -43,6 +45,7 @@ assert.deepEqual(liquidation(acc, [
 const vaultCfg = (field, bytes) => describeVault('updateVaultConfig', { entry: { [field]: {} }, data: Buffer.from(bytes) }, USDC)
 const le64 = (n) => { const b = Buffer.alloc(8); b.writeBigUInt64LE(BigInt(n)); return b }
 assert.deepEqual(vaultCfg('DepositCap', le64(250_000_000_000)), { action: 'Deposit cap', value: '250K USDC' })
+assert.deepEqual(vaultCfg('DepositCap', le64(0)).value, 'unlimited')
 assert.deepEqual(vaultCfg('MinDepositAmount', le64(1000)), { action: 'Min deposit', value: '0.001 USDC' })
 assert.deepEqual(vaultCfg('PerformanceFeeBps', le64(1000)), { action: 'Performance fee', value: '10%' })
 assert.deepEqual(vaultCfg('Name', Buffer.from('RWA Prime')), { action: 'Vault name', value: 'RWA Prime' })

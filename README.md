@@ -50,6 +50,11 @@ names sanctioned crypto addresses (SOL, USDC, ETH, …). The full XML export is 
 builds and relays, and the frontend disconnects it with a notice. Until a list is loaded, viewing works but no
 transaction is built (fail closed).
 
+Geoblocking (`server/main.js`): in markets flagged `geoBlocked` in `src/config.js` (the USDY market), visitors from the
+US, Canada, sanctioned countries (Cuba, Iran, North Korea, Syria, Russia, Belarus) and Tor get 403 on supplying,
+borrowing and liquidating; repaying and withdrawing stay open. The country is Cloudflare's `CF-IPCountry` header (IP
+Geolocation, on by default); `/api/geo` tells the page, which then shows a notice and only the Repay tab.
+
 Validation and limits: wallet addresses and actions are checked, request bodies are capped at 4 KB, and the endpoints that
 cost RPC calls are rate-limited per client IP (Cloudflare's `CF-Connecting-IP`). Each IP may hold 5 market streams
 (`/api/events`); a browser turned away polls `/api/market` instead. The server never holds keys.

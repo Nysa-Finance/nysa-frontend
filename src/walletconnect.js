@@ -5,15 +5,13 @@
 // in the wallet app and sent by our backend (/api/tx/send), as for the iOS deeplink wallets. Loaded only when picked.
 import { getBase58Encoder } from '@solana/kit'
 import { WALLETCONNECT_PROJECT_ID } from './config.js'
-import { withSignature } from './wallets.js'
+import { withSignature, fromBase64, toBase64 } from './wallets.js'
 
 const WC_NAME = 'WalletConnect'
 const CHAIN = 'solana:mainnet' // Wallet Standard id, as the store uses
 // Solana mainnet in WalletConnect (CAIP-2): the genesis hash, and the truncated id some wallets still use.
 const SOLANA_IDS = ['solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp', 'solana:4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZ']
 const METADATA = () => ({ name: 'Nysa', description: 'Earn and borrow against tokenized real-world assets', url: location.origin, icons: [`${location.origin}/favicon.png`] })
-const toBase64 = (bytes) => btoa(String.fromCharCode(...bytes))
-const fromBase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
 
 // The library retries forever when the relay refuses it (e.g. an unknown project id): give up after this long.
 const START_TIMEOUT_MS = 15_000

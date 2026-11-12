@@ -12,7 +12,7 @@ import { rpc } from './rpc.js'
 import { loadMarket } from './market.js'
 import { readVault } from './vault.js'
 import { vaultShares } from './account.js'
-import { refreshIndex } from './updates.js'
+import { freshIndex } from './updates.js'
 import { indexedPositionSummary } from './positions.js'
 import { read, write, POINTS, HISTORY } from './storage.js'
 
@@ -32,7 +32,7 @@ async function firstTxTime(addr) {
 }
 
 export async function readMarkets(history, {
-  indexReader = () => refreshIndex(rpc),
+  indexReader = freshIndex,
   ledgerReader = () => getCurrentLedgerInstant(rpc),
   markets: configuredMarkets = LIVE,
   vaults: configuredVaults = VAULTS,

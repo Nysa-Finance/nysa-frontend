@@ -100,7 +100,7 @@ export async function readVault(v, markets, now, reserveMetrics) {
       available: n(holdings.available), // in the vault, uninvested (vested rewards not in it yet: they count in `total` only)
       invested: n(holdings.invested),
       bufferTarget: n(target.targetUnallocatedAmount), // tokens kept uninvested to serve withdrawals at once
-      depositCap: Number(state.depositCap) / 10 ** Number(state.tokenMintDecimals),
+      depositCap: Number(state.depositCap) ? Number(state.depositCap) / 10 ** Number(state.tokenMintDecimals) : null, // 0 = uncapped
       minDeposit: Number(state.minDepositAmount) / 10 ** Number(state.tokenMintDecimals),
       // Charged on withdrawals and left in the vault (set on-chain by the curator).
       withdrawPenaltyPct: Number(state.withdrawalPenaltyBps) / 100,
