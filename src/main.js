@@ -43,5 +43,13 @@ const router = createRouter({
 
 router.afterEach(applySeo)
 
+// Phones with a comma-decimal locale (it, de, fr…) show "," on the decimal keypad: turn it into "." before v-model reads it.
+document.addEventListener('input', ({ target: el }) => {
+  if (el.inputMode !== 'decimal' || !el.value.includes(',')) return
+  const caret = el.selectionStart
+  el.value = el.value.replaceAll(',', '.')
+  el.setSelectionRange(caret, caret)
+}, true)
+
 createApp(App).use(router).mount('#app')
 startAnalytics()
