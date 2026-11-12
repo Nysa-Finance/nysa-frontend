@@ -20,7 +20,7 @@ import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
-import { LIVE, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
+import { LIVE, LOOP_ENABLED, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
 import { buildSwap, configuredFeeAccountForMint, SwapError } from './swap.js'
@@ -599,6 +599,7 @@ const routes = [
     if (!KINDS.includes(b.kind)) throw new UserError('Unknown action')
     if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
     if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
+      if (!LOOP_ENABLED) throw new UserError('Unknown action')
       if (localForkDappEnabled && !isLocalForkWallet(b.wallet, { rpcUrl: RPC_URL })) {
         return send(res, 503, { error: 'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.' })
       }
@@ -736,7 +737,7 @@ const routes = [
 
 // Client-side routes of the SPA (keep in sync with src/main.js).
 // '/', '/lend' and '/market/:id' are old links the SPA redirects (to Earn, a vault or a borrow market page).
-const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', '/loop', '/analytics', '/liquidations', '/dashboard'])
+const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(LOOP_ENABLED ? ['/loop'] : []), '/analytics', '/liquidations', '/dashboard'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
   || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
   || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
@@ -745,7 +746,7 @@ const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), ...(currentSwapReadiness().visible ? ['/swap'] : []), '/loop', '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
+${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), ...(currentSwapReadiness().visible ? ['/swap'] : []), ...(LOOP_ENABLED ? ['/loop'] : []), '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
 </urlset>
 `
 
@@ -777,6 +778,7 @@ const server = http.createServer(async (req, res) => {
   try {
     const { pathname } = new URL(req.url, 'http://localhost')
     if (pathname.startsWith('/api/')) {
+      if (!LOOP_ENABLED && pathname.startsWith('/api/loop-')) return send(res, 404, { error: 'Not found' })
       for (const [method, re, handler] of routes) {
         const match = pathname.match(re)
         if (!match) continue

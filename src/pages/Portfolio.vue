@@ -3,7 +3,7 @@ import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, rowOf, priceOf, loadPoints, myPoints, riskOf, claimRewards, useTx } from '../store.js'
-import { LIVE, VAULTS, tok, tokensOf } from '../config.js'
+import { LIVE, LOOP_ENABLED, VAULTS, tok, tokensOf } from '../config.js'
 import { usd, pct, amt, amtDust, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
@@ -94,9 +94,9 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
       <div><div class="loop-label">Collateral</div><div class="n-num">{{ amt(Number(position.collateral.amount), 4) }} {{ position.collateral.tokenId === 'svm-usdy' ? 'USDY' : position.collateral.tokenId }}</div><div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div></div>
       <div><div class="loop-label">Debt</div><div class="n-num">{{ amt(Number(position.liability.amount), 4) }} {{ position.liability.tokenId === 'svm-usdc' ? 'USDC' : position.liability.tokenId }}</div><div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div></div>
       <div><div class="loop-label">Health factor</div><div class="n-num">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div></div>
-      <div><button class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
+      <div><button v-if="LOOP_ENABLED" class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
     </div>
-    <p class="loop-unavailable">Atomic full close remains unavailable until the swap route and local fork checks pass.</p>
+    <p v-if="LOOP_ENABLED" class="loop-unavailable">Atomic full close remains unavailable until the swap route and local fork checks pass.</p>
   </section>
 
   <div v-if="on" class="n-banner fp-banner">

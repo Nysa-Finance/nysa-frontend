@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { state, disconnect } from '../store.js'
-import { explorer } from '../config.js'
+import { LOOP_ENABLED, explorer } from '../config.js'
 import { short } from '../logic.js'
 import ConnectModal from './ConnectModal.vue'
 import WalletHandoff from './WalletHandoff.vue'
@@ -15,7 +15,7 @@ const tabs = [
   { to: '/swap', label: 'Swap', icon: '/app/icon-borrow.png' },
   { to: '/loop', label: 'Loop', icon: '/app/icon-borrow.png' },
 ]
-const visibleTabs = computed(() => tabs.filter((t) => t.to !== '/swap' || state.swapVisible))
+const visibleTabs = computed(() => tabs.filter((t) => (t.to !== '/swap' || state.swapVisible) && (t.to !== '/loop' || LOOP_ENABLED)))
 const menu = ref(false)
 const route = useRoute()
 const active = (t) => route.path === t.to || route.path.startsWith(`${t.to}/`) // a vault or market page keeps its tab lit
