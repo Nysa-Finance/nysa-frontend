@@ -2,18 +2,20 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { amountToBaseUnits } from '../swap-flow.js'
-import { routeSwapDirection } from '../swap-flow-state.js'
 import { createLatestRequestGate } from '../swap-quote-request.js'
 import { loadAccount, signAndSendSwap, state } from '../store.js'
-import { TOKENS, txUrl } from '../config.js'
+import { LIVE, TOKENS, txUrl } from '../config.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import { formatBaseUnits } from '../swap-fees.js'
 
 const SLIPPAGES = [10, 30, 50] // bps; the server refuses more than 50
 const route = useRoute()
-const start = routeSwapDirection(null, route.query.input, route.query.output)
-const inputId = ref(start.inputId)
-const outputId = ref(start.outputId)
+// Every collateral/loan pair of a live market can be swapped both ways; a new market adds its tokens here.
+const PAIRS = LIVE.flatMap((market) => market.pairs ?? []).flatMap(({ collateral, liability }) => [[collateral, liability], [liability, collateral]])
+const tokens = [...new Set(PAIRS.map(([id]) => id))].map((id) => TOKENS[id])
+const inputId = ref(tokens.some((token) => token.token_id === route.query.input) ? route.query.input : tokens[0].token_id)
+const outputId = ref(route.query.output)
+const outputs = computed(() => [...new Set(PAIRS.filter(([id]) => id === inputId.value).map(([, id]) => id))].map((id) => TOKENS[id]))
 const amount = ref('')
 const slippageBps = ref(50)
 const readiness = ref(null)
@@ -127,6 +129,11 @@ watch([inputId, outputId, amount, slippageBps, () => state.address], () => {
   quoting.value = !!amountBaseUnits.value
   debounce = setTimeout(fetchQuote, 400)
 })
+// Keep the buy token paired with the sell token (picking the same token on both sides flips them).
+watch(inputId, (id, previous) => {
+  if (outputs.value.some((token) => token.token_id === outputId.value)) return
+  outputId.value = outputs.value.some((token) => token.token_id === previous) ? previous : outputs.value[0].token_id
+}, { immediate: true })
 watch(() => state.address, loadReadiness)
 onMounted(loadReadiness)
 onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.invalidate() })
@@ -135,14 +142,16 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
 <template>
   <div class="swap">
     <div class="head">
-      <h1 class="n-h1">Swap</h1>
-      <p class="n-sub">Swap USDC and USDY on Solana at the best Jupiter route.</p>
+      <h1 class="n-h1">Buy Collateral</h1>
+      <p class="n-sub">Buy or sell collateral assets on Solana at the best Jupiter route.</p>
     </div>
 
     <div class="box">
       <div class="row"><span>Sell</span></div>
       <div class="row">
-        <span class="token"><TokenIcon :token="input" size="sm" />{{ input.name }}</span>
+        <span class="token"><TokenIcon :token="input" size="sm" />
+          <select v-model="inputId" :disabled="!!stage" aria-label="Token to sell"><option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option></select>
+        </span>
         <input v-model="amount" :disabled="!!stage" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Amount to sell" />
       </div>
       <div class="row small">
@@ -159,7 +168,9 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
     <div class="box">
       <div class="row"><span>Buy</span></div>
       <div class="row">
-        <span class="token"><TokenIcon :token="output" size="sm" />{{ output.name }}</span>
+        <span class="token"><TokenIcon :token="output" size="sm" />
+          <select v-model="outputId" :disabled="!!stage" aria-label="Token to buy"><option v-for="token in outputs" :key="token.token_id" :value="token.token_id">{{ token.name }}</option></select>
+        </span>
         <output :class="{ dim: !quote }" aria-label="Estimated amount to buy">{{ quote ? fmt(output, quote.outputAmountBaseUnits) : quoting ? '…' : '0' }}</output>
       </div>
       <div class="row small"><span>Available: {{ balanceOf(output) == null ? '-' : fmt(output, balanceOf(output)) }}</span></div>
@@ -197,6 +208,8 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
 .box:focus-within { border-color: var(--n-pink); }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--n-text-3); font-size: 12px; }
 .row.small .n-quick button { padding: 3px 10px; }
+.token select { color: var(--n-text); font-weight: 600; cursor: pointer; }
+.token select option { background: var(--n-bg-2); }
 .token { display: inline-flex; align-items: center; gap: 8px; color: var(--n-text); font-size: 17px; font-weight: 600; }
 .box input, .box output { min-width: 0; width: 100%; text-align: right; color: var(--n-text); font-size: 26px; font-variant-numeric: tabular-nums; outline: 0; }
 .box output.dim { color: var(--n-text-4); }

@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict'
-import { applySwapFlowOutcome, flowContextMatches, normalizeSwapFlowDirection, pendingFlowMatches, recoverConfirmedWithdrawal, routeSwapDirection } from './swap-flow-state.js'
+import { applySwapFlowOutcome, flowContextMatches, normalizeSwapFlowDirection, pendingFlowMatches, recoverConfirmedWithdrawal } from './swap-flow-state.js'
 
 assert.deepEqual(normalizeSwapFlowDirection('withdraw-sell'), { inputId: 'svm-usdy', outputId: 'svm-usdc' })
 assert.deepEqual(normalizeSwapFlowDirection('acquire-supply'), { inputId: 'svm-usdc', outputId: 'svm-usdy' })
 assert.equal(normalizeSwapFlowDirection(null), null)
-assert.deepEqual(routeSwapDirection('withdraw-sell', 'svm-usdc', 'svm-usdy'), { inputId: 'svm-usdy', outputId: 'svm-usdc' }, 'withdraw flow overrides a wrong-direction URL pair')
-assert.deepEqual(routeSwapDirection('acquire-supply', 'svm-usdy', 'svm-usdc'), { inputId: 'svm-usdc', outputId: 'svm-usdy' }, 'acquire flow overrides a wrong-direction URL pair')
-assert.deepEqual(routeSwapDirection(null, 'svm-usdy', 'svm-usdc'), { inputId: 'svm-usdy', outputId: 'svm-usdc' }, 'plain swap preserves an allowed URL pair')
-assert.deepEqual(routeSwapDirection(null, 'svm-usdc', 'svm-usdc'), { inputId: 'svm-usdc', outputId: 'svm-usdy' }, 'plain swap rejects duplicate mints and picks the default pair')
 
 const context = {
   wallet: 'wallet-a', flow: 'withdraw-sell', market: 'sol-usdy-usdc', routeFlow: 'withdraw-sell',

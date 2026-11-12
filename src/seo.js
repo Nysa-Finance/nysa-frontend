@@ -9,7 +9,7 @@ const PAGES = {
   earn: ['Nysa — Transparent curation of Lending Markets for the Tokenized Economy', 'Earn yield on USDC in Nysa-curated Kamino vaults, lent against tokenized real-world assets like Ondo USDY on Solana.'],
   borrow: ['Borrow · Nysa', 'Borrow USDC against tokenized real-world assets like Ondo USDY on Solana.'],
   portfolio: ['Portfolio · Nysa', 'Your deposits, loans and health factor across Nysa markets.'],
-  swap: ['Swap · Nysa', 'Review Jupiter routes between USDY and USDC in Nysa markets.'],
+  swap: ['Buy Collateral · Nysa', 'Buy or sell the collateral assets of Nysa markets at the best Jupiter route.'],
   loop: ['Loop · Nysa', 'Preview a USDY and USDC Multiply strategy with fee-aware route quotes and live risk limits.'],
   analytics: ['Analytics · Nysa', 'Live protocol metrics, oracle health and open positions of the Nysa markets, read on-chain.'],
   liquidations: ['Liquidations · Nysa', 'Loans close to liquidation and every liquidation in the Nysa markets, read on-chain from Kamino Lend.'],
