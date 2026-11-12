@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { address, AccountRole, appendTransactionMessageInstructions, compileTransaction, generateKeyPairSigner, getCompiledTransactionMessageDecoder, getCompiledTransactionMessageEncoder, partiallySignTransaction, signBytes, compressTransactionMessageUsingAddressLookupTables, createTransactionMessage, getBase64EncodedWireTransaction, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from '@solana/kit'
-import { createSwapExecutionService, createAuthorizedSwapSender, compileSwapTransaction, decodeJupiterV6RouteInstruction, assertSwapQuoteFresh, swapIntentStillAuthorized, SwapExecutionError, assertSwapSimulationEffects, validateProviderSwapInstructions } from './swap-execution.js'
+import { createSwapExecutionService, createAuthorizedSwapSender, compileSwapTransaction, decodeJupiterV6RouteInstruction, assertSwapQuoteFresh, swapIntentStillAuthorized, SwapExecutionError, assertSwapSimulationEffects, validateProviderSwapInstructions, assertOracleFairOutput } from './swap-execution.js'
 import { createSwapIntentStore, messageMatchesWithLighthouse } from './tx-intent.js'
 import { TOKENS } from '../src/config.js'
 import { ataOf } from './account.js'
@@ -707,5 +707,21 @@ await assert.rejects(guardSender({ wallet: guardWallet, intentId: 'guard-4', tx:
   Uint8Array.of(1), await signBytes(guardPayer.keyPair.privateKey, roleChangedBytes), roleChangedBytes,
 ]).toString('base64') }), /changed after authorization/i, 'a lookup account that becomes writable is refused')
 assert.equal(guardRelayed, 2)
+
+// A provider-set compute-unit price may not turn the user's SOL into a priority fee.
+const greedyPrice = { ...capturedInstructions.computeBudgetInstructions[0], data: Uint8Array.from([3, 255, 255, 255, 255, 255, 255, 255, 255]) }
+await assert.rejects(validateProviderSwapInstructions(capturedRequest, {
+  ...capturedBuilt, computeBudgetInstructions: [greedyPrice],
+  instructions: [greedyPrice, ...capturedInstructions.setupInstructions, capturedInstructions.swapInstruction],
+}), /priority fee/i, 'an uncapped provider priority price is refused before compile')
+
+// The route's minimum output is bounded by oracle prices, not only by the provider's own numbers.
+const usdcSide = { decimals: 6, price: 1 }, usdySide = { decimals: 6, price: 1.15 }
+assert.doesNotThrow(() => assertOracleFairOutput({ inputAmountBaseUnits: '1000000', minimumOutputBaseUnits: '862307', input: usdcSide, output: usdySide }),
+  'a fair route (0.5% slippage, 0.1% fee) passes')
+assert.throws(() => assertOracleFairOutput({ inputAmountBaseUnits: '1000000', minimumOutputBaseUnits: '434782', input: usdcSide, output: usdySide }),
+  /below the oracle price/, 'a route paying half the oracle value is refused')
+assert.throws(() => assertOracleFairOutput({ inputAmountBaseUnits: '1000000', minimumOutputBaseUnits: '862307', input: usdcSide, output: { decimals: 6 } }),
+  /oracle prices are unavailable/i, 'a missing oracle price fails closed')
 
 console.log('swap execution guard ok')

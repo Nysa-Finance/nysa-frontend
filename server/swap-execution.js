@@ -26,6 +26,9 @@ const WHIRLPOOL_PROGRAM = ROUTE_PROGRAM_IDS_BY_LABEL.Whirlpool[0]
 const SIGNER_ROLES = new Set([AccountRole.READONLY_SIGNER, AccountRole.WRITABLE_SIGNER])
 const ROUTE_INSTRUCTION_MAX = 1
 const MAX_COMPUTE_UNITS = 1_400_000
+// What a provider route may cost the user beyond the swap itself. Tuning knobs: raise them only after seeing real routes.
+const MAX_PRIORITY_FEE_LAMPORTS = 1_000_000n // 0.001 SOL; the captured live route pays about 650 lamports
+const MAX_ORACLE_LOSS_BPS = 300 // the minimum output may be worth at most 3% less than the input at oracle prices
 
 export class SwapExecutionError extends Error {}
 
@@ -431,7 +434,19 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
       throw new SwapExecutionError('Compute-budget instructions are allowed only in the provider compute group.')
     }
   }
+  const priorityFee = priorityFeeLamports(built.instructions)
+  if (priorityFee == null || priorityFee > MAX_PRIORITY_FEE_LAMPORTS) throw new SwapExecutionError('Swap route priority fee exceeds Nysa’s 0.001 SOL limit.')
   await validateJupiterV2WhirlpoolRoute(swapInstruction, request, built, deriveAta)
+}
+
+// The provider picks the pool and reports its own output, so bound the result with an independent price: at the Kamino
+// oracle prices of the market snapshot, the minimum the user receives may be worth at most MAX_ORACLE_LOSS_BPS less than
+// what they pay. Floats are fine for this ratio (real amounts are far below 2^53 base units).
+export function assertOracleFairOutput({ inputAmountBaseUnits, minimumOutputBaseUnits, input, output }) {
+  const paid = Number(inputAmountBaseUnits) / 10 ** input.decimals * input.price
+  const floor = Number(minimumOutputBaseUnits) / 10 ** output.decimals * output.price
+  if (!(paid > 0) || !(floor > 0)) throw new SwapExecutionError('Oracle prices are unavailable, so the swap price cannot be checked.')
+  if (floor * 10_000 < paid * (10_000 - MAX_ORACLE_LOSS_BPS)) throw new SwapExecutionError('The route pays out more than 3% below the oracle price, so the swap was refused.')
 }
 
 function validateCompiledSwapMessage(messageBytes, request, built, resolvedLookupTables = built.addressesByLookupTableAddress ?? {}) {

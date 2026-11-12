@@ -27,7 +27,7 @@ import { buildSwap, configuredFeeAccountForMint, SwapError } from './swap.js'
 import { LOOP_PREVIEW_MAX_AGE_MS, loopCarryStillCurrent, loopMarketRiskFromSnapshot, loopMarketRiskStillCurrent } from './loop-preview-validation.js'
 import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, swapPairAvailability, swapReadiness } from './swap-routes.js'
 import { runWithRequestAbortSignal } from './request-signal.js'
-import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransaction, createAuthorizedSwapSender, swapIntentStillAuthorized, validateProviderSwapInstructions, SwapExecutionError } from './swap-execution.js'
+import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransaction, createAuthorizedSwapSender, swapIntentStillAuthorized, assertOracleFairOutput, validateProviderSwapInstructions, SwapExecutionError } from './swap-execution.js'
 import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash, messageMatchesWithLighthouse } from './tx-intent.js'
 import { createLendingTransactionIntentService } from './lending-intents.js'
 import { noteBuilt } from './relay.js'
@@ -272,6 +272,14 @@ const swapExecution = createSwapExecutionService({
       feeAccountMint: request.outputMint,
       feeBalanceDeltaVerified: false,
     })
+    // Independent price bound: Jupiter chooses the pool, so the result must agree with the Kamino oracle prices.
+    const reserves = getSnapshot()?.reserves ?? {}
+    const side = (mint) => {
+      const token = Object.values(TOKENS).find((t) => t.mint === mint)
+      return { decimals: token.decimals, price: reserves[token.token_id]?.price }
+    }
+    assertOracleFairOutput({ inputAmountBaseUnits: request.amountBaseUnits, minimumOutputBaseUnits: built.minimumOutputBaseUnits,
+      input: side(request.inputMint), output: side(request.outputMint) })
     if (!localExecution) return built
     if (!await verifyLocalForkRoute(built)) throw new SwapRouteError('The local route does not use only the approved DEX and executable programs cloned into Surfpool.')
     return { ...built, programPolicy: { approved: true, unreviewed: [] }, executable: true }
