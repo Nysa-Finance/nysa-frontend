@@ -27,22 +27,10 @@ const ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
 const COMPUTE_BUDGET_PROGRAM = 'ComputeBudget111111111111111111111111111111'
 const JUPITER_V6_PROGRAM = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'
 const JUPITER_V6_EVENT_AUTHORITY = 'D8cy77BBepLMngZx6ZukaTff5hCt1HrWyKk3Hnd9oitf'
-const JUPITER_ROUTE_DISCRIMINATOR = Buffer.from('e517cb977ae3ad2a', 'hex')
-const JUPITER_SHARED_ROUTE_DISCRIMINATOR = Buffer.from('c1209b3341d69c81', 'hex')
 const JUPITER_ROUTE_V2_DISCRIMINATOR = Buffer.from('bb64facc31c4af14', 'hex')
 const SIGNER_ROLES = new Set([AccountRole.READONLY_SIGNER, AccountRole.WRITABLE_SIGNER])
 const ROUTE_INSTRUCTION_MAX = 1
 const MAX_COMPUTE_UNITS = 1_400_000
-const JUPITER_V6_SWAP_VARIANTS = new Map([
-  [0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [5, 0], [6, 0], [7, 0],
-  [8, 1], [9, 0], [10, 0], [11, 0], [12, 1], [13, 0], [14, 0], [15, 1], [16, 1],
-  [17, 1], [18, 1], [19, 0], [20, 0], [21, 1], [22, 0], [23, 1], [24, 1],
-  [25, 0], [26, 0], [27, 1], [28, 1], [29, 16], [30, 0], [31, 0], [32, 0], [33, 4],
-  [34, 0], [35, 0], [36, 0], [37, 0], [38, 0], [39, 1], [40, 0], [41, 4], [42, 3],
-  [43, 10], [44, 5], [45, 5], [46, 0], [48, 0], [49, 0], [50, 0], [51, 0], [52, 0],
-  [53, 0], [54, 0], [55, 0], [56, 0], [57, 0], [58, 1], [59, 0], [60, 1], [61, 1],
-])
-const JUPITER_V6_LEGACY_VARIANT_LABELS = new Map([[17, 'Whirlpool']])
 
 export class SwapExecutionError extends Error {}
 
@@ -137,35 +125,6 @@ function readRouteU64(data, cursor, label) {
   return value
 }
 
-function skipJupiterSwapVariant(data, cursor, variant) {
-  if (variant === 47) {
-    // WhirlpoolSwapV2 has a bool followed by Option<RemainingAccountsInfo>; parse the IDL shape exactly.
-    const direction = readRouteByte(data, cursor, 'WhirlpoolSwapV2 direction')
-    if (direction > 1) throw new SwapExecutionError('Jupiter V6 route contains an invalid boolean enum field.')
-    const hasRemainingAccounts = readRouteByte(data, cursor, 'WhirlpoolSwapV2 remaining accounts option')
-    if (hasRemainingAccounts > 1) throw new SwapExecutionError('Jupiter V6 route contains an invalid optional enum field.')
-    if (hasRemainingAccounts === 1) {
-      const count = readRouteU32(data, cursor, 'WhirlpoolSwapV2 remaining accounts')
-      if (count > 32 || cursor.offset + count * 2 > data.length) throw new SwapExecutionError('Jupiter V6 route has invalid remaining-account metadata.')
-      for (let index = 0; index < count; index++) {
-        if (readRouteByte(data, cursor, 'remaining-account type') > 1) throw new SwapExecutionError('Jupiter V6 route contains an unsupported remaining-account type.')
-        readRouteByte(data, cursor, 'remaining-account length')
-      }
-    }
-    return
-  }
-  const payloadSize = JUPITER_V6_SWAP_VARIANTS.get(variant)
-  if (payloadSize == null) throw new SwapExecutionError('Jupiter V6 route contains an unsupported DEX variant.')
-  if (cursor.offset + payloadSize > data.length) throw new SwapExecutionError('Jupiter V6 route data is truncated in a DEX variant.')
-  if ([8, 17, 18, 21, 23, 42, 58, 60, 61].includes(variant) && data[cursor.offset] > 1) {
-    throw new SwapExecutionError('Jupiter V6 route contains an invalid boolean enum field.')
-  }
-  if ([12, 15, 16, 24, 27, 28, 39].includes(variant) && data[cursor.offset] > 1) {
-    throw new SwapExecutionError('Jupiter V6 route contains an invalid side enum field.')
-  }
-  cursor.offset += payloadSize
-}
-
 function routeStepMints(routePlan, request) {
   const mints = [request.inputMint, request.outputMint]
   const indexOf = (mint) => {
@@ -180,32 +139,6 @@ function routeStepMints(routePlan, request) {
     inputIndex: indexOf(leg.swapInfo.inputMint),
     outputIndex: indexOf(leg.swapInfo.outputMint),
   }))
-}
-
-function readLegacyRoutePlan(data, cursor, built, request) {
-  const count = readRouteU32(data, cursor, 'route-plan length')
-  if (count < 1 || count > 32 || count !== built.routePlan.length) {
-    throw new SwapExecutionError('Jupiter V6 route-plan length does not match the provider route.')
-  }
-  const indices = routeStepMints(built.routePlan, request)
-  let totalPercent = 0
-  for (let index = 0; index < count; index++) {
-    const variant = readRouteByte(data, cursor, 'DEX variant')
-    if (JUPITER_V6_LEGACY_VARIANT_LABELS.get(variant) !== built.routePlan[index]?.swapInfo?.label) {
-      throw new SwapExecutionError('Jupiter V6 route variant does not match the provider DEX label.')
-    }
-    skipJupiterSwapVariant(data, cursor, variant)
-    const percent = readRouteByte(data, cursor, 'route percent')
-    const inputIndex = readRouteByte(data, cursor, 'route input index')
-    const outputIndex = readRouteByte(data, cursor, 'route output index')
-    const leg = built.routePlan[index]
-    if (percent < 1 || percent > 100 || percent !== leg.percent
-      || inputIndex !== indices[index].inputIndex || outputIndex !== indices[index].outputIndex) {
-      throw new SwapExecutionError('Jupiter V6 route-plan step does not match the provider route mints and allocation.')
-    }
-    totalPercent += percent
-  }
-  if (totalPercent !== 100) throw new SwapExecutionError('Jupiter V6 route-plan allocations do not total 100 percent.')
 }
 
 function readV2RoutePlan(data, cursor, built, request) {
@@ -243,35 +176,22 @@ function readV2RoutePlan(data, cursor, built, request) {
   return routeSteps
 }
 
-/** Decode the exact-input Jupiter V6 route variants admitted by their Borsh instruction layouts. */
+/** Decode a Jupiter V6 exact-input route_v2 instruction (the only layout Jupiter's V2 Build returns for this pair). */
 export function decodeJupiterV6RouteInstruction(instruction, request, built) {
   if (String(instruction?.programAddress) !== JUPITER_V6_PROGRAM || !(instruction?.data instanceof Uint8Array)) {
     throw new SwapExecutionError('Swap provider returned an unsupported Jupiter router program or data format.')
   }
   const data = instruction.data
+  if (Buffer.compare(Buffer.from(data.subarray(0, 8)), JUPITER_ROUTE_V2_DISCRIMINATOR) !== 0) {
+    throw new SwapExecutionError('Jupiter V6 instruction discriminator is unsupported; only exact-input route_v2 is admitted.')
+  }
   const cursor = { offset: 8 }
-  let routeKind
-  let routeSteps
-  let inputAmount, quotedOutput, slippageBps, platformFeeBps
-  if (Buffer.compare(Buffer.from(data.subarray(0, 8)), JUPITER_ROUTE_DISCRIMINATOR) === 0
-    || Buffer.compare(Buffer.from(data.subarray(0, 8)), JUPITER_SHARED_ROUTE_DISCRIMINATOR) === 0) {
-    routeKind = Buffer.compare(Buffer.from(data.subarray(0, 8)), JUPITER_ROUTE_DISCRIMINATOR) === 0 ? 'route' : 'sharedAccountsRoute'
-    if (routeKind === 'sharedAccountsRoute') readRouteByte(data, cursor, 'shared route id')
-    readLegacyRoutePlan(data, cursor, built, request)
-    inputAmount = readRouteU64(data, cursor, 'input amount')
-    quotedOutput = readRouteU64(data, cursor, 'quoted output amount')
-    slippageBps = readRouteU16(data, cursor, 'slippage bps')
-    platformFeeBps = readRouteByte(data, cursor, 'platform fee bps')
-  } else if (Buffer.compare(Buffer.from(data.subarray(0, 8)), JUPITER_ROUTE_V2_DISCRIMINATOR) === 0) {
-    routeKind = 'routeV2'
-    inputAmount = readRouteU64(data, cursor, 'input amount')
-    quotedOutput = readRouteU64(data, cursor, 'quoted output amount')
-    slippageBps = readRouteU16(data, cursor, 'slippage bps')
-    platformFeeBps = readRouteU16(data, cursor, 'platform fee bps')
-    const positiveSlippageBps = readRouteU16(data, cursor, 'positive slippage bps')
-    if (positiveSlippageBps !== 0) throw new SwapExecutionError('Jupiter V6 positive slippage is not authorized.')
-    routeSteps = readV2RoutePlan(data, cursor, built, request)
-  } else throw new SwapExecutionError('Jupiter V6 instruction discriminator is unsupported; only exact-input routes are admitted.')
+  const inputAmount = readRouteU64(data, cursor, 'input amount')
+  const quotedOutput = readRouteU64(data, cursor, 'quoted output amount')
+  const slippageBps = readRouteU16(data, cursor, 'slippage bps')
+  const platformFeeBps = readRouteU16(data, cursor, 'platform fee bps')
+  if (readRouteU16(data, cursor, 'positive slippage bps') !== 0) throw new SwapExecutionError('Jupiter V6 positive slippage is not authorized.')
+  const routeSteps = readV2RoutePlan(data, cursor, built, request)
   if (cursor.offset !== data.length) throw new SwapExecutionError('Jupiter V6 route data has unsupported or trailing fields.')
   const requestedAmount = positiveRaw(request.amountBaseUnits, 'requested input amount')
   const builtOutput = positiveRaw(built.outputAmountBaseUnits, 'quoted output amount')
@@ -291,14 +211,7 @@ export function decodeJupiterV6RouteInstruction(instruction, request, built) {
   if (platformFeeBps !== 10 || built.fee?.bps !== 10) {
     throw new SwapExecutionError('Jupiter V6 encoded platform fee does not match Nysa’s 10-bps policy.')
   }
-  return {
-    routeKind,
-    inputAmount: String(inputAmount),
-    quotedOutput: String(quotedOutput),
-    slippageBps,
-    platformFeeBps,
-    ...(routeSteps ? { routeSteps } : {}),
-  }
+  return { inputAmount: String(inputAmount), quotedOutput: String(quotedOutput), slippageBps, platformFeeBps, routeSteps }
 }
 
 const JUPITER_V6_DESTINATION_TOKEN_ACCOUNT_PLACEHOLDER = JUPITER_V6_PROGRAM
@@ -471,7 +384,7 @@ async function readWhirlpoolRouteAccounts(keys, readAccounts) {
 
 async function validateJupiterV2WhirlpoolRoute(instruction, request, built, { deriveAta = ataOf, readAccounts, createdAtas = new Set() } = {}) {
   const decoded = decodeJupiterV6RouteInstruction(instruction, request, built)
-  if (decoded.routeKind !== 'routeV2' || !Array.isArray(decoded.routeSteps) || decoded.routeSteps.length !== 1
+  if (decoded.routeSteps.length !== 1
     || built.routePlan.length !== 1 || built.routePlan[0]?.swapInfo?.label !== 'Whirlpool'
     || built.routePlan[0]?.swapInfo?.inputMint !== request.inputMint || built.routePlan[0]?.swapInfo?.outputMint !== request.outputMint
     || built.routePlan[0]?.bps !== 10_000) {
@@ -556,15 +469,6 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, { de
   for (let index = 0; index < tickStarts.length; index++) await validateTickArray(accountsByAddress, instruction, poolAddress, tickStarts[index], index)
   const [oracleAddress] = await getOracleAddress(address(poolAddress))
   validateOracle(accountsByAddress, instruction, poolAddress, oracleAddress)
-}
-
-async function validateJupiterRouteAccounts(instruction, request, built, validationOptions) {
-  const routeKind = decodeJupiterV6RouteInstruction(instruction, request, built).routeKind
-  if (routeKind === 'routeV2') return validateJupiterV2WhirlpoolRoute(instruction, request, built, validationOptions)
-  if (routeKind === 'route' || routeKind === 'sharedAccountsRoute') {
-    throw new SwapExecutionError('Legacy Jupiter route and sharedAccountsRoute are disabled until exact CPI account layout and on-chain pool relationships are verified.')
-  }
-  throw new SwapExecutionError('Jupiter V6 route account layout is unsupported.')
 }
 
 async function validateAssociatedTokenCreate(request, instruction, deriveAta) {
@@ -728,7 +632,7 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
       throw new SwapExecutionError('Compute-budget instructions are allowed only in the provider compute group.')
     }
   }
-  await validateJupiterRouteAccounts(swapInstruction, request, built, { deriveAta, readAccounts, createdAtas: pairAtas })
+  await validateJupiterV2WhirlpoolRoute(swapInstruction, request, built, { deriveAta, readAccounts, createdAtas: pairAtas })
 }
 
 function validateCompiledSwapMessage(messageBytes, request, built, resolvedLookupTables = built.addressesByLookupTableAddress ?? {}) {

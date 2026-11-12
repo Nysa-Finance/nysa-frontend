@@ -88,7 +88,6 @@ const capturedBuilt = {
 
 const capturedDecoded = decodeJupiterV6RouteInstruction(capturedBuilt.swapInstruction, capturedRequest, capturedBuilt)
 assert.deepEqual(capturedDecoded, {
-  routeKind: 'routeV2',
   inputAmount: capturedResponse.inAmount,
   quotedOutput: capturedResponse.outAmount,
   slippageBps: capturedResponse.slippageBps,
@@ -277,15 +276,14 @@ const legacyRouteInstruction = {
   ],
   data: Uint8Array.from(legacyRouteData),
 }
-assert.deepEqual(decodeJupiterV6RouteInstruction(legacyRouteInstruction, body, route), {
-  routeKind: 'route', inputAmount: '1000000', quotedOutput: '866642', slippageBps: 50, platformFeeBps: 10,
-}, 'legacy route uses its 8-byte Anchor discriminator and route-plan-first Borsh args')
+assert.throws(() => decodeJupiterV6RouteInstruction(legacyRouteInstruction, body, route), /only exact-input route_v2/,
+  'legacy route and sharedAccountsRoute are not decoded: only route_v2 is admitted')
 const executableTestRoute = { ...route, swapInstruction: legacyRouteInstruction, instructions: [legacyRouteInstruction] }
 const safeSwapWire = wire({ program: JUPITER_V6, accounts: legacyRouteInstruction.accounts, data: legacyRouteInstruction.data })
 const legacyIntentStore = createSwapIntentStore({ now: () => Date.now(), idFactory: () => 'legacy-route-intent' })
 const legacyCounters = {}
 await assert.rejects(serviceForCapturedBuild(executableTestRoute, legacyIntentStore, legacyCounters).build(body),
-  /legacy Jupiter.*(route|CPI)|route.*(legacy|CPI)/i,
+  /only exact-input route_v2/,
   'legacy route must fail closed even when its remaining accounts contain the Whirlpool program key')
 assert.equal(legacyCounters.compile ?? 0, 0, 'legacy route must fail before compile')
 assert.equal(legacyCounters.simulate ?? 0, 0, 'legacy route must fail before simulation')
@@ -302,7 +300,7 @@ missingLegacyPoolMetas.instructions = [missingLegacyPoolMetas.swapInstruction]
 const missingLegacyPoolStore = createSwapIntentStore({ now: () => Date.now(), idFactory: () => 'missing-legacy-pool' })
 const missingLegacyCounters = {}
 await assert.rejects(serviceForCapturedBuild(missingLegacyPoolMetas, missingLegacyPoolStore, missingLegacyCounters).build(body),
-  /legacy Jupiter.*(route|CPI)|route.*(legacy|CPI)/i,
+  /only exact-input route_v2/,
   'legacy route with missing pool metas must fail closed before intent')
 assert.equal(missingLegacyCounters.compile ?? 0, 0)
 assert.equal(missingLegacyPoolStore.size(), 0)
@@ -336,7 +334,7 @@ const sharedRoute = {
 const sharedIntentStore = createSwapIntentStore({ now: () => Date.now(), idFactory: () => 'shared-route-intent' })
 const sharedCounters = {}
 await assert.rejects(serviceForCapturedBuild(sharedRoute, sharedIntentStore, sharedCounters).build(body),
-  /legacy Jupiter.*(route|CPI)|route.*(legacy|CPI)/i,
+  /only exact-input route_v2/,
   'sharedAccountsRoute must fail closed when it supplies only bare DEX program membership')
 assert.equal(sharedCounters.compile ?? 0, 0)
 assert.equal(sharedIntentStore.size(), 0)
@@ -370,7 +368,7 @@ const legacyAccountIndex = index === 1 ? 2 : index === 2 ? 3 : 6
   const alteredAccounts = legacyRouteInstruction.accounts.map((meta, accountIndex) => accountIndex === legacyAccountIndex ? { ...meta, address: wrongAddress } : meta)
   const alteredInstruction = { ...legacyRouteInstruction, accounts: alteredAccounts }
   await assert.rejects(validateProviderSwapInstructions(body, { ...executableTestRoute, swapInstruction: alteredInstruction, instructions: [alteredInstruction] }),
-    /legacy Jupiter.*(route|CPI)/i, `Jupiter ${label} must remain unavailable until CPI account validation exists`)
+    /only exact-input route_v2/, `Jupiter ${label} must remain unavailable until CPI account validation exists`)
 }
 const compiledLocally = await compileSwapTransaction({
   request: body,
@@ -415,7 +413,7 @@ const enabled = createSwapExecutionService({
   intentStore: enabledIntentStore,
   now: () => 1001,
 })
-await assert.rejects(enabled.build(body), /Legacy Jupiter.*(route|CPI)/i)
+await assert.rejects(enabled.build(body), /only exact-input route_v2/)
 assert.equal(enabledCompileCalls, 0, 'legacy route must fail before compile even when release readiness is open')
 assert.equal(enabledSimulationCalls, 0, 'legacy route must fail before simulation')
 assert.equal(enabledIntentStore.size(), 0, 'legacy route must fail before intent issuance')
@@ -432,7 +430,7 @@ const tamperedCompile = createSwapExecutionService({
   simulate: async () => { tamperedCompiledSimulation = true; return { inputDeltaBaseUnits: '1000000', outputDeltaBaseUnits: '866642', feeDeltaBaseUnits: '867', additionalTokenDeltas: [] } },
   intentStore: createSwapIntentStore({ now: () => 1000, idFactory: () => 'compiled-tamper' }), now: () => 1001,
 })
-await assert.rejects(tamperedCompile.build(body), /Legacy Jupiter.*(route|CPI)/i)
+await assert.rejects(tamperedCompile.build(body), /only exact-input route_v2/)
 assert.equal(tamperedCompileCalled, false, 'unsupported legacy route must not produce a transaction to tamper with')
 assert.equal(tamperedCompiledSimulation, false, 'unsupported legacy route must fail before simulation and authorization')
 assert.throws(() => assertSwapSimulationEffects({
@@ -502,7 +500,7 @@ await assert.rejects(validateProviderSwapInstructions(body, {
   instructions: [validOutputAtaCreate, legacyRouteInstruction],
   programIds: [JUPITER_V6, WHIRLPOOL, ATA_PROGRAM],
   feeAccount, feeAccountMint: usdy,
-}), /Legacy Jupiter.*(route|CPI)/i, 'valid ATA setup still cannot make an unverified legacy route executable')
+}), /only exact-input route_v2/, 'valid ATA setup still cannot make an unverified legacy route executable')
 
 const approvedWhirlpoolInstruction = {
   programAddress: address(WHIRLPOOL),
