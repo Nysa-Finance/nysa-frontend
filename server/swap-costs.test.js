@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict'
-import { swapCostDisclosure } from './swap-execution.js'
-import { estimateSwapCosts } from './swap-execution.js'
+import { estimateSwapCosts, swapCostDisclosure } from './swap-execution.js'
 
 assert.deepEqual(swapCostDisclosure({ totalNetworkFeeLamports: '9007199254740999', priorityFeeLamports: '123', accountRentLamports: '2039280' }), {
   status: 'known',
@@ -40,4 +39,13 @@ assert.deepEqual(estimated, {
   priorityFeeLamports: '500000', accountRentLamports: '2039280', accountRentEstimateKind: 'upper-bound', unavailable: [],
 })
 
+// Jupiter can set a compute-unit price without a limit (seen on mainnet: 3207 micro-lamports). Solana then requests 200k
+// units per non-compute-budget instruction, so the priority fee is still known.
+const price = Uint8Array.from([3, 0x87, 0x0c, 0, 0, 0, 0, 0, 0])
+const costs = await estimateSwapCosts({ instructions: [
+  { programAddress: 'ComputeBudget111111111111111111111111111111', data: price, accounts: [] },
+  { programAddress: 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', data: Uint8Array.of(1), accounts: [] },
+] }, { messageBytes: new Uint8Array() }, { getFeeForMessage: () => ({ send: async () => ({ value: 6283n }) }) })
+assert.equal(costs.priorityFeeLamports, '642', 'one route instruction: 3207 * 200k / 1e6 = 641.4, rounded up')
+assert.equal(costs.baseNetworkFeeLamports, '5641')
 console.log('swap cost disclosure ok')

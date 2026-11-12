@@ -650,32 +650,62 @@ await assert.rejects(guardSender({ tx: await signedWire(swapMessage(2, [lighthou
   'a changed swap message is refused as a SwapExecutionError')
 assert.equal(guardRelayed, 1)
 
-// What Phantom actually sends (captured on mainnet): the same instructions, its readonly static keys recompiled into a
-// different order with the Lighthouse program among them, and assertions using log level 4.
-const phantomBuilt = swapMessage(1, [
-  { programAddress: address(ATA_PROGRAM), accounts: [{ address: guardPayer.address, role: AccountRole.WRITABLE_SIGNER }], data: Uint8Array.of(1) },
-  { programAddress: address(MEMO), accounts: [], data: Uint8Array.of(9) },
-])
+// What Phantom actually sends (captured on mainnet): the same instructions, recompiled. Its readonly static keys come out
+// in another order with the Lighthouse program among them, the lookup table's readonly indexes are reordered too, and
+// its assertions use log level 4.
+const lookupReadonly = await Promise.all([1, 2, 3].map(() => generateKeyPairSigner().then((k) => k.address)))
+const phantomBuilt = compileTransaction(compressTransactionMessageUsingAddressLookupTables(pipe(
+  createTransactionMessage({ version: 0 }),
+  (m) => setTransactionMessageFeePayer(guardPayer.address, m),
+  (m) => setTransactionMessageLifetimeUsingBlockhash({ blockhash: BLOCKHASH, lastValidBlockHeight: 2n }, m),
+  (m) => appendTransactionMessageInstructions([
+    { programAddress: address(JUPITER_V6), accounts: [{ address: guardPayer.address, role: AccountRole.WRITABLE_SIGNER },
+      ...lookupReadonly.map((key) => ({ address: key, role: AccountRole.READONLY }))], data: Uint8Array.of(1) },
+    { programAddress: address(ATA_PROGRAM), accounts: [{ address: guardPayer.address, role: AccountRole.WRITABLE_SIGNER }], data: Uint8Array.of(1) },
+    { programAddress: address(MEMO), accounts: [], data: Uint8Array.of(9) },
+  ], m),
+), { [LUT]: lookupReadonly }))
 const builtMessage = getCompiledTransactionMessageDecoder().decode(phantomBuilt.messageBytes)
+assert.equal(builtMessage.addressTableLookups[0].readonlyIndexes.length, 3, 'the fixture loads readonly accounts from a lookup table')
+// Every account an instruction can reference, labelled by identity: static key, or (table, index) for a loaded one.
+const labels = (message) => [
+  ...message.staticAccounts.map(String),
+  ...message.addressTableLookups.flatMap((t) => t.writableIndexes.map((i) => `${t.lookupTableAddress}:w${i}`)),
+  ...message.addressTableLookups.flatMap((t) => t.readonlyIndexes.map((i) => `${t.lookupTableAddress}:r${i}`)),
+]
 const builtKeys = builtMessage.staticAccounts.map(String)
 const readonlyStart = builtKeys.length - builtMessage.header.numReadonlyNonSignerAccounts
-const reorderedKeys = [...builtKeys.slice(0, readonlyStart), ...builtKeys.slice(readonlyStart).reverse(), 'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95']
-const remap = (index) => reorderedKeys.indexOf(builtKeys[index])
-const phantomMessageBytes = getCompiledTransactionMessageEncoder().encode({
+const phantomMessage = {
   ...builtMessage,
   header: { ...builtMessage.header, numReadonlyNonSignerAccounts: builtMessage.header.numReadonlyNonSignerAccounts + 1 },
-  staticAccounts: reorderedKeys.map(address),
-  instructions: [
-    ...builtMessage.instructions.map((ix) => ({ ...ix, programAddressIndex: remap(ix.programAddressIndex), accountIndices: (ix.accountIndices ?? []).map(remap) })),
-    { programAddressIndex: reorderedKeys.length - 1, accountIndices: [0], data: Uint8Array.from(Buffer.from('06040300808a5e07000000000403000001000000000000000000', 'hex')) },
-  ],
-})
-assert.notDeepEqual(reorderedKeys.slice(0, builtKeys.length), builtKeys, 'the fixture reorders the readonly static keys')
+  staticAccounts: [...builtKeys.slice(0, readonlyStart), ...builtKeys.slice(readonlyStart).reverse(), 'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95'].map(address),
+  addressTableLookups: builtMessage.addressTableLookups.map((t) => ({ ...t, readonlyIndexes: [...t.readonlyIndexes].reverse() })),
+}
+const builtLabels = labels(builtMessage)
+const phantomLabels = labels(phantomMessage)
+const remap = (index) => phantomLabels.indexOf(builtLabels[index])
+phantomMessage.instructions = [
+  ...builtMessage.instructions.map((ix) => ({ ...ix, programAddressIndex: remap(ix.programAddressIndex), accountIndices: (ix.accountIndices ?? []).map(remap) })),
+  { programAddressIndex: phantomMessage.staticAccounts.length - 1, accountIndices: [0], data: Uint8Array.from(Buffer.from('06040300808a5e07000000000403000001000000000000000000', 'hex')) },
+]
+const phantomMessageBytes = getCompiledTransactionMessageEncoder().encode(phantomMessage)
 const phantomWire = Buffer.concat([ // wire format: one signature (shortvec 1), the signature, then the message
   Uint8Array.of(1), await signBytes(guardPayer.keyPair.privateKey, phantomMessageBytes), phantomMessageBytes,
 ]).toString('base64')
 guardStore.issue({ wallet: guardWallet, messageBytes: phantomBuilt.messageBytes, metadata: {} })
 await guardSender({ tx: phantomWire, wallet: guardWallet, intentId: 'guard-3' })
-assert.equal(guardRelayed, 2, 'Phantom\'s reordered static keys and log-level-4 Lighthouse assertions are relayed')
+assert.equal(guardRelayed, 2, 'Phantom\'s reordered static keys and lookup indexes, with log-level-4 Lighthouse assertions, are relayed')
+
+// Reordering must not move an account between roles: a lookup index that changes from readonly to writable is refused.
+const roleChanged = {
+  ...phantomMessage,
+  addressTableLookups: phantomMessage.addressTableLookups.map((t) => ({ ...t, writableIndexes: [t.readonlyIndexes[0]], readonlyIndexes: t.readonlyIndexes.slice(1) })),
+}
+const roleChangedBytes = getCompiledTransactionMessageEncoder().encode(roleChanged)
+guardStore.issue({ wallet: guardWallet, messageBytes: phantomBuilt.messageBytes, metadata: {} })
+await assert.rejects(guardSender({ wallet: guardWallet, intentId: 'guard-4', tx: Buffer.concat([
+  Uint8Array.of(1), await signBytes(guardPayer.keyPair.privateKey, roleChangedBytes), roleChangedBytes,
+]).toString('base64') }), /changed after authorization/i, 'a lookup account that becomes writable is refused')
+assert.equal(guardRelayed, 2)
 
 console.log('swap execution guard ok')

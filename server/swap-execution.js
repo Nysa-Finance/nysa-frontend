@@ -589,8 +589,9 @@ function priorityFeeLamports(instructions) {
     else if (data[0] === 2 || data[0] === 3) return null
   }
   if (price == null) return 0n
-  // A micro-lamport price without an explicit CU limit cannot be disclosed exactly before execution.
-  if (limit == null || limit <= 0) return null
+  // Without an explicit limit Solana requests 200k compute units per non-compute-budget instruction, up to 1.4M.
+  limit ??= Math.min(200_000 * instructions.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET_PROGRAM).length, MAX_COMPUTE_UNITS)
+  if (limit <= 0) return null
   const product = BigInt(limit) * price
   return (product + 999_999n) / 1_000_000n
 }

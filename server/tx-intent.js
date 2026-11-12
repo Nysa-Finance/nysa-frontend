@@ -87,6 +87,11 @@ function lookupTables(message) {
   }))
 }
 
+// Wallets recompile lookups too (Phantom reorders a table's indexes): compare each table's writable and readonly index sets.
+const sortedLookupTables = (message) => lookupTables(message)
+  .map((t) => ({ ...t, writable: [...t.writable].sort((a, b) => a - b), readonly: [...t.readonly].sort((a, b) => a - b) }))
+  .sort((a, b) => (a.address < b.address ? -1 : a.address > b.address ? 1 : 0))
+
 function validStaticRoles(message) {
   const { staticAccounts, header } = message
   const { numSignerAccounts, numReadonlySignerAccounts, numReadonlyNonSignerAccounts } = header
@@ -154,7 +159,7 @@ export function messageMatchesWithLighthouse(originalBytes, candidateBytes, { ig
   } catch { return false }
   if (original.version !== candidate.version || (!ignoreLifetimeToken && original.lifetimeToken !== candidate.lifetimeToken)
     || original.staticAccounts[0] !== candidate.staticAccounts[0]
-    || JSON.stringify(lookupTables(original)) !== JSON.stringify(lookupTables(candidate))) return false
+    || JSON.stringify(sortedLookupTables(original)) !== JSON.stringify(sortedLookupTables(candidate))) return false
   const originalHeader = original.header
   const candidateHeader = candidate.header
   if (candidateHeader.numSignerAccounts !== originalHeader.numSignerAccounts
@@ -227,7 +232,7 @@ function messageSummary(bytes) {
     const keys = message.staticAccounts.map(String)
     return {
       blockhash: String(message.lifetimeToken), header: message.header, staticAccounts: keys,
-      lookups: lookupTables(message).map((t) => `${t.address.slice(0, 6)} w${t.writable.length} r${t.readonly.length}`),
+      lookups: lookupTables(message).map((t) => `${t.address} w[${t.writable}] r[${t.readonly}]`),
       instructions: message.instructions.map((ix) => `${keys[ix.programAddressIndex] ?? `#${ix.programAddressIndex}`} accts[${(ix.accountIndices ?? []).join(',')}] data ${Buffer.from(ix.data ?? []).toString('hex')}`),
     }
   } catch { return 'undecodable' }
