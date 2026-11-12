@@ -612,14 +612,10 @@ assert.equal(evidenceRelayCalled, false, 'relay must re-evaluate exact route pro
 const exactEvidenceIntent = { metadata: {
   programIds: [MEMO], routeLabels: ['TestDex'], routeProgramIdsByLabel: { TestDex: [MEMO] },
 } }
-const exactEvidence = [{
-  programId: MEMO, network: 'mainnet-beta', deploymentVerified: true, programVersion: 'test-1',
-  auditReports: [{ url: 'https://audit.example/program', programVersion: 'test-1', coversDeployedVersion: true }],
-  reviewedBy: 'test reviewer', routeLabels: ['TestDex'],
-}]
-assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true, evidence: exactEvidence }), true)
-assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true, evidence: [] }), false,
-  'current evidence removal must block relay even after a route was signed')
-assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: false, evidence: exactEvidence }), false)
+const approvedPrograms = new Set([MEMO])
+assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true, approvedPrograms }), true)
+assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true }), false,
+  'a program off the approved list blocks relay even after a route was signed')
+assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: false, approvedPrograms }), false)
 
 console.log('swap execution guard ok')

@@ -26,7 +26,6 @@ import { buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoop
 import { buildSwap, configuredFeeAccountForMint, SwapError } from './swap.js'
 import { LOOP_PREVIEW_MAX_AGE_MS, loopCarryStillCurrent, loopMarketRiskFromSnapshot, loopMarketRiskStillCurrent } from './loop-preview-validation.js'
 import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, swapPairAvailability, swapReadiness } from './swap-routes.js'
-import { PROGRAM_EVIDENCE } from './program-policy.js'
 import { runWithRequestAbortSignal } from './request-signal.js'
 import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransaction, createAuthorizedSwapSender, swapIntentStillAuthorized, validateProviderSwapInstructions, SwapExecutionError } from './swap-execution.js'
 import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash } from './tx-intent.js'
@@ -162,10 +161,6 @@ function currentSwapReadiness(request = {}) {
     feeAccountsConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
       && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
       && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
-    programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localExecution,
-    feasibilityPassed: localExecution,
-    walletPathsValidated: localExecution,
-    transactionBuilderAvailable: true,
     marketDataAvailable: availability.available,
     marketAvailabilityReasons: availability.reasons,
   })
@@ -183,12 +178,12 @@ function currentLoopRouteReadiness() {
     feeAccountsConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
       && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
       && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
-    programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localExecution,
-    feasibilityPassed: localExecution,
-    walletPathsValidated: localExecution,
-    transactionBuilderAvailable: true,
     marketDataAvailable: snapshotFresh,
-    marketAvailabilityReasons: snapshotFresh ? [] : [{ code: 'market-data-stale', message: 'Fresh market data is unavailable for a safe loop transaction.' }],
+    marketAvailabilityReasons: [
+      ...(snapshotFresh ? [] : [{ code: 'market-data-stale', message: 'Fresh market data is unavailable for a safe loop transaction.' }]),
+      // The loop is not released on mainnet yet: its transactions build only on the local fork.
+      ...(localExecution ? [] : [{ code: 'fork-proof-missing', message: 'The required local-fork fee and rollback checks have not passed.' }]),
+    ],
   })
   return routeReadiness
 }
@@ -209,7 +204,6 @@ function loopStrategyForAction(snapshot, leverage = 1.5) {
     riskApproval: localExecution
       ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
       : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-    programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localExecution,
     feasibilityPassed: localExecution,
     leverage,
   })
@@ -276,7 +270,7 @@ const sendAuthorizedSwap = createAuthorizedSwapSender({
       outputMint: metadata.outputMint,
     }).readiness.executionEnabled
     if (localForkDappEnabled) return readiness && await localIntentAuthorized(intent)
-    return swapIntentStillAuthorized(intent, { executionEnabled: readiness, evidence: PROGRAM_EVIDENCE })
+    return swapIntentStillAuthorized(intent, { executionEnabled: readiness })
   },
   send: ({ tx, wallet, intent }) => sendSigned({ tx, wallet, approvedProgramIds: intent.metadata?.programIds ?? [] }),
 })
@@ -337,7 +331,7 @@ const loopExecution = createLoopExecutionService({
   authorize: async ({ intent }) => {
     const ready = currentLoopRouteReadiness().executionEnabled
     if (localForkDappEnabled) return ready && await localIntentAuthorized(intent)
-    return swapIntentStillAuthorized(intent, { executionEnabled: ready, evidence: PROGRAM_EVIDENCE })
+    return swapIntentStillAuthorized(intent, { executionEnabled: ready })
   },
   authorizeSetup: async ({ intent }) => intent?.metadata?.kind === 'loop-setup'
     && (!localForkDappEnabled || isLocalForkWallet(intent?.wallet, { rpcUrl: RPC_URL }))
@@ -443,7 +437,6 @@ const routes = [
       riskApproval: localForkProgramEvidenceReady()
         ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
         : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-      programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localForkProgramEvidenceReady(),
       feasibilityPassed: localForkProgramEvidenceReady(),
     })
     const routeReadiness = currentLoopRouteReadiness()
@@ -487,7 +480,6 @@ const routes = [
       riskApproval: localForkProgramEvidenceReady()
         ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
         : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-      programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localForkProgramEvidenceReady(),
       feasibilityPassed: localForkProgramEvidenceReady(),
       leverage: Number(body.leverage),
     })

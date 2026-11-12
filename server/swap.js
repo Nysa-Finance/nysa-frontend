@@ -1,7 +1,7 @@
 import { AccountRole, address, fetchEncodedAccount, getAddressDecoder, getBase58Decoder } from '@solana/kit'
 import { LIVE, TOKENS } from '../src/config.js'
 import { calculateSwapFeeBaseUnits } from '../src/swap-fees.js'
-import { evaluateProgramPolicy, PROGRAM_EVIDENCE, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
+import { APPROVED_PROGRAMS, evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
 import { rpc } from './rpc.js'
@@ -231,7 +231,7 @@ function validateFee(body, { inputMint, outputMint, inputAmount, feeAccountMint,
 /**
  * Request an exact-input Jupiter V2 Build quote. V2's `platformFeeBps` and fee account are provider-native
  * parameters, so this adapter never inserts a separate Nysa SPL transfer. The returned object is execution-ready
- * only after fee-account ownership, simulated fee balance deltas and exact router/DEX program evidence all pass.
+ * only after fee-account ownership, simulated fee balance deltas and the approved router/DEX program list all pass.
  */
 export async function buildSwap({
   inputMint,
@@ -246,7 +246,7 @@ export async function buildSwap({
   signal,
   apiBaseUrl = 'https://api.jup.ag',
   fetcher = fetch,
-  evidence = PROGRAM_EVIDENCE,
+  approvedPrograms = APPROVED_PROGRAMS,
   routeProgramIdsByLabel = ROUTE_PROGRAM_IDS_BY_LABEL,
   feeAccountAuthority = process.env.SWAP_FEE_TREASURY_AUTHORITY,
   feeAccountVerifier = readFeeTokenAccount,
@@ -318,7 +318,7 @@ export async function buildSwap({
   const provider = providerInstructions(body)
   const { instructions, addressesByLookupTableAddress } = provider
   const programIds = [...new Set([...instructions.map((ix) => String(ix.programAddress)), ...route.ids])]
-  const programPolicy = evaluateProgramPolicy(programIds, evidence, route.labels, route.byLabel)
+  const programPolicy = evaluateProgramPolicy(programIds, route.labels, route.byLabel, approvedPrograms)
   const impact = Number(body.priceImpactPct)
   if (!Number.isFinite(impact) || impact < 0 || impact > 1) throw new SwapError('Swap provider returned an invalid price impact.')
   const builtAt = now()

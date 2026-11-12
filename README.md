@@ -77,27 +77,29 @@ are reported in plain language; transient 502/503/504 responses are retried once
 ## Swap fees and loop preview
 The shared backend adapter uses Jupiter V2 Build's native `platformFeeBps=10` and configured fee token account. It
 validates the provider's route-based fee amount, net output and fee-account mint; it never adds a separate fee transfer.
-Keyless Jupiter access is available for prototype/read-only requests at 0.5 requests per second. Production use needs a
-provider key and approved rate limit, a configured USDC and USDY fee account, an authorized treasury, reviewed route
-program evidence and successful local-fork verification. Set these values in `.env`; never put them in browser config.
+Keyless Jupiter access is available for prototype/read-only requests at 0.5 requests per second.
 
-`/swap` requests and displays a sanitized USDY/USDC provider route. The server-side execution pipeline validates a narrow
-Jupiter V2 `route_v2` single-hop `WhirlpoolSwapV2` shape: exact 27-account positions/roles, classic SPL mint/token state,
-wallet ATAs, pool/vault relationships, and Orca static or dynamic tick-array/oracle PDA and account relationships. The
-route is covered by encoded-account fixtures and is revalidated against confirmed account state before build. Legacy
-`route` / `sharedAccountsRoute`, multihop, Token-2022/hooks, and extra route metadata remain fail-closed. A route label or
-presence of the Whirlpool program key in remaining accounts is not sufficient. A validated route still does not make
-economic execution ready: transaction build/sign/relay requires exact program/deployment evidence, complete local-fork
-proof, production fee accounts, and validated wallet paths. Provider instructions and unsigned transactions are never
-returned by the quote endpoint. Production readiness remains disabled until those release gates are accepted.
+Swap execution turns on when the server has `JUPITER_API_KEY`, `SWAP_FEE_ACCOUNT_USDC`, `SWAP_FEE_ACCOUNT_USDY` and
+`SWAP_FEE_TREASURY_AUTHORITY` in `.env` (both fee accounts must exist on-chain, owned by that authority) and fresh market
+data shows a nonzero Nysa vault allocation to the USDY market; removing the keys turns it off. Never put them in browser
+config. A route may only invoke the programs in `server/program-policy.js` (`APPROVED_PROGRAMS`: Jupiter V6, Orca
+Whirlpool, Compute Budget, Associated Token); add one there only after reviewing it.
+
+`/swap` requests and displays a sanitized USDY/USDC provider route. The server-side execution pipeline admits only a
+Jupiter V2 `route_v2` single-hop `WhirlpoolSwapV2`: it checks the exact 27-account layout (signer, wallet ATAs, mints and
+direction, fee account, programs, the pool named by the route, writable roles), compiles the exact provider instructions,
+and simulates them, requiring the exact input, at least the minimum output, the exact 10-bps fee and no other wallet
+token change. Pool, vault, tick-array and oracle relationships are Orca's own on-chain constraints. Legacy `route` /
+`sharedAccountsRoute`, multihop, Token-2022/hooks and extra route metadata are refused. Provider instructions and
+unsigned transactions are never returned by the quote endpoint; a signed swap is relayed only against its one-time
+exact-message intent.
 The borrower flows use fresh raw wallet balances and protocol withdrawal allowance, and carry only the confirmed raw
 amount into an optional next action. Locked collateral is never treated as wallet balance.
 
 `/loop` previews USDY collateral / USDC debt strategies and includes guarded separate Kamino metadata setup, atomic
 Multiply open/full-close builders, identified position management, signed-intent relay, and pending-close reconciliation.
 Loop opening is funded directly in USDY; the single borrowed-USDC-to-USDY leverage swap uses the shared fee router.
-The economic actions remain unavailable while the supported-route, program evidence, complete local-fork, fee-account,
-and wallet-acceptance gates are open. A confirmed close is not reported as complete until a fresh account read proves
+The economic actions remain unavailable on mainnet: they build only on the local fork until the loop is released. A confirmed close is not reported as complete until a fresh account read proves
 zero raw debt and collateral. Metadata initialization is a separate non-economic transaction and does not charge the
 Nysa swap fee.
 

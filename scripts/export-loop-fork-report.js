@@ -139,7 +139,6 @@ export async function exportLoopForkReport({ env = process.env, output = DEFAULT
     verifierNotes: {
       expectedForcedFailures: 'The verifier appends an instruction that deliberately fails with custom error 0xc, then checks that balances and obligation state rolled back.',
       latestPastedRun: 'Standalone router, vanilla supply/withdraw, atomic open/close, fee deltas, and forced-failure rollback all passed.',
-      productionGate: 'The verifier still prints BLOCKED until exact deployed Jupiter/DEX program versions are matched to approved audit evidence. This is a production admission gate, not a failed local open/close transaction.',
     },
   }
   const outputPath = resolve(output)

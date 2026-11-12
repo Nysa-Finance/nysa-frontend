@@ -88,10 +88,7 @@ const buildResponse = ({ overrides = {} } = {}) => ({
   addressesByLookupTableAddress: {},
   ...overrides,
 })
-const evidence = [
-  { programId: routerProgram, network: 'mainnet-beta', programVersion: 'jupiter-version', deploymentVerified: true, auditReports: [{ url: 'https://audit.example/router', programVersion: 'jupiter-version', coversDeployedVersion: true }], reviewedBy: 'Nysa reviewer' },
-  { programId: venueProgram, network: 'mainnet-beta', programVersion: 'venue-version', deploymentVerified: true, auditReports: [{ url: 'https://audit.example/venue', programVersion: 'venue-version', coversDeployedVersion: true }], reviewedBy: 'Nysa reviewer', routeLabels: ['Reviewed Test Venue'] },
-]
+const approvedPrograms = new Set([routerProgram, venueProgram])
 
 let request
 const fetcher = async (url, init) => {
@@ -101,7 +98,7 @@ const fetcher = async (url, init) => {
 
 const result = await buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-  providerApiKey: 'test-key', fetcher, evidence,
+  providerApiKey: 'test-key', fetcher, approvedPrograms,
   routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, feeAccountAuthority: wallet,
   feeAccountVerifier: feeAccountVerifierFor(inputMint), feeBalanceDeltaVerified: true,
   now: () => 1_800_000_000_000,
@@ -126,7 +123,7 @@ assert.deepEqual(result.routeProgramIds, [venueProgram])
 
 const roundedThreshold = await buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-  providerApiKey: 'test-key', evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
+  providerApiKey: 'test-key', approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
   now: () => 1_800_000_000_000,
   fetcher: async () => ({ ok: true, status: 200, json: async () => buildResponse({ overrides: {
     outAmount: '90000001', otherAmountThreshold: '89550001',
@@ -139,7 +136,7 @@ assert.equal(roundedThreshold.minimumOutputBaseUnits, '89550000',
 const noFeeMetadata = await buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
   providerApiKey: 'test-key', fetcher: async () => ({ ok: true, status: 200, json: async () => buildResponse({ overrides: { platformFee: undefined } }) }),
-  evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
+  approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
 })
 assert.equal(noFeeMetadata.fee.amountBaseUnits, '100000')
 assert.equal(noFeeMetadata.fee.providerReported, false)
@@ -148,7 +145,7 @@ assert.equal(noFeeMetadata.executable, false) // requires actual account-mint an
 
 const outputFee = await buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount: 'SysvarC1ock11111111111111111111111111111111', feeAccountMint: outputMint,
-  providerApiKey: 'test-key', evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
+  providerApiKey: 'test-key', approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
   feeAccountAuthority: wallet, feeAccountVerifier: feeAccountVerifierFor(outputMint), feeBalanceDeltaVerified: true,
   now: () => 1_800_000_000_000,
   fetcher: async () => ({ ok: true, status: 200, json: async () => buildResponse({ overrides: {
@@ -163,7 +160,7 @@ assert.equal(outputFee.executable, true)
 
 const unreviewed = await buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-  providerApiKey: 'test-key', fetcher, evidence: [], routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
+  providerApiKey: 'test-key', fetcher, approvedPrograms: new Set(), routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
 })
 assert.equal(unreviewed.executable, false)
 assert.ok(unreviewed.programPolicy.unreviewed.length > 0)
@@ -177,16 +174,16 @@ for (const invalid of [
 ]) {
   await assert.rejects(buildSwap({
     inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-    providerApiKey: 'test-key', fetcher, evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000, ...invalid,
+    providerApiKey: 'test-key', fetcher, approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000, ...invalid,
   }), /swap|fee|amount|slippage/i)
 }
 
-await assert.rejects(buildSwap({ inputMint: wallet, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint, providerApiKey: 'test-key', fetcher, evidence }), /mint/i)
-await assert.rejects(buildSwap({ inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, providerApiKey: 'test-key', fetcher, evidence }), /fee account/i)
+await assert.rejects(buildSwap({ inputMint: wallet, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint, providerApiKey: 'test-key', fetcher, approvedPrograms }), /mint/i)
+await assert.rejects(buildSwap({ inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, providerApiKey: 'test-key', fetcher, approvedPrograms }), /fee account/i)
 
 await assert.rejects(buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-    providerApiKey: 'test-key', evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, fetcher: async () => ({ ok: false, status: 429, json: async () => ({ error: 'secret response details' }) }),
+    providerApiKey: 'test-key', approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, fetcher: async () => ({ ok: false, status: 429, json: async () => ({ error: 'secret response details' }) }),
 }), (error) => error.message === 'Swap provider is temporarily unavailable.' && !error.message.includes('secret'))
 
 for (const response of [
@@ -199,28 +196,28 @@ for (const response of [
 ]) {
   await assert.rejects(buildSwap({
     inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-    providerApiKey: 'test-key', evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, fetcher: async () => ({ ok: true, status: 200, json: async () => response }),
+    providerApiKey: 'test-key', approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, fetcher: async () => ({ ok: true, status: 200, json: async () => response }),
     now: () => 1_800_000_000_000,
   }), /swap|fee|route|amount/i)
 }
 
 const noProgramMapping = await buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-  providerApiKey: 'test-key', fetcher, evidence, now: () => 1_800_000_000_000,
+  providerApiKey: 'test-key', fetcher, approvedPrograms, now: () => 1_800_000_000_000,
 })
 assert.equal(noProgramMapping.executable, false)
 assert.ok(noProgramMapping.programPolicy.unreviewed.some((x) => x.routeLabel === 'Reviewed Test Venue'))
 
 const unverifiedFeeAccount = await buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-  providerApiKey: 'test-key', fetcher, evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
+  providerApiKey: 'test-key', fetcher, approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
   feeBalanceDeltaVerified: true, now: () => 1_800_000_000_000,
 })
 assert.equal(unverifiedFeeAccount.executable, false)
 
 await assert.rejects(buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
-  providerApiKey: 'test-key', fetcher, evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
+  providerApiKey: 'test-key', fetcher, approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] },
   feeAccountAuthority: wallet, feeAccountVerifier: feeAccountVerifierFor(outputMint), now: () => 1_800_000_000_000,
 }), /fee account/i)
 
@@ -230,7 +227,7 @@ const keylessRequest = await buildSwap({
     assert.equal(init.headers['x-api-key'], undefined)
     return { ok: true, status: 200, json: async () => buildResponse() }
   },
-  evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
+  approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
   keylessRateLimiter: async () => {},
 })
 assert.equal(keylessRequest.provider, 'jupiter-v2-build')
@@ -239,7 +236,7 @@ let saturationFetcherCalled = false
 await assert.rejects(buildSwap({
   inputMint, outputMint, inputAmountBaseUnits: '100000000', wallet, feeAccount, feeAccountMint: inputMint,
   fetcher: async () => { saturationFetcherCalled = true; return { ok: true, status: 200, json: async () => buildResponse() } },
-  evidence, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
+  approvedPrograms, routeProgramIdsByLabel: { 'Reviewed Test Venue': [venueProgram] }, now: () => 1_800_000_000_000,
   keylessRateLimiter: async () => { const error = new Error('private limiter details'); error.code = 'KEYLESS_PROVIDER_BUSY'; throw error },
 }), (error) => error.message === 'Swap provider is busy; try again shortly.' && error.code === undefined)
 assert.equal(saturationFetcherCalled, false)

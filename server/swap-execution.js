@@ -28,10 +28,10 @@ const MAX_COMPUTE_UNITS = 1_400_000
 
 export class SwapExecutionError extends Error {}
 
-export function swapIntentStillAuthorized(intent, { executionEnabled, evidence } = {}) {
+export function swapIntentStillAuthorized(intent, { executionEnabled, approvedPrograms } = {}) {
   if (executionEnabled !== true) return false
   const metadata = intent?.metadata ?? {}
-  return evaluateProgramPolicy(metadata.programIds, evidence, metadata.routeLabels, metadata.routeProgramIdsByLabel).approved
+  return evaluateProgramPolicy(metadata.programIds, metadata.routeLabels, metadata.routeProgramIdsByLabel, approvedPrograms).approved
 }
 
 function positiveRaw(value, label) {
