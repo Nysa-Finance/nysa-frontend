@@ -111,7 +111,11 @@ async function readJson(path, init) {
 }
 
 async function loadReadiness() {
-  try { readiness.value = await readJson('/api/swap-readiness') }
+  const wallet = state.address
+  try {
+    const result = await readJson(`/api/swap-readiness${wallet ? `?wallet=${wallet}` : ''}`)
+    if (state.address === wallet) readiness.value = result
+  }
   catch (cause) { error.value = cause.message }
 }
 
@@ -469,6 +473,7 @@ watch(() => state.address, (wallet, previous) => {
   withdrawLimitBaseUnits.value = null
   withdrawLimitUpdatedAt.value = null
   withdrawLimitSlot.value = null
+  loadReadiness()
   if (wallet) {
     restoreSavedFlowOutcome()
     if (flowType.value === 'withdraw-sell') refreshWithdrawLimit()

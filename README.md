@@ -82,7 +82,10 @@ Keyless Jupiter access is available for prototype/read-only requests at 0.5 requ
 Swap execution turns on when the server has `JUPITER_API_KEY`, `SWAP_FEE_ACCOUNT_USDC`, `SWAP_FEE_ACCOUNT_USDY` and
 `SWAP_FEE_TREASURY_AUTHORITY` in `.env` (both fee accounts must exist on-chain, owned by that authority) and fresh market
 data shows a nonzero Nysa vault allocation to the USDY market; removing the keys turns it off. Never put them in browser
-config. A route may only invoke the programs in `server/program-policy.js` (`APPROVED_PROGRAMS`: Jupiter V6, Orca
+config. To try it on mainnet before launch, also set `SWAP_WALLETS` to a comma-separated list of addresses:
+only those wallets can quote, build and relay a swap, and only they see the Swap tab and the swap banners (the server
+enforces it; hiding the links is just presentation). Remove `SWAP_WALLETS` to open swap to everyone. Changing these
+values needs only a container restart, not a deploy. A route may only invoke the programs in `server/program-policy.js` (`APPROVED_PROGRAMS`: Jupiter V6, Orca
 Whirlpool, Compute Budget, Associated Token); add one there only after reviewing it.
 
 `/swap` requests and displays a sanitized USDY/USDC provider route. The server-side execution pipeline admits only a

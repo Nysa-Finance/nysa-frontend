@@ -145,6 +145,13 @@ onSnapshot((snapshot) => { const msg = event(snapshot); for (const c of clients)
 setInterval(() => { for (const c of clients) c.write(': ping\n\n') }, 25_000).unref() // under Cloudflare's 100s idle cut
 
 // ---- routes ----
+// Swap feature flag. Without the Jupiter key and the fee accounts in .env, swap is off. With them and SWAP_WALLETS
+// (comma-separated addresses), only those wallets can quote, build and relay a swap: a private beta on mainnet.
+// Without SWAP_WALLETS it is open to everyone.
+const SWAP_WALLETS = new Set((process.env.SWAP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
+const swapOpenTo = (wallet) => SWAP_WALLETS.size === 0 || SWAP_WALLETS.has(wallet)
+const SWAP_NOT_ENABLED = { error: 'Swap is not available for this wallet yet.' }
+
 function currentSwapReadiness(request = {}) {
   const snapshot = getSnapshot()
   const availability = swapPairAvailability({
@@ -156,15 +163,20 @@ function currentSwapReadiness(request = {}) {
   })
   const localTestWallet = isLocalForkWallet(request.wallet, { rpcUrl: RPC_URL })
   const localExecution = localForkProgramEvidenceReady() && (!request.wallet || localTestWallet)
+  const providerConfigured = !!process.env.JUPITER_API_KEY || localExecution
+  const feeAccountsConfigured = !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
+    && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
+    && !!process.env.SWAP_FEE_TREASURY_AUTHORITY
+  const walletEnabled = swapOpenTo(request.wallet)
   const readiness = swapReadiness({
-    providerConfigured: !!process.env.JUPITER_API_KEY || localExecution,
-    feeAccountsConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
-      && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
-      && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
+    providerConfigured,
+    feeAccountsConfigured,
+    walletEnabled,
     marketDataAvailable: availability.available,
     marketAvailabilityReasons: availability.reasons,
   })
-  return { readiness, availability }
+  // Whether the frontend shows the swap entry points to this wallet (not the market-data state, which comes and goes).
+  return { readiness, availability, visible: providerConfigured && feeAccountsConfigured && walletEnabled }
 }
 
 // Loop exits use the same route/program/fee/fork gates as swaps, but do not depend on new-entry allocation policy.
@@ -345,8 +357,10 @@ const loopExecution = createLoopExecutionService({
 
 const routes = [
   ['GET', /^\/api\/swap-readiness$/, (req, res) => {
-    const { readiness, availability } = currentSwapReadiness()
-    return send(res, 200, { ...readiness, marketAvailability: availability,
+    const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
+    if (wallet && !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
+    const { readiness, availability, visible } = currentSwapReadiness({ wallet: wallet ?? undefined })
+    return send(res, 200, { ...readiness, visible, marketAvailability: availability,
       executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
   }],
   ['POST', /^\/api\/swap-quote$/, async (req, res) => {
@@ -359,6 +373,7 @@ const routes = [
       throw error
     }
     if (blocked(res, request.wallet, { failClosed: true })) return
+    if (!swapOpenTo(request.wallet)) return send(res, 403, SWAP_NOT_ENABLED)
     const { availability } = currentSwapReadiness(request)
     if (!availability.available) return send(res, 503, { error: availability.reasons.map((reason) => reason.message).join(' ') })
     try {
@@ -719,7 +734,7 @@ const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), '/swap', '/loop', '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
+${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), ...(currentSwapReadiness().visible ? ['/swap'] : []), '/loop', '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
 </urlset>
 `
 

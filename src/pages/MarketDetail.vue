@@ -54,9 +54,8 @@ function openDd() {
             <button class="n-pill" @click="openDd"><span class="n-dot" />Safety Score {{ m.dueDiligence.safetyScore }}/10</button>
           </div>
           <p class="n-sub blurb">{{ m.blurb }}</p>
-          <div class="n-banner swap-cta">
-            Need USDY after borrowing USDC? <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdc', output: 'svm-usdy', flow: 'acquire-supply' } }">Review a USDC / USDY route</RouterLink>.
-            Execution remains disabled until route, fee, and wallet checks pass.
+          <div v-if="state.swapVisible" class="n-banner swap-cta">
+            Need USDY after borrowing USDC? <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdc', output: 'svm-usdy', flow: 'acquire-supply' } }">Swap USDC to USDY</RouterLink>.
           </div>
           <div v-if="m.farmPoints" class="farm-cta">
             <div>
@@ -166,7 +165,7 @@ function openDd() {
           v-if="mode === 'withdraw'" :key="'l' + route.fullPath" :market="m" :tokens="loans" :all-tokens="tokens"
           initial-tab="withdraw" :initial-asset="route.query.asset" withdraw-only
         />
-        <div v-if="mode === 'withdraw' && m.collateral.includes('svm-usdy')" class="n-banner withdraw-swap-cta">
+        <div v-if="state.swapVisible && mode === 'withdraw' && m.collateral.includes('svm-usdy')" class="n-banner withdraw-swap-cta">
           After a successful free USDY withdrawal, you can review an optional sale route.
           <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdy', output: 'svm-usdc', flow: 'withdraw-sell' } }">Review USDY / USDC</RouterLink>.
           Locked collateral cannot be swapped here.

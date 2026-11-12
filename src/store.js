@@ -114,6 +114,7 @@ export const state = reactive({
   swapPending: safe(() => JSON.parse(localStorage.getItem('nysaPendingSwap'))),
   swapOutcome: safe(() => JSON.parse(localStorage.getItem('nysaSwapFlowOutcome'))),
   blockedWallet: null, // address refused by the backend's sanctions screening (shown in a notice, then disconnected)
+  swapVisible: false, // show the swap entry points: the server executes swaps for this wallet (SWAP_WALLETS beta, README)
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
@@ -290,6 +291,13 @@ function setAccount(w, acc) {
   state.vaultPositions = {}
   state.walletError = null
   if (acc) loadAccount()
+  loadSwapVisibility()
+}
+
+async function loadSwapVisibility() {
+  const addr = state.address
+  const r = await api(`/api/swap-readiness${addr ? `?wallet=${addr}` : ''}`).catch(() => null)
+  if (state.address === addr) state.swapVisible = r?.visible === true
 }
 
 async function connectWith(w, silent) {
@@ -1538,6 +1546,7 @@ export function start() {
   scanWallets()
   getWallets().on('register', scanWallets)
   listenMarket()
+  loadSwapVisibility()
   const ret = readDeeplinkReturn() // back from Phantom/Solflare on iOS?
   if (ret) skipNextPageview()
   if (ret?.action === 'connect' && ret.error) state.handoff = { status: 'error', label: 'Connect wallet', error: ret.error }

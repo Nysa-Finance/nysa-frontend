@@ -76,5 +76,7 @@ assert.equal(swapReadiness({ providerConfigured: false, feeAccountsConfigured: t
 assert.equal(swapReadiness({ providerConfigured: true, feeAccountsConfigured: false, marketDataAvailable: true }).executionEnabled, false)
 assert.equal(swapReadiness({ providerConfigured: true, feeAccountsConfigured: true, marketDataAvailable: false }).executionEnabled, false)
 assert.equal(swapReadiness({ providerConfigured: true, feeAccountsConfigured: true, marketDataAvailable: true }).executionEnabled, true)
+assert.deepEqual(swapReadiness({ providerConfigured: true, feeAccountsConfigured: true, walletEnabled: false, marketDataAvailable: true }).unavailableReasons
+  .map((r) => r.code), ['swap-wallet-not-enabled'], 'a wallet outside the SWAP_WALLETS beta cannot execute')
 
 console.log('swap routes ok')

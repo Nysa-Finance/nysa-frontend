@@ -140,12 +140,14 @@ export async function createPublicSwapQuote(body, {
 export function swapReadiness({
   providerConfigured = false,
   feeAccountsConfigured = false,
+  walletEnabled = true,
   marketDataAvailable = false,
   marketAvailabilityReasons = [],
 } = {}) {
   const unavailableReasons = [
     ...(!providerConfigured ? [{ code: 'provider-unconfigured', message: 'Production swap-provider configuration is missing.' }] : []),
     ...(!feeAccountsConfigured ? [{ code: 'fee-accounts-unconfigured', message: 'Verified USDY and USDC fee accounts are required.' }] : []),
+    ...(!walletEnabled ? [{ code: 'swap-wallet-not-enabled', message: 'Swap is not available for this wallet yet.' }] : []),
     ...(!marketDataAvailable ? [{ code: 'market-allocation-missing', message: 'No fresh nonzero allocation is available for the supported collateral market.' }] : []),
     ...(marketAvailabilityReasons ?? []),
   ]
