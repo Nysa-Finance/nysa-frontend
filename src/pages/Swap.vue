@@ -11,7 +11,8 @@ import { formatBaseUnits } from '../swap-fees.js'
 const SLIPPAGES = [10, 30, 50] // bps; the server refuses more than 50
 const route = useRoute()
 // Every collateral/loan pair of a live market can be swapped both ways; a new market adds its tokens here.
-const PAIRS = LIVE.flatMap((market) => market.pairs ?? []).flatMap(({ collateral, liability }) => [[collateral, liability], [liability, collateral]])
+// Loan token first, so the page opens on "sell USDC, buy USDY" (buying collateral).
+const PAIRS = LIVE.flatMap((market) => market.pairs ?? []).flatMap(({ collateral, liability }) => [[liability, collateral], [collateral, liability]])
 const tokens = [...new Set(PAIRS.map(([id]) => id))].map((id) => TOKENS[id])
 const inputId = ref(tokens.some((token) => token.token_id === route.query.input) ? route.query.input : tokens[0].token_id)
 const outputId = ref(route.query.output)
