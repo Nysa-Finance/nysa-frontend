@@ -115,7 +115,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
   </div>
   <div v-if="state.swapVisible && loans.length" class="n-banner swap-portfolio-cta">
-    Want USDY after borrowing USDC? <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdc', output: 'svm-usdy', flow: 'acquire-supply' } }" class="link">Swap USDC to USDY</RouterLink>.
+    Want USDY after borrowing USDC? <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdc', output: 'svm-usdy' } }" class="link">Swap USDC to USDY</RouterLink>.
     Locked collateral is never used for a swap.
   </div>
 
