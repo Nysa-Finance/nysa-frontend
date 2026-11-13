@@ -140,7 +140,7 @@ export function describe(name, args, token) {
 function safe(fn) { try { return fn() } catch { return null } }
 
 // ---- liquidations ----
-const RESERVES = new Map(Object.values(TOKENS).map((t) => [t.reserve, t]))
+const RESERVES = new Map(LIVE.flatMap((m) => Object.entries(m.reserves).map(([id, reserve]) => [reserve, TOKENS[id]]))) // reserve address -> token
 const TOKEN_PROGRAMS = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PhnBqCXEpPxuEb']
 
 // SPL token transfers among an instruction's inner instructions: [{ source, dest, amount }].

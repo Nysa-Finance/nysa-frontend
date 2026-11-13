@@ -85,14 +85,14 @@ export const state = reactive({
   loading: true,
   error: null, // market data
   walletError: null, // balances/positions
-  reserves: {}, // token_id -> reserve metrics, risk parameters and rate curve (live from chain)
-  rewards: {}, // token_id -> { apr, rewards: [{ symbol, apr, perDay, runwayDays }] } supply rewards
+  reserves: {}, // market id -> token_id -> reserve metrics, risk parameters, rate curve and oracle feed (live from chain)
+  rewards: {}, // market id -> token_id -> { apr, rewards: [{ symbol, apr, perDay, runwayDays }] } supply rewards
   address: null,
   balances: {}, // token_id -> units in wallet
   balancesBaseUnits: {}, // token_id -> exact confirmed SPL balance
   sol: null, // wallet SOL balance used to explain network fee requirements before building
-  positions: {}, // token_id -> { supplied, borrowed, maxWithdraw } units
-  positionsBaseUnits: {}, // token_id -> exact protocol-computed max withdraw amount
+  positions: {}, // market id -> token_id -> { supplied, borrowed, maxWithdraw } units
+  positionsBaseUnits: {}, // market id -> token_id -> exact protocol-computed max withdraw amount
   loopPositions: [], // separately identified Multiply positions; never merged into vanilla token-keyed fields
   loopPositionReadStatus: {}, // owner-scoped Multiply read coverage; absence is authoritative only when every configured read succeeded
   claimable: {}, // market id -> [{ symbol, amount }] unclaimed rewards of the connected wallet
@@ -138,20 +138,24 @@ export function acceptTos() {
   state.tosAccepted = true
 }
 
-export const priceOf = (id) => state.reserves[id]?.price ?? tok(id).price
+// Reserve data is per market: `m` is a market from config.js, `id` a token id. A token lent in two markets has a
+// reserve (rates, liquidity, limits) and a position in each; only its price and the wallet balance are shared.
+export const reserveOf = (m, id) => state.reserves[m.id]?.[id]
+// A token's oracle price, from any market that lists it.
+export const priceOf = (id) => Object.values(state.reserves).find((r) => r[id])?.[id].price ?? tok(id).price
 // Supply reward APR (Kamino farm incentives) on top of the supply APY; 0 when the reserve has no active rewards.
-export const rewardAprOf = (id) => state.rewards[id]?.apr ?? 0
+export const rewardAprOf = (m, id) => state.rewards[m.id]?.[id]?.apr ?? 0
 // Tooltip for a boosted APY, e.g. "3.10% supply APY + 12.00% USDC rewards APR".
-export const boostNote = (id, supplyApy) =>
-  `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(id))} ${state.rewards[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
+export const boostNote = (m, id, supplyApy) =>
+  `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(m, id))} ${state.rewards[m.id]?.[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
 
 // Tooltip for a vault's boosted APY: "1.47% supply APY + 11,212.83% USDC rewards APY, auto-compounded".
 export const vaultApyNote = (v) => `${pct(v.supplyApy)} supply APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
 
 // Risk parameters of a collateral/liability pair. Governance changes them (Market Updates), so the live on-chain
 // values win; config.js only fills in until the first market update arrives.
-export function riskOf(pair) {
-  const c = state.reserves[pair.collateral], l = state.reserves[pair.liability]
+export function riskOf(m, pair) {
+  const c = reserveOf(m, pair.collateral), l = reserveOf(m, pair.liability)
   return {
     ...pair,
     ...(c && { maxLtv: c.maxLtv, liqLtv: c.liqLtv, supplyCap: c.supplyCap }),
@@ -162,20 +166,21 @@ export function riskOf(pair) {
 }
 
 // The liquidation bonus a liquidator really gets on a pair, as text ("2%–2.5%"): the configured max is often unreachable.
-export function bonusText(pair) {
-  const r = riskOf(pair)
+export function bonusText(m, pair) {
+  const r = riskOf(m, pair)
   const { low, high } = liquidationBonusRange(r.minDiscount, r.maxDiscount, r.liqLtv)
   const p = (v) => `${+v.toFixed(2)}%`
   return low === high ? p(high) : `${p(low)}–${p(high)}`
 }
-// Interest rate model of a borrowable token (live curve and fee); null for collateral-only tokens.
-export const irmOf = (t) => (t.irm ? state.reserves[t.token_id]?.irm ?? t.irm : null)
+// Interest rate model of a market's borrowable token (live curve and fee); null for collateral-only tokens, and until
+// the market data arrives.
+export const irmOf = (m, id) => (m.loans.includes(id) ? reserveOf(m, id)?.irm ?? null : null)
 
-// Everything a view needs for one token, merged.
-export function rowOf(id) {
-  const r = state.reserves[id]
+// Everything a view needs for one token in one market, merged.
+export function rowOf(m, id) {
+  const r = reserveOf(m, id)
   if (!r) return null
-  return { reserve: r, walletBalance: state.balances[id] ?? 0, ...(state.positions[id] ?? { supplied: 0, borrowed: 0, maxWithdraw: 0 }) }
+  return { reserve: r, walletBalance: state.balances[id] ?? 0, ...(state.positions[m.id]?.[id] ?? { supplied: 0, borrowed: 0, maxWithdraw: 0 }) }
 }
 
 // ---- market: pushed by the backend; polled from /api/market while the stream is down or refused ----

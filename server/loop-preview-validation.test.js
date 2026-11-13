@@ -28,10 +28,10 @@ const marketRisk = {
 }
 const marketSnapshot = {
   blockTime: 1_798_000_010,
-  reserves: {
+  reserves: { 'sol-usdy-usdc': {
     'svm-usdy': { price: 1.09, maxLtv: 90, liqLtv: 95, oracleTs: 1_798_000_000, maxAge: 60 },
     'svm-usdc': { price: 1, maxLtv: 90, liqLtv: 95, oracleTs: 1_798_000_000, maxAge: 60 },
-  },
+  } },
 }
 const snapshotRisk = loopMarketRiskFromSnapshot(marketSnapshot)
 assert.equal(loopMarketRiskStillCurrent(marketRisk, snapshotRisk, marketSnapshot.blockTime), true,

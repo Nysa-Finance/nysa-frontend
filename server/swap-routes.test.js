@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { TOKENS } from '../src/config.js'
+import { LIVE, TOKENS } from '../src/config.js'
 import { createPublicSwapQuote, parseSwapQuoteRequest, publicSwapQuote, swapPairAvailability, swapReadiness } from './swap-routes.js'
 
 const wallet = '11111111111111111111111111111111'
@@ -7,8 +7,8 @@ const usdc = TOKENS['svm-usdc']
 const usdy = TOKENS['svm-usdy']
 const request = { wallet, inputMint: usdc.mint, outputMint: usdy.mint, amountBaseUnits: '1000000', slippageBps: 50 }
 
-const market = { id: 'sol-usdy-usdc', visible: true, kaminoMarket: 'market', pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc' }] }
-const allocatedVaults = { prime: { allocations: [{ market: 'market', reserve: usdc.reserve, collateral: ['svm-usdy'], invested: 1 }] } }
+const market = { id: 'sol-usdy-usdc', visible: true, kaminoMarket: 'market', reserves: LIVE[0].reserves, pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc' }] }
+const allocatedVaults = { prime: { allocations: [{ market: 'market', reserve: LIVE[0].reserves['svm-usdc'], collateral: ['svm-usdy'], invested: 1 }] } }
 const allocatedPair = swapPairAvailability({
   market, vaults: allocatedVaults, snapshotUpdatedAt: 1000, inputMint: usdc.mint, outputMint: usdy.mint, now: 1500,
 })

@@ -27,14 +27,16 @@ export async function loadMarket(rpcClient, m) {
   const marketAddress = address(m.kaminoMarket)
   const [state, ...reserves] = await Promise.all([
     LendingMarket.fetch(rpcClient, marketAddress),
-    ...tokensOf(m).map((t) => getSingleReserve(address(t.reserve), rpcClient, DEFAULT_RECENT_SLOT_DURATION_MS)),
+    ...tokensOf(m).map((t) => getSingleReserve(address(m.reserves[t.token_id]), rpcClient, DEFAULT_RECENT_SLOT_DURATION_MS)),
   ])
   if (!state) throw new Error(`Kamino market ${m.kaminoMarket} not found`)
   return KaminoMarket.loadWithReserves(rpcClient, state, new Map(reserves.map((r) => [r.address, r])), marketAddress, DEFAULT_RECENT_SLOT_DURATION_MS)
 }
 
+// A loaded market's reserve of a token: the address comes from the market's entry in config.js.
 export function reserveOf(market, t) {
-  const r = market.getReserveByAddress(address(t.reserve))
+  const m = LIVE.find((x) => x.kaminoMarket === String(market.getAddress()))
+  const r = m?.reserves[t.token_id] && market.getReserveByAddress(address(m.reserves[t.token_id]))
   if (!r) throw new Error(`The Kamino market has no ${t.name} reserve`)
   return r
 }
@@ -47,6 +49,7 @@ function reserveMetrics(m, t, r, now) {
   const supplied = num(r.getTotalSupply()) / f
   const borrowed = num(r.getBorrowedAmount()) / f
   const s = r.stats
+  const scope = r.state.config.tokenInfo.scopeConfiguration
   return {
     supplyAPR: r.totalSupplyAPY(now) * 100,
     borrowAPR: m.loans.includes(t.token_id) ? r.totalBorrowAPY(now) * 100 : null,
@@ -65,6 +68,8 @@ function reserveMetrics(m, t, r, now) {
     borrowCap: num(s.reserveBorrowLimit) / f,
     irm: { points: s.borrowCurve.map(([u, rate]) => [u * 100, rate * 100]), fee: s.protocolTakeRate },
     oracleTs: Number(r.tokenOraclePrice?.timestamp ?? 0),
+    priceFeed: String(scope.priceFeed),
+    feedNote: `Scope · index ${scope.priceChain.filter((i) => i !== 65535).join(' → ')}`, // 65535 = unused hop
     maxAge: Number(r.state.config.tokenInfo.maxAgePriceSeconds),
   }
 }
@@ -92,23 +97,25 @@ function farmRewards(tokens, t, r, farm, market) {
 
 async function readAll() {
   const now = await getCurrentLedgerInstant(rpc)
-  const live = new Map(), reserves = {}, rewards = {}
+  const live = new Map(), reserves = {}, rewards = {} // reserves, rewards: market id -> token id -> …
   for (const m of LIVE) {
+    reserves[m.id] = {}
+    rewards[m.id] = {}
     const market = await loadMarket(rpc, m)
     const farmStates = new Map() // farm address -> FarmState
     const tokens = tokensOf(m)
     for (const t of tokens) {
       const r = reserveOf(market, t)
-      reserves[t.token_id] = reserveMetrics(m, t, r, now)
+      reserves[m.id][t.token_id] = reserveMetrics(m, t, r, now)
       if (String(r.state.farmCollateral) === NONE) continue
       const { data: farm } = await fetchFarmState(rpc, r.state.farmCollateral)
       farmStates.set(String(r.state.farmCollateral), farm)
       const rw = farmRewards(tokens, t, r, farm, market)
-      if (rw) rewards[t.token_id] = rw
+      if (rw) rewards[m.id][t.token_id] = rw
     }
     live.set(m.id, { market, now, farms: farmStates })
   }
-  const vaults = await readVaults(new Map([...live.values()].map((l) => [String(l.market.getAddress()), l.market])), now, reserves)
+  const vaults = await readVaults(new Map([...live.values()].map((l) => [String(l.market.getAddress()), l.market])), now)
   return { live, vaults: vaults.live, snapshot: { updatedAt: Date.now(), slot: Number(now.slot), blockTime: Number(now.blockTime), reserves, rewards, vaults: vaults.views } }
 }
 

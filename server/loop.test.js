@@ -71,7 +71,7 @@ let appCollateralMaxAge = 60
 let appMaxBorrowLtv = 0.9
 let appLiquidationLtv = 0.95
 const appCollateral = {
-  address: address(TOKENS['svm-usdy'].reserve), stats: {
+  address: address(LIVE[0].reserves['svm-usdy']), stats: {
     decimals: TOKENS['svm-usdy'].decimals,
     get loanToValue() { return appMaxBorrowLtv },
     get liquidationThreshold() { return appLiquidationLtv },
@@ -83,7 +83,7 @@ const appCollateral = {
   getEstimatedCollateralExchangeRate: () => new Decimal('0.6'),
 }
 const appLiability = {
-  address: address(TOKENS['svm-usdc'].reserve), stats: { decimals: TOKENS['svm-usdc'].decimals, loanToValue: 0.9, liquidationThreshold: 0.95 },
+  address: address(LIVE[0].reserves['svm-usdc']), stats: { decimals: TOKENS['svm-usdc'].decimals, loanToValue: 0.9, liquidationThreshold: 0.95 },
   state: { config: { tokenInfo: { maxAgePriceSeconds: 60 } } },
   tokenOraclePrice: { timestamp: 1 },
   getLiquidityMint: () => address(usdc), getMintFactor: () => new Decimal(1_000_000),

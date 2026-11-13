@@ -39,8 +39,8 @@ export function loopCarryStillCurrent(previewCarry, currentCarry, now = Date.now
 
 /** Read the two loop reserves' current oracle and governance assumptions from the published market snapshot. */
 export function loopMarketRiskFromSnapshot(snapshot) {
-  const collateral = snapshot?.reserves?.[TOKENS['svm-usdy'].token_id]
-  const liability = snapshot?.reserves?.[TOKENS['svm-usdc'].token_id]
+  const collateral = snapshot?.reserves?.['sol-usdy-usdc']?.[TOKENS['svm-usdy'].token_id]
+  const liability = snapshot?.reserves?.['sol-usdy-usdc']?.[TOKENS['svm-usdc'].token_id]
   if (!collateral || !liability) return null
   return {
     collateralPriceUsd: collateral.price,

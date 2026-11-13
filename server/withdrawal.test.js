@@ -19,7 +19,7 @@ const refreshOrder = []
 assert.deepEqual(await readFreshWithdrawalAllowance({
   wallet: 'wallet',
   refreshMarket: async () => { refreshOrder.push('market'); return { updatedAt: 1234, slot: 55 } },
-  getAccount: async (wallet, fresh) => { refreshOrder.push('account'); assert.equal(wallet, 'wallet'); assert.equal(fresh, true); return { positionsBaseUnits: { 'svm-usdy': { maxWithdraw: '99000000000000001' } } } },
+  getAccount: async (wallet, fresh) => { refreshOrder.push('account'); assert.equal(wallet, 'wallet'); assert.equal(fresh, true); return { positionsBaseUnits: { 'sol-usdy-usdc': { 'svm-usdy': { maxWithdraw: '99000000000000001' } } } } },
 }), { maxWithdrawBaseUnits: '99000000000000001', updatedAt: 1234, slot: 55 })
 assert.deepEqual(refreshOrder, ['market', 'account'], 'allowance endpoint refreshes market before the fresh obligation read')
 await assert.rejects(readFreshWithdrawalAllowance({

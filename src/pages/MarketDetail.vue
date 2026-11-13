@@ -4,7 +4,7 @@
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { state, rowOf, riskOf, irmOf, rewardAprOf, boostNote, loadMarketUpdates, bonusText } from '../store.js'
+import { state, reserveOf, riskOf, irmOf, rewardAprOf, boostNote, loadMarketUpdates, bonusText } from '../store.js'
 import { marketById, tok, tokensOf, explorer } from '../config.js'
 import { usd, pct, compact, short } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -24,7 +24,7 @@ const mode = computed(() => (route.query.mode === 'withdraw' ? 'withdraw' : 'bor
 const tokens = computed(() => tokensOf(m.value))
 const collateral = computed(() => m.value.collateral.map(tok))
 const loans = computed(() => m.value.loans.map(tok))
-const r = (id) => rowOf(id)?.reserve
+const r = (id) => reserveOf(m.value, id)
 const sum = (ids, k) => ids.reduce((s, id) => s + (r(id)?.[k] ?? 0), 0)
 const pointsOpen = ref(false)
 // Admin changes to this market (the index also holds the vaults' own, tagged with another source).
@@ -80,7 +80,7 @@ function openDd() {
               <div class="n-cell n-num" data-label="Deposits">{{ usd(r(t.token_id)?.supplyUsd) }}</div>
               <div class="n-cell n-num" data-label="Borrowed">{{ m.loans.includes(t.token_id) ? usd(r(t.token_id)?.borrowUsd) : '—' }}</div>
               <div class="n-cell n-num" data-label="Utilization">{{ pct(r(t.token_id)?.utilization, 1) }}</div>
-              <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct((r(t.token_id)?.supplyAPR ?? 0) + rewardAprOf(t.token_id)) }}<span v-if="rewardAprOf(t.token_id) > 0" class="n-boost" :title="boostNote(t.token_id, r(t.token_id)?.supplyAPR)" :aria-label="boostNote(t.token_id, r(t.token_id)?.supplyAPR)">⚡</span></div>
+              <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct((r(t.token_id)?.supplyAPR ?? 0) + rewardAprOf(m, t.token_id)) }}<span v-if="rewardAprOf(m, t.token_id) > 0" class="n-boost" :title="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)" :aria-label="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)">⚡</span></div>
               <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r(t.token_id)?.borrowAPR) }}</div>
             </div>
           </div>
@@ -91,20 +91,21 @@ function openDd() {
             <div class="n-thead irm-grid"><div>Asset</div><div>Base rate</div><div>Rate at kink</div><div>Max rate</div><div>Kink</div></div>
             <div v-for="t in tokens" :key="t.token_id" class="n-tr sm irm-grid">
               <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="t" size="sm" />{{ t.name }}</div>
-              <template v-if="irmOf(t)">
-                <div class="n-cell n-num" data-label="Base rate">{{ pct(irmOf(t).points[0][1]) }}</div>
-                <div class="n-cell n-num" data-label="Rate at kink">{{ pct(irmOf(t).points.at(-2)[1]) }}</div>
-                <div class="n-cell n-num" data-label="Max rate">{{ pct(irmOf(t).points.at(-1)[1], 1) }}</div>
-                <div class="n-cell n-num" data-label="Kink">{{ irmOf(t).points.at(-2)[0] }}%</div>
+              <template v-if="irmOf(m, t.token_id)">
+                <div class="n-cell n-num" data-label="Base rate">{{ pct(irmOf(m, t.token_id).points[0][1]) }}</div>
+                <div class="n-cell n-num" data-label="Rate at kink">{{ pct(irmOf(m, t.token_id).points.at(-2)[1]) }}</div>
+                <div class="n-cell n-num" data-label="Max rate">{{ pct(irmOf(m, t.token_id).points.at(-1)[1], 1) }}</div>
+                <div class="n-cell n-num" data-label="Kink">{{ irmOf(m, t.token_id).points.at(-2)[0] }}%</div>
               </template>
+              <template v-else-if="m.loans.includes(t.token_id)"><span v-for="i in 4" :key="i" class="n-skel" /></template>
               <div v-else class="n-cell n-muted collateral-only" style="grid-column: span 4">Collateral only — this reserve has no interest rate model</div>
             </div>
           </div>
           <p class="hint">Rates are annualised from the vault's per-second borrow rate. Suppliers receive the borrow rate scaled by utilisation, net of the reserve fee.</p>
           <div class="irm-charts">
-            <div v-for="t in tokens.filter((t) => t.irm)" :key="t.token_id" class="irm-card">
+            <div v-for="t in tokens.filter((t) => irmOf(m, t.token_id))" :key="t.token_id" class="irm-card">
               <div class="n-asset irm-card-head"><TokenIcon :token="t" size="sm" />{{ t.name }}</div>
-              <IrmChart :irm="irmOf(t)" :utilization="r(t.token_id)?.utilization" />
+              <IrmChart :irm="irmOf(m, t.token_id)" :utilization="r(t.token_id)?.utilization" />
             </div>
           </div>
         </Section>
@@ -115,11 +116,11 @@ function openDd() {
             <div v-for="p in m.pairs" :key="p.collateral + p.liability" class="n-tr sm rp-grid">
               <div class="n-cell n-asset" data-label="Collateral"><TokenIcon :token="tok(p.collateral)" size="sm" />{{ tok(p.collateral).name }}</div>
               <div class="n-cell n-asset" data-label="Liability"><TokenIcon :token="tok(p.liability)" size="sm" />{{ tok(p.liability).name }}</div>
-              <div class="n-cell n-num" data-label="Max LTV">{{ riskOf(p).maxLtv }}%</div>
-              <div class="n-cell n-num" data-label="Liquidation LTV">{{ riskOf(p).liqLtv }}%</div>
-              <div class="n-cell n-num" data-label="Liquidation bonus" :title="`Configured max ${pct(riskOf(p).maxDiscount, 1)}; what a liquidator can actually get with these LTVs`">{{ bonusText(p) }}</div>
-              <div class="n-cell n-num" data-label="Supply cap">{{ compact(riskOf(p).supplyCap, tok(p.collateral).name) }}</div>
-              <div class="n-cell n-num" data-label="Borrow cap">{{ compact(riskOf(p).borrowCap, tok(p.liability).name) }}</div>
+              <div class="n-cell n-num" data-label="Max LTV">{{ riskOf(m, p).maxLtv }}%</div>
+              <div class="n-cell n-num" data-label="Liquidation LTV">{{ riskOf(m, p).liqLtv }}%</div>
+              <div class="n-cell n-num" data-label="Liquidation bonus" :title="`Configured max ${pct(riskOf(m, p).maxDiscount, 1)}; what a liquidator can actually get with these LTVs`">{{ bonusText(m, p) }}</div>
+              <div class="n-cell n-num" data-label="Supply cap">{{ compact(riskOf(m, p).supplyCap, tok(p.collateral).name) }}</div>
+              <div class="n-cell n-num" data-label="Borrow cap">{{ compact(riskOf(m, p).borrowCap, tok(p.liability).name) }}</div>
             </div>
           </div>
           <p class="hint">An LTV belongs to a (collateral, liability) pair, not to an asset on its own — the same collateral can carry a different limit against a different loan.</p>
@@ -141,9 +142,9 @@ function openDd() {
                 <span class="addr-k">{{ t.name }} Address</span>
                 <a class="addr-link" :href="explorer(t.mint)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ t.mint }}</span><span class="addr-short">{{ short(t.mint, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
               </div>
-              <div class="addr-row">
-                <span class="addr-k">{{ t.name }} Price Feed<span class="addr-note">{{ t.feedNote }}</span></span>
-                <a class="addr-link" :href="explorer(t.priceFeed)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ t.priceFeed }}</span><span class="addr-short">{{ short(t.priceFeed, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
+              <div v-if="r(t.token_id)" class="addr-row"><!-- the oracle feed is read from the reserve, on-chain -->
+                <span class="addr-k">{{ t.name }} Price Feed<span class="addr-note">{{ r(t.token_id).feedNote }}</span></span>
+                <a class="addr-link" :href="explorer(r(t.token_id).priceFeed)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ r(t.token_id).priceFeed }}</span><span class="addr-short">{{ short(r(t.token_id).priceFeed, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
               </div>
             </template>
           </div>

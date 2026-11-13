@@ -73,7 +73,7 @@ let fee = { at: 0, value: PRIORITY_MIN }
 async function priorityFee() {
   if (Date.now() - fee.at < 30_000) return fee.value
   try {
-    const recent = await rpc.getRecentPrioritizationFees(LIVE.flatMap((m) => tokensOf(m).map((t) => address(t.reserve)))).send()
+    const recent = await rpc.getRecentPrioritizationFees(LIVE.flatMap((m) => Object.values(m.reserves).map(address))).send()
     const paid = recent.map((f) => Number(f.prioritizationFee)).filter((f) => f > 0).sort((a, b) => a - b)
     fee = { at: Date.now(), value: Math.min(PRIORITY_MAX, Math.max(PRIORITY_MIN, paid[Math.floor(paid.length * 0.75)] ?? 0)) }
   } catch (e) { console.warn('[tx] priority fee', e?.message); fee = { at: Date.now(), value: fee.value } }

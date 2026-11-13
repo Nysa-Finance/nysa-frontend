@@ -1,6 +1,11 @@
 // Static market configuration, shared by the frontend and the backend (server/).
-// Live numbers, risk parameters and rate curves come from chain via the backend (server/market.js); the risk values
-// and IRM here are only shown until the first market update arrives (riskOf / irmOf in store.js).
+// Live numbers, risk parameters, rate curves and oracle feeds come from chain via the backend (server/market.js); the
+// risk values here are only shown until the first market update arrives (riskOf in store.js).
+//
+// Adding a market: one entry in LIVE (and a TOKENS entry for each token not listed yet, with its icon in
+// public/tokens/). Everything else follows from it: pages, URLs, live data, positions, transactions, Market Updates,
+// Farm Points. `reserves` is the market's own Kamino reserve of each token: two markets lending the same token (USDC)
+// each have their own. `npm test` checks the entry (src/config.test.js).
 export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-of-service'
 // WalletConnect project id (Reown dashboard, cloud.reown.com). Public by design, it ships in the page; the project's
 // allowed domains on Reown are what stop others from using it. Empty = WalletConnect is not offered.
@@ -10,20 +15,10 @@ export const LOOP_ENABLED = false
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 
+// A token, wherever it is used. `price` is only shown until the first market update arrives.
 export const TOKENS = {
-  'svm-usdy': {
-    token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.png', decimals: 6, price: 1.09, rwa: true,
-    mint: 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6', reserve: 'rpTGWR3JDjjPfXLCg5Fx1GpSdUxPt1pxW7fwXGUT6js',
-    priceFeed: '3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH', feedNote: 'Scope · index 406',
-    irm: null, // collateral only
-  },
-  'svm-usdc': {
-    token_id: 'svm-usdc', name: 'USDC', icon: '/tokens/usdc.webp', decimals: 6, price: 1,
-    mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', reserve: 'GQr5hXuRgHAmguh6EqcpeJXrMyqCQch4P6XkSvawwNk2',
-    priceFeed: '3NJYftD5sjVfxSnUdZ1wVML8f3aC6mp1CXCL6L7TnU8C', feedNote: 'Scope · index 20',
-    // Kamino borrow-rate curve points: [utilization %, borrow APR %]
-    irm: { points: [[0, 0], [50, 2.05], [90, 3.07], [100, 11.33]], fee: 0 },
-  },
+  'svm-usdy': { token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.png', decimals: 6, price: 1.09, rwa: true, mint: 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6' },
+  'svm-usdc': { token_id: 'svm-usdc', name: 'USDC', icon: '/tokens/usdc.webp', decimals: 6, price: 1, mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
 }
 
 const dueDiligence = {
@@ -46,6 +41,7 @@ export const LIVE = [
     id: 'sol-usdy-usdc', name: 'USDY Ondo Market', farmPoints: true,
     geoBlocked: true, // no supplying or borrowing from the US, Canada and sanctioned countries (server/main.js)
     kaminoMarket: 'F4uLsGZT4YnHDcemtoYDz2LBZKLmwTB1wzkwS6oqygvy',
+    reserves: { 'svm-usdy': 'rpTGWR3JDjjPfXLCg5Fx1GpSdUxPt1pxW7fwXGUT6js', 'svm-usdc': 'GQr5hXuRgHAmguh6EqcpeJXrMyqCQch4P6XkSvawwNk2' },
     blurb: 'Lend against USDY, a yield-bearing token backed by short-term US Treasuries with over $2B in AUM. Borrow USDC on Solana in a market curated by Nysa.',
     collateral: ['svm-usdy'], loans: ['svm-usdc'],
     pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc', maxLtv: 90, liqLtv: 95, maxDiscount: 5, minDiscount: 2, supplyCap: 250_000, borrowCap: 250_000 }],

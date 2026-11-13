@@ -59,7 +59,7 @@ function allocationExists(vaults, market, collateral, liability) {
     allocation.market === market.kaminoMarket
       // Nysa's vault is USDC-denominated, so its actual allocation points at the market's USDC reserve.
       // The allocation's collateral list establishes that this loan reserve serves the USDY collateral pair.
-      && allocation.reserve === liability.reserve
+      && allocation.reserve === market.reserves?.[liability.token_id]
       && (allocation.collateral ?? []).includes(collateral.token_id)
       && finite(allocation.invested)
       && allocation.invested > 0))

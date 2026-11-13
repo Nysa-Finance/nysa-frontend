@@ -6,7 +6,7 @@
 import { pathToFileURL } from 'node:url'
 import { getCurrentLedgerInstant } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
-import { LIVE, VAULTS, TOKENS, tokensOf } from '../src/config.js'
+import { LIVE, VAULTS, tokensOf } from '../src/config.js'
 import { parsePoints, snapshotPoints, pointsCsv } from '../src/logic.js'
 import { rpc } from './rpc.js'
 import { loadMarket } from './market.js'
@@ -60,9 +60,13 @@ export async function readMarkets(history, {
       balances.set(owner, (balances.get(owner) ?? 0) + summary.deposits)
     }
     for (const t of tokensOf(m)) {
-      const r = market.getReserveByAddress(address(t.reserve))
+      const reserve = m.reserves[t.token_id]
+      const r = market.getReserveByAddress(address(reserve))
       if (!r) continue
-      const h = (history.tokens[t.token_id] ??= { inception: null, points: [] })
+      // Keyed by reserve (a token has one per market). History recorded under the token id, from when there was one
+      // market, moves to that market's reserve the first time this runs.
+      if (history.tokens[t.token_id]) { history.tokens[reserve] = history.tokens[t.token_id]; delete history.tokens[t.token_id] }
+      const h = (history.tokens[reserve] ??= { inception: null, points: [] })
       if (!due(h)) continue
       h.inception ??= await firstTxTimeReader(r.address) // share value starts at exactly 1 when a reserve is created
       h.points.push({
@@ -82,16 +86,13 @@ export async function readMarkets(history, {
 // (in the wallet and staked in the vault farm) added to their Farm Points balance. Depositors come from the
 // transaction index.
 async function readVaultDay(v, markets, now, ts, index, history, balances, due) {
-  const { live, view } = await readVault(v, markets, now, {})
+  const { live, view } = await readVault(v, markets, now)
   const h = ((history.vaults ??= {})[v.id] ??= { inception: Number(live.state.creationTimestamp), points: [] })
   if (due(h)) h.points.push({ ts, rate: Number(live.perShare.toString()), supplyApy: view.apy })
-  const token = Object.values(TOKENS).find((t) => t.mint === String(live.state.tokenMint))
-  const reserve = token && markets.get(LIVE.find((m) => tokensOf(m).includes(token))?.kaminoMarket)?.getReserveByAddress(address(token.reserve))
-  const price = reserve ? reserve.getOracleMarketPrice().toNumber() : 1
   const users = index.vaultUsers?.[v.address] ?? []
   for (const [u, { wallet, staked }] of await vaultShares(live, users)) {
     const shares = wallet + staked
-    if (shares > 0) balances.set(u, (balances.get(u) ?? 0) + shares * Number(live.perShare.toString()) * price)
+    if (shares > 0) balances.set(u, (balances.get(u) ?? 0) + shares * Number(live.perShare.toString()) * view.price)
   }
 }
 

@@ -14,10 +14,11 @@ const router = useRouter()
 const view = ref('deposits')
 const on = computed(() => !!state.address)
 const loopPositions = computed(() => state.loopPositions ?? [])
+const LOOP_RESERVES = computed(() => state.reserves['sol-usdy-usdc'] ?? {}) // the loop runs on this market only
 const loopTotals = computed(() => loopPortfolioTotals(
   loopPositions.value,
-  Object.fromEntries(Object.keys(state.reserves).map((id) => [id, priceOf(id)])),
-  state.reserves,
+  Object.fromEntries(Object.keys(LOOP_RESERVES.value).map((id) => [id, priceOf(id)])),
+  LOOP_RESERVES.value,
 ))
 
 // Earn vault deposits: shares valued in the vault's token.
@@ -28,20 +29,20 @@ const vaultDeposits = computed(() =>
 )
 // Deposits held directly in a market: collateral, and loan-asset deposits made before lending moved to the vaults.
 const deposits = computed(() =>
-  LIVE.flatMap((m) => tokensOf(m).map((t) => ({ m, t, units: rowOf(t.token_id)?.supplied ?? 0 })))
+  LIVE.flatMap((m) => tokensOf(m).map((t) => ({ m, t, units: rowOf(m, t.token_id)?.supplied ?? 0 })))
     .filter((d) => d.units > 0)
-    .map((d) => ({ ...d, usd: d.units * priceOf(d.t.token_id), apr: rowOf(d.t.token_id)?.reserve.supplyAPR ?? 0 })),
+    .map((d) => ({ ...d, usd: d.units * priceOf(d.t.token_id), apr: rowOf(d.m, d.t.token_id)?.reserve.supplyAPR ?? 0 })),
 )
 const loans = computed(() =>
   LIVE.flatMap((m) =>
     m.loans.map((id) => {
-      const units = rowOf(id)?.borrowed ?? 0
+      const units = rowOf(m, id)?.borrowed ?? 0
       const debtUsd = units * priceOf(id)
-      const coll = m.collateral.map((c) => ({ t: tok(c), usd: (rowOf(c)?.supplied ?? 0) * priceOf(c) }))
+      const coll = m.collateral.map((c) => ({ t: tok(c), usd: (rowOf(m, c)?.supplied ?? 0) * priceOf(c) }))
       const collUsd = coll.reduce((s, c) => s + c.usd, 0)
       const pair = m.pairs.find((p) => p.liability === id)
-      const liq = pair ? riskOf(pair).liqLtv : 0
-      return { m, t: tok(id), units, usd: debtUsd, coll, collUsd, hf: healthFactor(collUsd, liq, debtUsd), apr: rowOf(id)?.reserve.borrowAPR ?? 0 }
+      const liq = pair ? riskOf(m, pair).liqLtv : 0
+      return { m, t: tok(id), units, usd: debtUsd, coll, collUsd, hf: healthFactor(collUsd, liq, debtUsd), apr: rowOf(m, id)?.reserve.borrowAPR ?? 0 }
     }),
   ).filter((l) => l.units > 0),
 )

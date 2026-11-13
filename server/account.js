@@ -130,9 +130,12 @@ export function pendingRewards(farmStates, userStates) {
 
 async function readAccount(wallet) {
   const owner = address(wallet)
+  // balances: token id -> …; positions: market id -> token id -> … (a token lent in two markets is two positions)
   const balances = {}, balancesBaseUnits = {}, positions = {}, positionsBaseUnits = {}, claimable = {}, loopPositions = [], loopPositionReadStatus = {}
   let sol = 0
   for (const m of LIVE) {
+    positions[m.id] = {}
+    positionsBaseUnits[m.id] = {}
     const { market, now, farms: farmStates } = getLive(m)
     const tokens = tokensOf(m)
     const { obligation: ob, loopPositions: marketLoopPositions, loopPositionReadStatus: marketLoopPositionReadStatus } = await readWalletObligations({ wallet, marketConfig: m, market })
@@ -171,10 +174,10 @@ async function readAccount(wallet) {
         mintFactor: String(factorValue ?? '1'),
         decimals: t.decimals,
       })
-      positions[t.token_id] = { supplied, borrowed, maxWithdraw: Number(maxWithdraw) / 10 ** t.decimals }
-      positionsBaseUnits[t.token_id] = { maxWithdraw }
+      positions[m.id][t.token_id] = { supplied, borrowed, maxWithdraw: Number(maxWithdraw) / 10 ** t.decimals }
+      positionsBaseUnits[m.id][t.token_id] = { maxWithdraw }
       const maxBorrow = ob && m.loans.includes(t.token_id) ? maxOf('borrow', ob, market, r, now) : null
-      positions[t.token_id].maxBorrow = maxBorrow
+      positions[m.id][t.token_id].maxBorrow = maxBorrow
     }
   }
   return { balances, balancesBaseUnits, positions, positionsBaseUnits, loopPositions, loopPositionReadStatus, claimable, sol, vaults: await vaultPositions(owner) }

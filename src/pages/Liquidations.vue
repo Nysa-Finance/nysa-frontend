@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, riskOf, bonusText, loadAnalytics, loadLiquidations } from '../store.js'
+import { state, reserveOf, riskOf, bonusText, loadAnalytics, loadLiquidations } from '../store.js'
 import { LIVE, tok, explorer, txUrl } from '../config.js'
 import { pct, amt, compact, short, hfText, hfColor } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -24,8 +24,8 @@ let timer
 onMounted(() => { load(); timer = setInterval(load, 60_000) })
 onUnmounted(() => clearInterval(timer))
 
-const risk = computed(() => riskOf(pair))
-const price = computed(() => state.reserves[coll.token_id]?.price)
+const risk = computed(() => riskOf(m, pair))
+const price = computed(() => reserveOf(m, coll.token_id)?.price)
 // The health factor scales with the collateral price, so the loan is liquidated at price / hf.
 // ponytail: assumes one collateral asset and stablecoin debt (the live market); needs per-asset deposits from the
 // backend once a market has several collaterals.
@@ -118,12 +118,12 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
         <div class="n-stats params">
           <div class="n-stat"><div class="k">Max LTV</div><div class="v sm">{{ pct(risk.maxLtv, 0) }}</div><div class="s">borrowing limit</div></div>
           <div class="n-stat"><div class="k">Liquidation LTV</div><div class="v sm">{{ pct(risk.liqLtv, 0) }}</div><div class="s">health factor 1</div></div>
-          <div class="n-stat"><div class="k">Liquidation bonus</div><div class="v sm">{{ bonusText(pair) }}</div><div class="s">paid to the liquidator · configured max {{ pct(risk.maxDiscount, 0) }}</div></div>
+          <div class="n-stat"><div class="k">Liquidation bonus</div><div class="v sm">{{ bonusText(m, pair) }}</div><div class="s">paid to the liquidator · configured max {{ pct(risk.maxDiscount, 0) }}</div></div>
         </div>
         <p>
           The health factor is your collateral, weighted by the liquidation LTV, divided by your debt. If it falls below 1,
           because the collateral price dropped or interest grew the debt, the loan can be liquidated: anyone can repay part of
-          the debt and receive collateral of the same value plus a bonus of {{ bonusText(pair) }}. The bonus grows with how far
+          the debt and receive collateral of the same value plus a bonus of {{ bonusText(m, pair) }}. The bonus grows with how far
           the loan is past its liquidation LTV, but it is also capped so the loan stays solvent, which is why the configured
           {{ pct(risk.maxDiscount, 0) }} maximum can't be reached with these settings.
         </p>

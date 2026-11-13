@@ -83,7 +83,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
 
         <Section title="Exposure" open>
           <template #meta>{{ live ? `${live.allocations.length} ${live.allocations.length === 1 ? 'market' : 'markets'}` : '' }}</template>
-          <ExposureChart v-if="live" :vault="live" :price="state.reserves[token.token_id]?.price" />
+          <ExposureChart v-if="live" :vault="live" :price="live.price" />
           <div v-else class="n-empty">Reading the vault on-chain…</div>
         </Section>
 
