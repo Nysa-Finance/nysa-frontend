@@ -687,8 +687,20 @@ export async function cancelLendingBuildReservation() {
   })
 }
 
+// 4100: the wallet refused before signing because the site's permission lapsed (Phantom after a lock or account switch).
+const walletUnauthorized = (error) => error?.code === 4100 || /not been authorized/i.test(error?.message ?? '')
+
+/** Run a wallet request; on 4100 ask the wallet to authorize Nysa again, then retry once. */
+async function reauthorized(request) {
+  try { return await request() } catch (error) {
+    if (!walletUnauthorized(error) || wallet?.deeplink) throw error
+    await connectWith(wallet, false)
+    return request()
+  }
+}
+
 function definiteWalletRejection(error) {
-  return error?.code === 4001 || error?.code === 'ACTION_REJECTED'
+  return error?.code === 4001 || error?.code === 'ACTION_REJECTED' || walletUnauthorized(error)
     || /user rejected|user denied|rejected by (?:the )?user|transaction rejected|cancelled|canceled/i.test(error?.message ?? '')
 }
 
@@ -709,11 +721,18 @@ function saveSwapOutcome(outcome) {
   safe(() => localStorage.setItem('nysaSwapFlowOutcome', JSON.stringify(safeOutcome)))
 }
 
+// Age of a swap reservation: its id starts with the creation time in base 36.
+const swapAge = (pending) => Date.now() - Number.parseInt(String(pending?.reservationId).split('-')[0], 36)
+
 async function settleSwapChainOutcome(signature, pending) {
   const chain = await api(`/api/tx/${signature}`)
-  const classified = pendingSwapChainOutcome({ ...pending, signature }, {
+  let classified = pendingSwapChainOutcome({ ...pending, signature }, {
     ...chain, wallet: pending.wallet, outputMint: pending.outputMint,
   })
+  // The swap's blockhash expires about 90 s after the build, so a signature the chain still doesn't know can never land.
+  if (classified.status === 'pending' && swapAge(pending) > 3 * 60_000) {
+    classified = { status: 'failed', signature, error: 'The transaction expired before landing. No funds moved.' }
+  }
   if (classified.status === 'pending') return classified
   const terminal = await settleSwapPending(pending, classified)
   const outcome = { ...pending, ...terminal }
@@ -779,7 +798,7 @@ export async function signAndSendSwap({ built, request, outputTokenId, flow, flo
   }
   let signed
   try {
-    signed = await sign({ account, chain: CHAIN, transaction: fromBase64(built.tx), options: { preflightCommitment: 'confirmed', minContextSlot: built.minContextSlot ?? undefined } })
+    signed = await reauthorized(() => sign({ account, chain: CHAIN, transaction: fromBase64(built.tx), options: { preflightCommitment: 'confirmed', minContextSlot: built.minContextSlot ?? undefined } }))
   } catch (error) {
     await clearSwapPending(id) // signTransaction cannot broadcast the transaction
     throw error
@@ -1080,6 +1099,11 @@ async function resumeDeeplink(ret) {
 async function reconcilePendingSwap() {
   if (reconcilingSwap) return
   const pending = safe(() => JSON.parse(localStorage.getItem(SWAP_PENDING_KEY)))
+  // Never signed (the page reloaded while the wallet prompt was open): the server refuses its 15 s intent, so it can't land.
+  if (pending && !pending.signature && ['wallet-prompt', 'awaiting-signature'].includes(pending.status) && swapAge(pending) > 60_000) {
+    await clearSwapPending(pending.reservationId)
+    return
+  }
   if (!['submitted', 'signed-pending', 'relay-unknown'].includes(pending?.status) || !pending.signature || state.address !== pending.wallet) return
   state.swapPending = pending
   reconcilingSwap = true
@@ -1343,10 +1367,10 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
       }
       let sent
       try {
-        sent = await send({
+        sent = await reauthorized(() => send({
           account, chain: CHAIN, transaction: fromBase64(built.tx),
           options: { preflightCommitment: 'confirmed', minContextSlot: Math.max(built.minContextSlot, minSlot) },
-        })
+        }))
       } catch (error) {
         if (definiteWalletRejection(error)) await clearActionReservation(id)
         else {
