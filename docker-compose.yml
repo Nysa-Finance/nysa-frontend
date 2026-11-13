@@ -8,6 +8,12 @@ services:
       SOLANA_RPC: ${SOLANA_RPC:-}
       VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:-} # old name, still accepted
       SOLANA_RPC_FALLBACK: ${SOLANA_RPC_FALLBACK:-} # empty = public mainnet RPC
+      # Swap (README "Swap fees and loop preview"): off until the key and fee accounts are set.
+      JUPITER_API_KEY: ${JUPITER_API_KEY:-}
+      SWAP_FEE_ACCOUNT_USDC: ${SWAP_FEE_ACCOUNT_USDC:-}
+      SWAP_FEE_ACCOUNT_USDY: ${SWAP_FEE_ACCOUNT_USDY:-}
+      SWAP_FEE_TREASURY_AUTHORITY: ${SWAP_FEE_TREASURY_AUTHORITY:-}
+      SWAP_WALLETS: ${SWAP_WALLETS:-} # private beta: only these wallets can swap
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
@@ -25,7 +31,7 @@ services:
     build:
       context: .
       dockerfile_inline: |
-        FROM caddy:2.11.7@sha256:36c24ad91a7ff7bc4c87fe22bfa8df3c4b18da0773d73fc12ee2c52b98c0bb7e
+        FROM caddy:2.11.8@sha256:4fcafa98afd1c2e642e353e3c5cf9ddbe892fcee14bc990e7ba2c5b78e51f9cf
         COPY Caddyfile /etc/caddy/Caddyfile
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env}
@@ -79,7 +85,7 @@ services:
 
   plausible_db:
     # Plausible CE supports Postgres 16; a major upgrade needs a dump/restore (18 refuses 16's data files).
-    image: postgres:16.15-alpine@sha256:0cefaabd882e42bcb2a2f3dc56d3ce4770560ba62fd7f197f1a2e008fd5731ab
+    image: postgres:16.15-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
     environment:
       POSTGRES_PASSWORD: postgres # reachable only from the analytics network
     volumes:

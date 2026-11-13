@@ -36,14 +36,18 @@ function remember(map, key, value) {
 }
 
 let lastBuild = -Infinity // when any wallet last had a transaction built here
-export const noteBuilt = (wallet) => { lastBuild = Date.now(); remember(built, wallet, lastBuild) }
+export function noteBuilt(wallet) {
+  lastBuild = Date.now()
+  remember(built, wallet, lastBuild)
+}
+
 export const noteRelayed = (signature) => remember(relayed, signature, Date.now())
 const builtAt = (wallet) => { const at = built.get(wallet); return at && Date.now() - at <= WINDOW_MS ? at : null }
 
 // Why a signed transaction (base64) can't be relayed for `wallet`, or null when it can: the wallet just had one built
 // here, it is the fee payer and its signature is valid, no signer is on the sanctions list (the fee payer is
 // screened by the route too, a co-signer only here), and every instruction calls an allowed program.
-export async function relayRefusal(tx, wallet) {
+export async function relayRefusal(tx, wallet, { approvedProgramIds = [], intentStore, intentId, requireIntent = false } = {}) {
   if (!builtAt(wallet)) return 'Unknown transaction, please try again'
   let messageBytes, signatures, message
   try {
@@ -57,7 +61,17 @@ export async function relayRefusal(tx, wallet) {
   }
   if (accounts.slice(0, message.header.numSignerAccounts).some(isSanctioned)) return 'A signer of this transaction is on a sanctions list, so Nysa cannot relay it.'
   // Program ids are always static accounts; an index past them is malformed and refused as well.
-  if (message.instructions.some((ix) => !RELAY_PROGRAMS.has(accounts[ix.programAddressIndex]))) return 'This transaction calls a program Nysa doesn\'t use, so it cannot be relayed.'
+  const approved = new Set(approvedProgramIds)
+  if (message.instructions.some((ix) => !RELAY_PROGRAMS.has(accounts[ix.programAddressIndex]) && !approved.has(accounts[ix.programAddressIndex]))) return 'This transaction calls a program Nysa doesn\'t use, so it cannot be relayed.'
+  if (requireIntent) {
+    if (typeof intentId !== 'string' || !intentId || !intentStore || typeof intentStore.assertAndConsume !== 'function') {
+      return 'An exact transaction intent is required to relay this transaction.'
+    }
+    let intent
+    try { intent = intentStore.assertAndConsume(intentId, wallet, messageBytes) }
+    catch (error) { return error?.message ?? 'Transaction intent is invalid.' }
+    if (intent?.metadata?.kind !== 'lending-build') return 'Transaction intent is invalid.'
+  }
   return null
 }
 

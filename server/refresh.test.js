@@ -1,7 +1,7 @@
 // Market cache refresh timer (server/refresh.js), on mocked timers. Run by `npm test`.
 import assert from 'node:assert/strict'
 import { mock } from 'node:test'
-import { createRefresher } from './refresh.js'
+import { createLatestReadPublisher, createRefresher } from './refresh.js'
 
 mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 })
 const EVERY = 60_000, SOON = 2_000, GAP = 10_000
@@ -17,6 +17,19 @@ function make(readMs = 500) {
   return { r, reads }
 }
 const gaps = (xs) => xs.slice(1).map((x, i) => x - xs[i])
+
+{
+  const published = []
+  const ordered = createLatestReadPublisher((value) => published.push(value))
+  let finishOld, finishNew
+  const older = ordered(() => new Promise((resolve) => { finishOld = resolve }))
+  const newer = ordered(() => new Promise((resolve) => { finishNew = resolve }))
+  finishNew('fresh')
+  await newer
+  finishOld('stale')
+  await older
+  assert.deepEqual(published, ['fresh'], 'a slow old market read cannot overwrite a newer execution-critical read')
+}
 
 // Regular cadence: a read every EVERY ms after the previous one ends; concurrent callers share a read.
 {

@@ -9,9 +9,10 @@ import { mock } from 'node:test'
 import {
   address, AccountRole, generateKeyPairSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions, compileTransaction,
-  partiallySignTransaction, getBase64EncodedWireTransaction,
+  partiallySignTransaction, getBase64EncodedWireTransaction, getTransactionDecoder,
 } from '@solana/kit'
 import { PROGRAM_ID as KLEND } from '@kamino-finance/klend-sdk'
+import { createLendingTransactionIntentStore } from './tx-intent.js'
 
 const require = createRequire(import.meta.url)
 const { FARMS_PROGRAM_ADDRESS } = require('@kamino-finance/farms-sdk')
@@ -60,8 +61,46 @@ assert.equal(await relayRefusal(ok, user.address), null)
 // A guard instruction added by the wallet is fine.
 assert.equal(await relayRefusal(await signed(user, [...lending, ix(LIGHTHOUSE)]), user.address), null)
 
+// Optional borrower steps and ordinary transactions require exact-message authorization at the relay endpoint.
+const borrowerIntentStore = createLendingTransactionIntentStore()
+const borrowerTx = await signed(user, lending)
+const borrowerMessageBytes = getTransactionDecoder().decode(Uint8Array.from(Buffer.from(borrowerTx, 'base64'))).messageBytes
+const borrowerIntent = borrowerIntentStore.issue({
+  wallet: user.address,
+  messageBytes: borrowerMessageBytes,
+  metadata: {
+    kind: 'lending-build', flow: 'acquire-supply', stage: 'supply', action: 'deposit',
+    marketId: 'sol-usdy-usdc', tokenId: 'svm-usdy', flowAmountBaseUnits: '25000000',
+  },
+})
+noteBuilt(user.address)
+assert.match(await relayRefusal(borrowerTx, user.address, { intentStore: borrowerIntentStore, requireIntent: true }), /exact transaction intent is required/i,
+  'the relay endpoint cannot use a legacy transaction without its exact intent')
+assert.match(await relayRefusal(borrowerTx, user.address, { intentStore: borrowerIntentStore, intentId: 'other-intent', requireIntent: true }), /unknown or already used/i,
+  'an unrelated intent cannot authorize the flow build')
+const changedBorrowerTx = await signed(user, [...lending.slice(0, -1), { ...ix(String(KLEND)), data: Uint8Array.of(9) }])
+assert.match(await relayRefusal(changedBorrowerTx, user.address, { intentStore: borrowerIntentStore, intentId: borrowerIntent.id, requireIntent: true }), /changed after authorization/i,
+  'a validly signed but changed flow message is rejected')
+assert.equal(await relayRefusal(borrowerTx, user.address, { intentStore: borrowerIntentStore, intentId: borrowerIntent.id, requireIntent: true }), null,
+  'the exact borrower message relays with its matching intent')
+assert.match(await relayRefusal(borrowerTx, user.address, { intentStore: borrowerIntentStore, intentId: borrowerIntent.id, requireIntent: true }), /unknown or already used/i,
+  'a consumed borrower-flow intent cannot be replayed')
+const ordinaryAfterBorrower = await signed(user, [...lending, ix(SYSTEM_PROGRAM_ADDRESS)])
+const ordinaryAfterBorrowerBytes = getTransactionDecoder().decode(Uint8Array.from(Buffer.from(ordinaryAfterBorrower, 'base64'))).messageBytes
+const ordinaryAfterBorrowerIntent = borrowerIntentStore.issue({
+  wallet: user.address, messageBytes: ordinaryAfterBorrowerBytes,
+  metadata: { kind: 'lending-build', action: 'deposit' },
+})
+noteBuilt(user.address)
+assert.equal(await relayRefusal(ordinaryAfterBorrower, user.address, { intentStore: borrowerIntentStore, intentId: ordinaryAfterBorrowerIntent.id, requireIntent: true }), null,
+  'ordinary lending remains relayable with its exact build intent after a borrower flow')
+assert.equal(await relayRefusal(ordinaryAfterBorrower, user.address), null,
+  'internal legacy relay helpers remain compatible when no exact-intent gate is requested')
+
 // F-4: any other program is refused (the relay used to carry anything the fee payer signed).
 assert.match(await relayRefusal(await signed(user, [...lending, ix(MEMO)]), user.address), /program Nysa doesn't use/)
+assert.equal(await relayRefusal(await signed(user, [...lending, ix(MEMO)]), user.address, { approvedProgramIds: [MEMO] }), null,
+  'swap relay may extend the fixed program set only with programs bound to an approved exact-message intent')
 assert.match(await relayRefusal(await signed(user, [ix(MEMO)]), user.address), /program Nysa doesn't use/)
 // F-4: every signer is screened, not only the fee payer.
 const cosigned = await signed(user, [ix(String(SYSTEM_PROGRAM_ADDRESS), [sanctioned])], [user, sanctioned])

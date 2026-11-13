@@ -166,8 +166,11 @@ function openDd() {
           v-if="mode === 'withdraw'" :key="'l' + route.fullPath" :market="m" :tokens="loans" :all-tokens="tokens"
           initial-tab="withdraw" :initial-asset="route.query.asset" withdraw-only
         />
+        <div v-if="state.swapVisible && mode === 'withdraw' && m.collateral.includes('svm-usdy')" class="n-banner withdraw-swap-cta">
+          Withdrew USDY? <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdy', output: 'svm-usdc' } }">Swap it to USDC</RouterLink>.
+        </div>
         <BorrowPanel
-          v-else :key="'b' + route.fullPath + geoBlocked" :market="m" :collateral-tokens="collateral" :loan-tokens="loans"
+          v-if="mode !== 'withdraw'" :key="'b' + route.fullPath + geoBlocked" :market="m" :collateral-tokens="collateral" :loan-tokens="loans"
           :initial-tab="route.query.tab" :initial-asset="route.query.asset" :repay-only="geoBlocked"
         />
       </aside>
@@ -187,6 +190,8 @@ function openDd() {
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
 .farm-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ec008c59; border-radius: 8px; background: #ec008c0f; }
+.withdraw-swap-cta { margin-top: 14px; line-height: 1.6; }
+.withdraw-swap-cta a { color: var(--n-pink); font-weight: 500; }
 .farm-cta-t { font-size: 14px; font-weight: 500; }
 .farm-cta-s { margin-top: 2px; font-size: 13px; color: var(--n-text-3); }
 .farm-cta .n-btn-sm { flex-shrink: 0; }

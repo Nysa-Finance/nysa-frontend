@@ -1,8 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { state, disconnect } from '../store.js'
-import { explorer } from '../config.js'
+import { LOOP_ENABLED, explorer } from '../config.js'
 import { short } from '../logic.js'
 import ConnectModal from './ConnectModal.vue'
 import WalletHandoff from './WalletHandoff.vue'
@@ -12,7 +12,10 @@ const tabs = [
   { to: '/earn', label: 'Earn', icon: '/app/icon-lend.png' },
   { to: '/borrow', label: 'Borrow', icon: '/app/icon-borrow.png' },
   { to: '/portfolio', label: 'Portfolio', icon: '/app/icon-portfolio.png' },
+  { to: '/swap', label: 'Buy Collateral', icon: '/app/icon-swap.png' },
+  { to: '/loop', label: 'Loop', icon: '/app/icon-borrow.png' },
 ]
+const visibleTabs = computed(() => tabs.filter((t) => (t.to !== '/swap' || state.swapVisible) && (t.to !== '/loop' || LOOP_ENABLED)))
 const menu = ref(false)
 const route = useRoute()
 const active = (t) => route.path === t.to || route.path.startsWith(`${t.to}/`) // a vault or market page keeps its tab lit
@@ -24,7 +27,7 @@ const active = (t) => route.path === t.to || route.path.startsWith(`${t.to}/`) /
     <header class="n-nav">
       <RouterLink to="/" class="n-brand"><img src="/app/logo.png" alt="" /><span>nysa</span></RouterLink>
       <nav class="n-tabs">
-        <RouterLink v-for="t in tabs" :key="t.to" :to="t.to" class="n-tab" :class="{ on: active(t) }"><img :src="t.icon" alt="" />{{ t.label }}</RouterLink>
+        <RouterLink v-for="t in visibleTabs" :key="t.to" :to="t.to" class="n-tab" :class="{ on: active(t) }"><img :src="t.icon" alt="" />{{ t.label }}</RouterLink>
       </nav>
       <div class="n-nav-right">
         <span class="n-pill net"><span class="n-dot" />Solana</span>

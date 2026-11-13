@@ -1,10 +1,14 @@
 .env
+.env.local-fork-*.tmp
 node_modules
 dist
 .DS_Store
 .claude
+.superpowers
 .vercel
 
 # VPS deploy
 data-export
 .env.local
+docs
+data

@@ -13,7 +13,10 @@ import { loadMarket } from './market.js'
 import { readVault } from './vault.js'
 import { vaultShares } from './account.js'
 import { freshIndex } from './updates.js'
+import { indexedPositionSummary } from './positions.js'
 import { read, write, POINTS, HISTORY } from './storage.js'
+
+const HALF_DAY = 12 * 3600
 
 // Unix time of an account's first transaction (a reserve's creation). Only needed once per reserve.
 async function firstTxTime(addr) {
@@ -28,31 +31,40 @@ async function firstTxTime(addr) {
   return oldest ? Number(oldest.blockTime) : null
 }
 
-const HALF_DAY = 12 * 3600
-
-async function readMarkets(history) {
+export async function readMarkets(history, {
+  indexReader = freshIndex,
+  ledgerReader = () => getCurrentLedgerInstant(rpc),
+  markets: configuredMarkets = LIVE,
+  vaults: configuredVaults = VAULTS,
+  marketLoader = (marketConfig) => loadMarket(rpc, marketConfig),
+  firstTxTimeReader = firstTxTime,
+  vaultDayReader = readVaultDay,
+  summarize = indexedPositionSummary,
+} = {}) {
   const balances = new Map()
-  const index = await freshIndex()
-  const now = await getCurrentLedgerInstant(rpc)
+  const index = await indexReader()
+  const now = await ledgerReader()
   const ts = Number(now.blockTime)
   const due = (h) => !h.points.length || Math.floor(ts / HALF_DAY) > Math.floor(h.points.at(-1).ts / HALF_DAY)
   const markets = new Map()
-  for (const m of LIVE) {
-    const market = await loadMarket(rpc, m)
+  for (const m of configuredMarkets) {
+    const market = await marketLoader(m)
     markets.set(m.kaminoMarket, market)
     // Every position, from the transaction index (no getProgramAccounts, which Alchemy free refuses).
     const addrs = index.obligations[m.kaminoMarket] ?? []
     for (const ob of addrs.length ? await market.getMultipleObligationsByAddress(addrs.map(address), now) : []) {
       if (!ob) continue
+      const summary = summarize(ob)
+      if (!summary) continue
       const owner = String(ob.state.owner)
-      balances.set(owner, (balances.get(owner) ?? 0) + ob.refreshedStats.userTotalDeposit.toNumber())
+      balances.set(owner, (balances.get(owner) ?? 0) + summary.deposits)
     }
     for (const t of tokensOf(m)) {
       const r = market.getReserveByAddress(address(t.reserve))
       if (!r) continue
       const h = (history.tokens[t.token_id] ??= { inception: null, points: [] })
       if (!due(h)) continue
-      h.inception ??= await firstTxTime(r.address) // share value starts at exactly 1 when a reserve is created
+      h.inception ??= await firstTxTimeReader(r.address) // share value starts at exactly 1 when a reserve is created
       h.points.push({
         ts,
         rate: 1 / r.getEstimatedCollateralExchangeRate(now, market.state.referralFeeBps).toNumber(),
@@ -62,7 +74,7 @@ async function readMarkets(history) {
       })
     }
   }
-  for (const v of VAULTS) await readVaultDay(v, markets, now, ts, index, history, balances, due)
+  for (const v of configuredVaults) await vaultDayReader(v, markets, now, ts, index, history, balances, due)
   return balances
 }
 

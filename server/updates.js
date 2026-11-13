@@ -11,6 +11,7 @@ import { LIVE, VAULTS, TOKENS } from '../src/config.js'
 import { getVault } from './market.js'
 import { compact, usd, dur, short } from '../src/logic.js'
 import { read, write, INDEX } from './storage.js'
+import { recordIndexedObligation } from './positions.js'
 
 const require = createRequire(import.meta.url)
 const KLEND = 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'
@@ -229,12 +230,12 @@ export function describeVault(name, args, vaultToken, reserveToken) {
 // ---- indexing ----
 
 // src: { address, vault?: { name, token } }: a market (Kamino Lend instructions) or a vault (kVault instructions).
-async function indexNew(src, state) {
+async function indexNew(src, state, client = rpc) {
   const marketAddr = src.address
   const b58 = getBase58Encoder()
   const sigs = []
   for (let before; ;) {
-    const page = await rpc.getSignaturesForAddress(address(marketAddr), { limit: 1000, before, until: state.lastSig[marketAddr] ?? undefined }).send()
+    const page = await client.getSignaturesForAddress(address(marketAddr), { limit: 1000, before, until: state.lastSig[marketAddr] ?? undefined }).send()
     sigs.push(...page)
     if (page.length < 1000) break
     before = page.at(-1).signature
@@ -244,7 +245,7 @@ async function indexNew(src, state) {
   const ok = sigs.filter((s) => !s.err).reverse() // oldest first
   for (let i = 0; i < ok.length; i += 4) {
     // Version 1 is Solana's newer transaction format (same JSON fields here); asking for 0 would fail on those.
-    const txs = await Promise.all(ok.slice(i, i + 4).map((s) => rpc.getTransaction(s.signature, { encoding: 'json', maxSupportedTransactionVersion: 1 }).send()))
+    const txs = await Promise.all(ok.slice(i, i + 4).map((s) => client.getTransaction(s.signature, { encoding: 'json', maxSupportedTransactionVersion: 1 }).send()))
     txs.forEach((t, j) => {
       if (!t) return
       const sig = ok[i + j].signature
@@ -270,9 +271,7 @@ async function indexNew(src, state) {
         const accounts = ix.accounts.map((a) => keys[a])
         if (!def || !accounts.includes(marketAddr)) return
         if (def.name === 'initObligation') { // accounts: owner, feePayer, obligation, lendingMarket, …
-          const list = (state.obligations[marketAddr] ??= [])
-          if (!list.includes(accounts[2])) list.push(accounts[2])
-          state.owners[accounts[2]] = accounts[0]
+          recordIndexedObligation({ obligations: state.obligations, owners: state.owners }, marketAddr, accounts[2], accounts[0])
           return
         }
         const id = `${sig}:${k}`
@@ -332,12 +331,18 @@ function vaultToken(v) {
 // Bring the index up to date and return it: { lastSig, updates, liquidations, obligations: { [market]: [address] },
 // owners: { [obligation]: wallet }, vaultUsers: { [vault]: [wallet] } }.
 // Also used by the snapshot (every hour, through freshIndex) to find every position and vault depositor without getProgramAccounts.
-export async function refreshIndex() {
-  const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, vaultUsers: {}, ...JSON.parse((await read(INDEX)) ?? '{}') }
+export async function refreshIndex(client = rpc, {
+  markets = LIVE,
+  vaults = VAULTS,
+  readIndex = () => read(INDEX),
+  writeIndex = (serialized) => write(INDEX, serialized),
+  resolveVaultToken = vaultToken,
+} = {}) {
+  const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, vaultUsers: {}, ...JSON.parse((await readIndex()) ?? '{}') }
   let changed = false
-  for (const m of LIVE) changed = (await indexNew({ address: m.kaminoMarket }, state)) || changed
-  for (const v of VAULTS) changed = (await indexNew({ address: v.address, vault: { name: v.name, token: vaultToken(v) } }, state)) || changed
-  if (changed) await write(INDEX, JSON.stringify(state))
+  for (const m of markets) changed = (await indexNew({ address: m.kaminoMarket }, state, client)) || changed
+  for (const v of vaults) changed = (await indexNew({ address: v.address, vault: { name: v.name, token: resolveVaultToken(v) } }, state, client)) || changed
+  if (changed) await writeIndex(JSON.stringify(state))
   return state
 }
 
