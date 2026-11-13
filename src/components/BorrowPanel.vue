@@ -127,6 +127,8 @@ async function submitRepay() {
       </select>
       <input v-model="deposit" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 8px" />
       <div class="n-kv" style="margin-bottom: 22px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(collRow?.walletBalance ?? 0)} ${coll.name}` : '—' }}</span></div>
+      <!-- Nothing to deposit (balance read and exactly 0): send them to buy the collateral with the loan token. -->
+      <RouterLink v-if="state.swapVisible && state.balances[coll.token_id] === 0" class="n-btn-block buy" :to="{ name: 'swap', query: { input: loan.token_id, output: coll.token_id } }">Buy {{ coll.name }}</RouterLink>
 
       <div class="n-rule" style="padding-top: 20px">
         <div class="n-kv" style="margin-bottom: 12px"><span class="k">Collateral value</span><span class="v">{{ usdFull(collUsd) }}</span></div>
@@ -183,6 +185,7 @@ async function submitRepay() {
 </template>
 
 <style scoped>
+.buy { display: block; margin: -8px 0 22px; text-align: center; }
 .slider { width: 100%; accent-color: var(--n-pink); }
 .slider:disabled { opacity: .4; }
 .to-withdraw { margin-top: 20px; padding-top: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--n-text-3); }
