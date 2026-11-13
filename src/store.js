@@ -8,7 +8,7 @@ import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
 import { confirmedSwapAmountFromTransaction, pendingSwapChainOutcome, persistSignedSwapBeforeRelay } from './swap-recovery.js'
 import { assertCanStartLendingAction, canResumeSetupRecovery, cancelConfirmedSetupRecovery, classifyPendingTransaction, markSetupTransactionConfirmed, pendingTransactionMatches, recoverConfirmedSetupTransaction, resumeConfirmedSetupContinuation, startVisibleReconciliationLoop } from './pending-reconciliation.js'
-import { tok, tokensOf, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
+import { TOKENS, tok, tokensOf, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
 import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { loopPositionFullyClosed } from './loop-positions.js'
 import { event, skipNextPageview } from './analytics.js'
@@ -736,6 +736,9 @@ async function settleSwapChainOutcome(signature, pending) {
   if (classified.status === 'pending') return classified
   const terminal = await settleSwapPending(pending, classified)
   const outcome = { ...pending, ...terminal }
+  const symbol = (mint) => Object.values(TOKENS).find((t) => t.mint === mint)?.name
+  if (classified.status === 'confirmed') event('Swap', { from: symbol(pending.inputMint), to: symbol(pending.outputMint) })
+  else event('Transaction failed', { action: 'swap', reason: 'error' })
   state.swapPending = null
   saveSwapOutcome(outcome)
   if (classified.status === 'confirmed') await loadAccount(true)
@@ -801,6 +804,7 @@ export async function signAndSendSwap({ built, request, outputTokenId, flow, flo
     signed = await reauthorized(() => sign({ account, chain: CHAIN, transaction: fromBase64(built.tx), options: { preflightCommitment: 'confirmed', minContextSlot: built.minContextSlot ?? undefined } }))
   } catch (error) {
     await clearSwapPending(id) // signTransaction cannot broadcast the transaction
+    event('Transaction failed', { action: 'swap', reason: definiteWalletRejection(error) ? 'rejected' : 'error' })
     throw error
   }
   const signedTransaction = signed?.[0]?.signedTransaction
@@ -995,6 +999,7 @@ async function resumeDeeplink(ret) {
     if (ret.error) {
       if (!await clearSwapPending(swapPending.reservationId)) return
       saveSwapOutcome({ ...swapPending, status: 'rejected' })
+      event('Transaction failed', { action: 'swap', reason: 'rejected' })
       state.handoff = { status: 'error', label: 'Swap', error: ret.error }
       return
     }
