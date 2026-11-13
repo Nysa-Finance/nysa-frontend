@@ -72,18 +72,11 @@ assert.equal(providerRequest.signal, requestSignal)
 assert.equal(quoteResult.executable, false)
 await assert.rejects(createPublicSwapQuote(request, { feeAccountResolver: () => null }), /fee account is configured/i)
 
-assert.equal(swapReadiness({
-  providerConfigured: true, feeAccountsConfigured: true, programEvidenceApproved: false, feasibilityPassed: true,
-}).executionEnabled, false)
-assert.equal(swapReadiness({
-  providerConfigured: true, feeAccountsConfigured: true, programEvidenceApproved: true, feasibilityPassed: false,
-}).executionEnabled, false)
-assert.equal(swapReadiness({
-  providerConfigured: true, feeAccountsConfigured: true, programEvidenceApproved: true, feasibilityPassed: true,
-}).executionEnabled, false)
-assert.equal(swapReadiness({
-  providerConfigured: true, feeAccountsConfigured: true, programEvidenceApproved: true, feasibilityPassed: true,
-  walletPathsValidated: true, transactionBuilderAvailable: true, marketDataAvailable: true,
-}).executionEnabled, true)
+assert.equal(swapReadiness({ providerConfigured: false, feeAccountsConfigured: true, marketDataAvailable: true }).executionEnabled, false)
+assert.equal(swapReadiness({ providerConfigured: true, feeAccountsConfigured: false, marketDataAvailable: true }).executionEnabled, false)
+assert.equal(swapReadiness({ providerConfigured: true, feeAccountsConfigured: true, marketDataAvailable: false }).executionEnabled, false)
+assert.equal(swapReadiness({ providerConfigured: true, feeAccountsConfigured: true, marketDataAvailable: true }).executionEnabled, true)
+assert.deepEqual(swapReadiness({ providerConfigured: true, feeAccountsConfigured: true, walletEnabled: false, marketDataAvailable: true }).unavailableReasons
+  .map((r) => r.code), ['swap-wallet-not-enabled'], 'a wallet outside the SWAP_WALLETS beta cannot execute')
 
 console.log('swap routes ok')

@@ -8,6 +8,12 @@ services:
       SOLANA_RPC: ${SOLANA_RPC:-}
       VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:-} # old name, still accepted
       SOLANA_RPC_FALLBACK: ${SOLANA_RPC_FALLBACK:-} # empty = public mainnet RPC
+      # Swap (README "Swap fees and loop preview"): off until the key and fee accounts are set.
+      JUPITER_API_KEY: ${JUPITER_API_KEY:-}
+      SWAP_FEE_ACCOUNT_USDC: ${SWAP_FEE_ACCOUNT_USDC:-}
+      SWAP_FEE_ACCOUNT_USDY: ${SWAP_FEE_ACCOUNT_USDY:-}
+      SWAP_FEE_TREASURY_AUTHORITY: ${SWAP_FEE_TREASURY_AUTHORITY:-}
+      SWAP_WALLETS: ${SWAP_WALLETS:-} # private beta: only these wallets can swap
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
@@ -93,7 +99,7 @@ services:
 
   plausible_events_db:
     # Plausible CE ships 24.12; this data already ran on 26.6 (Dependabot), and going back two majors is riskier than staying.
-    image: clickhouse/clickhouse-server:26.9.27.3-alpine@sha256:9468dda1c09a4f41a47554722a083fe620ebc766b66b63b3ca0511f9e64f132b
+    image: clickhouse/clickhouse-server:26.10.3.7-alpine@sha256:1b09f476eb1109522cfc0e8e4ddf6a4305263e7cdd310f7bd1d3fd29dfcb8b33
     environment:
       CLICKHOUSE_SKIP_USER_SETUP: 1
     volumes:

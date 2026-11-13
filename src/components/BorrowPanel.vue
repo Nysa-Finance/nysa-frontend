@@ -4,10 +4,10 @@ import { state, rowOf, priceOf, riskOf, sendKaminoAction, useTx } from '../store
 import { pct, amt, amtDust, usdFull, num, borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan, underLimit } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
-const props = defineProps({ market: Object, collateralTokens: Array, loanTokens: Array, initialTab: String, initialAsset: String })
+const props = defineProps({ market: Object, collateralTokens: Array, loanTokens: Array, initialTab: String, initialAsset: String, repayOnly: Boolean })
 const { tx, run, reset } = useTx()
 
-const tab = ref(props.initialTab === 'repay' ? 'repay' : 'borrow')
+const tab = ref(props.repayOnly || props.initialTab === 'repay' ? 'repay' : 'borrow')
 const loanId = ref(props.loanTokens.some((t) => t.token_id === props.initialAsset) ? props.initialAsset : props.loanTokens[0]?.token_id)
 const collId = ref(props.collateralTokens[0]?.token_id)
 const deposit = ref('')
@@ -115,7 +115,7 @@ async function submitRepay() {
 
 <template>
   <div class="n-panel">
-    <div class="n-seg" style="margin-bottom: 22px">
+    <div v-if="!repayOnly" class="n-seg" style="margin-bottom: 22px">
       <button :class="{ on: tab === 'borrow' }" @click="tab = 'borrow'">Borrow</button>
       <button :class="{ on: tab === 'repay' }" @click="tab = 'repay'">Repay</button>
     </div>

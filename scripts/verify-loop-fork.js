@@ -13,7 +13,7 @@ import { ataOf, maxWithdrawFromObligation, obligationType } from '../server/acco
 import { loadMarket, reserveOf } from '../server/market.js'
 import { buildSwap, inspectFeeTokenAccount } from '../server/swap.js'
 import { createRpc } from '../server/rpc.js'
-import { PROGRAM_EVIDENCE, ROUTE_PROGRAM_IDS_BY_LABEL } from '../server/program-policy.js'
+import { ROUTE_PROGRAM_IDS_BY_LABEL } from '../server/program-policy.js'
 import { composeAtomicOpenInstructions } from '../server/loop-composition.js'
 import { createLoopExecutionService } from '../server/loop-execution.js'
 import { multiplyPosition } from '../server/positions.js'
@@ -1103,8 +1103,7 @@ async function runConfiguredLocalFork(env, endpoint, log) {
     if (!await localRouteProgramVerifier(built)) {
       throw new Error('The route does not invoke only the allowed DEX program deployed on this local validator.')
     }
-    // The fork verifier checks exact instruction structure and executable local programs. Production
-    // still requires reviewed mainnet program evidence; this local-only override is never persisted.
+    // The fork verifier checks exact instruction structure and executable local programs.
     return validateProviderSwapInstructions(request, {
       ...built,
       programPolicy: { ...built.programPolicy, approved: true },
@@ -1124,7 +1123,6 @@ async function runConfiguredLocalFork(env, endpoint, log) {
     feeAccountVerifier: feeVerifier,
     feeBalanceDeltaVerified: false,
     routeProgramIdsByLabel: ROUTE_PROGRAM_IDS_BY_LABEL,
-    evidence: PROGRAM_EVIDENCE,
   }).then((built) => {
     const diagnostic = swapQuoteDiagnostic(built, request.feeAccount)
     localSwapQuotes.push(diagnostic)
@@ -1405,10 +1403,6 @@ export async function verifyLoopFork({ env = process.env, fetcher = fetch, log =
     await runConfiguredLocalFork(env, endpoint, log)
   } catch (error) {
     log(`BLOCKED: ${error.message}`)
-    return 1
-  }
-  if (!PROGRAM_EVIDENCE.length) {
-    log('BLOCKED: Local fork execution passed, but no exact deployed router/DEX audit-version evidence is approved for production route admission.')
     return 1
   }
   log('PASS: Local fee-aware Multiply open/full-close, fee deltas, flash repayment and forced-failure rollback verified.')

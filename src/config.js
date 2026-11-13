@@ -5,6 +5,8 @@ export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-
 // WalletConnect project id (Reown dashboard, cloud.reown.com). Public by design, it ships in the page; the project's
 // allowed domains on Reown are what stop others from using it. Empty = WalletConnect is not offered.
 export const WALLETCONNECT_PROJECT_ID = 'fe76c05c2791f7d71839bb257f55afb5'
+// Multiply loop (Loop page, /api/loop-*, loop actions in /api/tx): off for everyone until it is released.
+export const LOOP_ENABLED = false
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 
@@ -42,6 +44,7 @@ const dueDiligence = {
 export const LIVE = [
   {
     id: 'sol-usdy-usdc', name: 'USDY Ondo Market', farmPoints: true,
+    geoBlocked: true, // no supplying or borrowing from the US, Canada and sanctioned countries (server/main.js)
     kaminoMarket: 'F4uLsGZT4YnHDcemtoYDz2LBZKLmwTB1wzkwS6oqygvy',
     blurb: 'Lend against USDY, a yield-bearing token backed by short-term US Treasuries with over $2B in AUM. Borrow USDC on Solana in a market curated by Nysa.',
     collateral: ['svm-usdy'], loans: ['svm-usdc'],

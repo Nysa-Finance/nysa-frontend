@@ -9,8 +9,8 @@ import { getBase58Decoder, getBase58Encoder } from '@solana/kit'
 
 const b58 = (bytes) => getBase58Decoder().decode(bytes)
 const fromB58 = (s) => new Uint8Array(getBase58Encoder().encode(s))
-const fromBase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
-const toBase64 = (bytes) => btoa(String.fromCharCode(...bytes))
+export const fromBase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
+export const toBase64 = (bytes) => btoa(String.fromCharCode(...bytes))
 
 export const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
 

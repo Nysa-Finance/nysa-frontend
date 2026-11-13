@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { address, AccountRole, appendTransactionMessageInstructions, compileTransaction, compressTransactionMessageUsingAddressLookupTables, createTransactionMessage, getBase64EncodedWireTransaction, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from '@solana/kit'
-import { createSwapExecutionService, createAuthorizedSwapSender, compileSwapTransaction, decodeJupiterV6RouteInstruction, assertSwapQuoteFresh, swapIntentStillAuthorized, SwapExecutionError, assertSwapSimulationEffects, validateProviderSwapInstructions } from './swap-execution.js'
-import { createSwapIntentStore } from './tx-intent.js'
+import { address, AccountRole, appendTransactionMessageInstructions, compileTransaction, generateKeyPairSigner, getCompiledTransactionMessageDecoder, getCompiledTransactionMessageEncoder, partiallySignTransaction, signBytes, compressTransactionMessageUsingAddressLookupTables, createTransactionMessage, getBase64EncodedWireTransaction, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash } from '@solana/kit'
+import { createSwapExecutionService, createAuthorizedSwapSender, compileSwapTransaction, decodeJupiterV6RouteInstruction, assertSwapQuoteFresh, swapIntentStillAuthorized, SwapExecutionError, assertSwapSimulationEffects, validateProviderSwapInstructions, assertOracleFairOutput } from './swap-execution.js'
+import { createSwapIntentStore, messageMatchesWithLighthouse } from './tx-intent.js'
 import { TOKENS } from '../src/config.js'
 import { ataOf } from './account.js'
 import { ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
@@ -88,7 +88,6 @@ const capturedBuilt = {
 
 const capturedDecoded = decodeJupiterV6RouteInstruction(capturedBuilt.swapInstruction, capturedRequest, capturedBuilt)
 assert.deepEqual(capturedDecoded, {
-  routeKind: 'routeV2',
   inputAmount: capturedResponse.inAmount,
   quotedOutput: capturedResponse.outAmount,
   slippageBps: capturedResponse.slippageBps,
@@ -102,7 +101,6 @@ function serviceForCapturedBuild(built, intentStore, counters = {}) {
     buildRoute: async () => built,
     compile: async () => { counters.compile = (counters.compile ?? 0) + 1; throw new Error('must reject before compile') },
     simulate: async () => { counters.simulate = (counters.simulate ?? 0) + 1; throw new Error('must reject before simulation') },
-    readAccounts: async (keys) => keys.map((key) => ({ exists: false, address: key })),
     intentStore,
     now: () => Date.now(),
   })
@@ -111,11 +109,9 @@ function serviceForCapturedBuild(built, intentStore, counters = {}) {
 const capturedIntentStore = createSwapIntentStore({ now: () => Date.now(), idFactory: () => 'captured-route-intent' })
 const capturedCounters = {}
 await assert.rejects(serviceForCapturedBuild(capturedBuilt, capturedIntentStore, capturedCounters).build(capturedRequest),
-  /WhirlpoolSwapV2.*(account|owner|data|invalid)|Jupiter.*account/i,
-  'captured Jupiter route_v2 fixture has no positive on-chain account proof and must fail closed')
-assert.equal(capturedCounters.compile ?? 0, 0, 'Whirlpool route without readable positive account state must fail before compile and intent issue')
-assert.equal(capturedCounters.simulate ?? 0, 0, 'Whirlpool route without readable positive account state must fail before simulation')
-assert.equal(capturedIntentStore.size(), 0, 'Whirlpool route without readable positive account state must fail before authorization intent issue')
+  /must reject before compile/, 'the captured live Jupiter route_v2 passes route validation and reaches compilation')
+assert.equal(capturedCounters.compile, 1, 'the captured live route reaches compilation')
+assert.equal(capturedIntentStore.size(), 0, 'no intent is issued before compilation and simulation succeed')
 
 const adversarialCapturedBuilds = [
   ['executable moved while still present', (instruction) => {
@@ -240,9 +236,8 @@ const route = {
 assert.equal(Buffer.from(jupiterRouteData).subarray(0, 8).toString('hex'), 'bb64facc31c4af14',
   'captured Jupiter V6 route_v2 has its Anchor instruction discriminator')
 assert.equal(routeInstruction.accounts.length, 27, 'the fixture includes actual DEX remaining accounts')
-const missingOrcaAccounts = async (keys) => keys.map((key) => ({ exists: false, address: key }))
-await assert.rejects(validateProviderSwapInstructions(body, route, { readAccounts: missingOrcaAccounts }), /WhirlpoolSwapV2.*(account|owner|data|invalid)/i,
-  'route_v2 requires account state reads even after instruction roles pass')
+await assert.rejects(validateProviderSwapInstructions(body, route), /WhirlpoolSwapV2.*(account|owner|data|invalid)/i,
+  'route_v2 user accounts must be the wallet ATAs')
 const routeWithoutOptionalDestination = {
   ...route,
   swapInstruction: {
@@ -253,7 +248,7 @@ const routeWithoutOptionalDestination = {
   },
 }
 routeWithoutOptionalDestination.instructions = [routeWithoutOptionalDestination.swapInstruction]
-await assert.rejects(validateProviderSwapInstructions(body, routeWithoutOptionalDestination, { readAccounts: missingOrcaAccounts }), /WhirlpoolSwapV2.*(account|owner|data|invalid)/i)
+await assert.rejects(validateProviderSwapInstructions(body, routeWithoutOptionalDestination), /WhirlpoolSwapV2.*(account|owner|data|invalid)/i)
 assert.equal(Buffer.from(jupiterRouteData).toString('hex'), 'bb64facc31c4af1440420f000000000052390d000000000032000a000000010000002f000010270001',
   'the captured Jupiter V6 route_v2 bytes bind amounts, bps, and WhirlpoolSwapV2')
 const legacyStep = Buffer.from([0x11, 0x01, 100, 0, 1])
@@ -277,15 +272,14 @@ const legacyRouteInstruction = {
   ],
   data: Uint8Array.from(legacyRouteData),
 }
-assert.deepEqual(decodeJupiterV6RouteInstruction(legacyRouteInstruction, body, route), {
-  routeKind: 'route', inputAmount: '1000000', quotedOutput: '866642', slippageBps: 50, platformFeeBps: 10,
-}, 'legacy route uses its 8-byte Anchor discriminator and route-plan-first Borsh args')
+assert.throws(() => decodeJupiterV6RouteInstruction(legacyRouteInstruction, body, route), /only exact-input route_v2/,
+  'legacy route and sharedAccountsRoute are not decoded: only route_v2 is admitted')
 const executableTestRoute = { ...route, swapInstruction: legacyRouteInstruction, instructions: [legacyRouteInstruction] }
 const safeSwapWire = wire({ program: JUPITER_V6, accounts: legacyRouteInstruction.accounts, data: legacyRouteInstruction.data })
 const legacyIntentStore = createSwapIntentStore({ now: () => Date.now(), idFactory: () => 'legacy-route-intent' })
 const legacyCounters = {}
 await assert.rejects(serviceForCapturedBuild(executableTestRoute, legacyIntentStore, legacyCounters).build(body),
-  /legacy Jupiter.*(route|CPI)|route.*(legacy|CPI)/i,
+  /only exact-input route_v2/,
   'legacy route must fail closed even when its remaining accounts contain the Whirlpool program key')
 assert.equal(legacyCounters.compile ?? 0, 0, 'legacy route must fail before compile')
 assert.equal(legacyCounters.simulate ?? 0, 0, 'legacy route must fail before simulation')
@@ -302,7 +296,7 @@ missingLegacyPoolMetas.instructions = [missingLegacyPoolMetas.swapInstruction]
 const missingLegacyPoolStore = createSwapIntentStore({ now: () => Date.now(), idFactory: () => 'missing-legacy-pool' })
 const missingLegacyCounters = {}
 await assert.rejects(serviceForCapturedBuild(missingLegacyPoolMetas, missingLegacyPoolStore, missingLegacyCounters).build(body),
-  /legacy Jupiter.*(route|CPI)|route.*(legacy|CPI)/i,
+  /only exact-input route_v2/,
   'legacy route with missing pool metas must fail closed before intent')
 assert.equal(missingLegacyCounters.compile ?? 0, 0)
 assert.equal(missingLegacyPoolStore.size(), 0)
@@ -336,7 +330,7 @@ const sharedRoute = {
 const sharedIntentStore = createSwapIntentStore({ now: () => Date.now(), idFactory: () => 'shared-route-intent' })
 const sharedCounters = {}
 await assert.rejects(serviceForCapturedBuild(sharedRoute, sharedIntentStore, sharedCounters).build(body),
-  /legacy Jupiter.*(route|CPI)|route.*(legacy|CPI)/i,
+  /only exact-input route_v2/,
   'sharedAccountsRoute must fail closed when it supplies only bare DEX program membership')
 assert.equal(sharedCounters.compile ?? 0, 0)
 assert.equal(sharedIntentStore.size(), 0)
@@ -370,7 +364,7 @@ const legacyAccountIndex = index === 1 ? 2 : index === 2 ? 3 : 6
   const alteredAccounts = legacyRouteInstruction.accounts.map((meta, accountIndex) => accountIndex === legacyAccountIndex ? { ...meta, address: wrongAddress } : meta)
   const alteredInstruction = { ...legacyRouteInstruction, accounts: alteredAccounts }
   await assert.rejects(validateProviderSwapInstructions(body, { ...executableTestRoute, swapInstruction: alteredInstruction, instructions: [alteredInstruction] }),
-    /legacy Jupiter.*(route|CPI)/i, `Jupiter ${label} must remain unavailable until CPI account validation exists`)
+    /only exact-input route_v2/, `Jupiter ${label} must remain unavailable until CPI account validation exists`)
 }
 const compiledLocally = await compileSwapTransaction({
   request: body,
@@ -415,7 +409,7 @@ const enabled = createSwapExecutionService({
   intentStore: enabledIntentStore,
   now: () => 1001,
 })
-await assert.rejects(enabled.build(body), /Legacy Jupiter.*(route|CPI)/i)
+await assert.rejects(enabled.build(body), /only exact-input route_v2/)
 assert.equal(enabledCompileCalls, 0, 'legacy route must fail before compile even when release readiness is open')
 assert.equal(enabledSimulationCalls, 0, 'legacy route must fail before simulation')
 assert.equal(enabledIntentStore.size(), 0, 'legacy route must fail before intent issuance')
@@ -432,7 +426,7 @@ const tamperedCompile = createSwapExecutionService({
   simulate: async () => { tamperedCompiledSimulation = true; return { inputDeltaBaseUnits: '1000000', outputDeltaBaseUnits: '866642', feeDeltaBaseUnits: '867', additionalTokenDeltas: [] } },
   intentStore: createSwapIntentStore({ now: () => 1000, idFactory: () => 'compiled-tamper' }), now: () => 1001,
 })
-await assert.rejects(tamperedCompile.build(body), /Legacy Jupiter.*(route|CPI)/i)
+await assert.rejects(tamperedCompile.build(body), /only exact-input route_v2/)
 assert.equal(tamperedCompileCalled, false, 'unsupported legacy route must not produce a transaction to tamper with')
 assert.equal(tamperedCompiledSimulation, false, 'unsupported legacy route must fail before simulation and authorization')
 assert.throws(() => assertSwapSimulationEffects({
@@ -502,7 +496,7 @@ await assert.rejects(validateProviderSwapInstructions(body, {
   instructions: [validOutputAtaCreate, legacyRouteInstruction],
   programIds: [JUPITER_V6, WHIRLPOOL, ATA_PROGRAM],
   feeAccount, feeAccountMint: usdy,
-}), /Legacy Jupiter.*(route|CPI)/i, 'valid ATA setup still cannot make an unverified legacy route executable')
+}), /only exact-input route_v2/, 'valid ATA setup still cannot make an unverified legacy route executable')
 
 const approvedWhirlpoolInstruction = {
   programAddress: address(WHIRLPOOL),
@@ -618,14 +612,116 @@ assert.equal(evidenceRelayCalled, false, 'relay must re-evaluate exact route pro
 const exactEvidenceIntent = { metadata: {
   programIds: [MEMO], routeLabels: ['TestDex'], routeProgramIdsByLabel: { TestDex: [MEMO] },
 } }
-const exactEvidence = [{
-  programId: MEMO, network: 'mainnet-beta', deploymentVerified: true, programVersion: 'test-1',
-  auditReports: [{ url: 'https://audit.example/program', programVersion: 'test-1', coversDeployedVersion: true }],
-  reviewedBy: 'test reviewer', routeLabels: ['TestDex'],
-}]
-assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true, evidence: exactEvidence }), true)
-assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true, evidence: [] }), false,
-  'current evidence removal must block relay even after a route was signed')
-assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: false, evidence: exactEvidence }), false)
+const approvedPrograms = new Set([MEMO])
+assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true, approvedPrograms }), true)
+assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: true }), false,
+  'a program off the approved list blocks relay even after a route was signed')
+assert.equal(swapIntentStillAuthorized(exactEvidenceIntent, { executionEnabled: false, approvedPrograms }), false)
+
+// Phantom appends Lighthouse guard instructions when it signs: the swap relay accepts those and nothing else, and a
+// changed message is a definite refusal (SwapExecutionError, HTTP 400), not an unknown outcome.
+const guardPayer = await generateKeyPairSigner()
+const guardWallet = String(guardPayer.address)
+const swapMessage = (data, extra = []) => compileTransaction(pipe(
+  createTransactionMessage({ version: 0 }),
+  (m) => setTransactionMessageFeePayer(guardPayer.address, m),
+  (m) => setTransactionMessageLifetimeUsingBlockhash({ blockhash: BLOCKHASH, lastValidBlockHeight: 2n }, m),
+  (m) => appendTransactionMessageInstructions([
+    { programAddress: address(JUPITER_V6), accounts: [{ address: guardPayer.address, role: AccountRole.WRITABLE_SIGNER }], data: Uint8Array.of(data) },
+    ...extra,
+  ], m),
+))
+const lighthouseGuard = {
+  programAddress: address('L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95'),
+  accounts: [{ address: guardPayer.address, role: AccountRole.READONLY }], // asserts on an account already in the swap
+  data: Uint8Array.from([5, 0, 6, 0, 0]),
+}
+const signedWire = async (compiled) => getBase64EncodedWireTransaction(await partiallySignTransaction([guardPayer.keyPair], compiled))
+let guardIntent = 0
+const guardStore = createSwapIntentStore({ messageMatcher: messageMatchesWithLighthouse, idFactory: () => `guard-${++guardIntent}` })
+let guardRelayed = 0
+const guardSender = createAuthorizedSwapSender({ intentStore: guardStore, send: async () => ++guardRelayed })
+guardStore.issue({ wallet: guardWallet, messageBytes: swapMessage(1).messageBytes, metadata: {} })
+await guardSender({ tx: await signedWire(swapMessage(1, [lighthouseGuard])), wallet: guardWallet, intentId: 'guard-1' })
+assert.equal(guardRelayed, 1, 'a swap signed with an appended Lighthouse guard is relayed')
+guardStore.issue({ wallet: guardWallet, messageBytes: swapMessage(1).messageBytes, metadata: {} })
+await assert.rejects(guardSender({ tx: await signedWire(swapMessage(2, [lighthouseGuard])), wallet: guardWallet, intentId: 'guard-2' }),
+  (error) => error instanceof SwapExecutionError && /changed after authorization/i.test(error.message),
+  'a changed swap message is refused as a SwapExecutionError')
+assert.equal(guardRelayed, 1)
+
+// What Phantom actually sends (captured on mainnet): the same instructions, recompiled. Its readonly static keys come out
+// in another order with the Lighthouse program among them, the lookup table's readonly indexes are reordered too, and
+// its assertions use log level 4.
+const lookupReadonly = await Promise.all([1, 2, 3].map(() => generateKeyPairSigner().then((k) => k.address)))
+const phantomBuilt = compileTransaction(compressTransactionMessageUsingAddressLookupTables(pipe(
+  createTransactionMessage({ version: 0 }),
+  (m) => setTransactionMessageFeePayer(guardPayer.address, m),
+  (m) => setTransactionMessageLifetimeUsingBlockhash({ blockhash: BLOCKHASH, lastValidBlockHeight: 2n }, m),
+  (m) => appendTransactionMessageInstructions([
+    { programAddress: address(JUPITER_V6), accounts: [{ address: guardPayer.address, role: AccountRole.WRITABLE_SIGNER },
+      ...lookupReadonly.map((key) => ({ address: key, role: AccountRole.READONLY }))], data: Uint8Array.of(1) },
+    { programAddress: address(ATA_PROGRAM), accounts: [{ address: guardPayer.address, role: AccountRole.WRITABLE_SIGNER }], data: Uint8Array.of(1) },
+    { programAddress: address(MEMO), accounts: [], data: Uint8Array.of(9) },
+  ], m),
+), { [LUT]: lookupReadonly }))
+const builtMessage = getCompiledTransactionMessageDecoder().decode(phantomBuilt.messageBytes)
+assert.equal(builtMessage.addressTableLookups[0].readonlyIndexes.length, 3, 'the fixture loads readonly accounts from a lookup table')
+// Every account an instruction can reference, labelled by identity: static key, or (table, index) for a loaded one.
+const labels = (message) => [
+  ...message.staticAccounts.map(String),
+  ...message.addressTableLookups.flatMap((t) => t.writableIndexes.map((i) => `${t.lookupTableAddress}:w${i}`)),
+  ...message.addressTableLookups.flatMap((t) => t.readonlyIndexes.map((i) => `${t.lookupTableAddress}:r${i}`)),
+]
+const builtKeys = builtMessage.staticAccounts.map(String)
+const readonlyStart = builtKeys.length - builtMessage.header.numReadonlyNonSignerAccounts
+const phantomMessage = {
+  ...builtMessage,
+  header: { ...builtMessage.header, numReadonlyNonSignerAccounts: builtMessage.header.numReadonlyNonSignerAccounts + 1 },
+  staticAccounts: [...builtKeys.slice(0, readonlyStart), ...builtKeys.slice(readonlyStart).reverse(), 'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95'].map(address),
+  addressTableLookups: builtMessage.addressTableLookups.map((t) => ({ ...t, readonlyIndexes: [...t.readonlyIndexes].reverse() })),
+}
+const builtLabels = labels(builtMessage)
+const phantomLabels = labels(phantomMessage)
+const remap = (index) => phantomLabels.indexOf(builtLabels[index])
+phantomMessage.instructions = [
+  ...builtMessage.instructions.map((ix) => ({ ...ix, programAddressIndex: remap(ix.programAddressIndex), accountIndices: (ix.accountIndices ?? []).map(remap) })),
+  { programAddressIndex: phantomMessage.staticAccounts.length - 1, accountIndices: [0], data: Uint8Array.from(Buffer.from('06040300808a5e07000000000403000001000000000000000000', 'hex')) },
+]
+const phantomMessageBytes = getCompiledTransactionMessageEncoder().encode(phantomMessage)
+const phantomWire = Buffer.concat([ // wire format: one signature (shortvec 1), the signature, then the message
+  Uint8Array.of(1), await signBytes(guardPayer.keyPair.privateKey, phantomMessageBytes), phantomMessageBytes,
+]).toString('base64')
+guardStore.issue({ wallet: guardWallet, messageBytes: phantomBuilt.messageBytes, metadata: {} })
+await guardSender({ tx: phantomWire, wallet: guardWallet, intentId: 'guard-3' })
+assert.equal(guardRelayed, 2, 'Phantom\'s reordered static keys and lookup indexes, with log-level-4 Lighthouse assertions, are relayed')
+
+// Reordering must not move an account between roles: a lookup index that changes from readonly to writable is refused.
+const roleChanged = {
+  ...phantomMessage,
+  addressTableLookups: phantomMessage.addressTableLookups.map((t) => ({ ...t, writableIndexes: [t.readonlyIndexes[0]], readonlyIndexes: t.readonlyIndexes.slice(1) })),
+}
+const roleChangedBytes = getCompiledTransactionMessageEncoder().encode(roleChanged)
+guardStore.issue({ wallet: guardWallet, messageBytes: phantomBuilt.messageBytes, metadata: {} })
+await assert.rejects(guardSender({ wallet: guardWallet, intentId: 'guard-4', tx: Buffer.concat([
+  Uint8Array.of(1), await signBytes(guardPayer.keyPair.privateKey, roleChangedBytes), roleChangedBytes,
+]).toString('base64') }), /changed after authorization/i, 'a lookup account that becomes writable is refused')
+assert.equal(guardRelayed, 2)
+
+// A provider-set compute-unit price may not turn the user's SOL into a priority fee.
+const greedyPrice = { ...capturedInstructions.computeBudgetInstructions[0], data: Uint8Array.from([3, 255, 255, 255, 255, 255, 255, 255, 255]) }
+await assert.rejects(validateProviderSwapInstructions(capturedRequest, {
+  ...capturedBuilt, computeBudgetInstructions: [greedyPrice],
+  instructions: [greedyPrice, ...capturedInstructions.setupInstructions, capturedInstructions.swapInstruction],
+}), /priority fee/i, 'an uncapped provider priority price is refused before compile')
+
+// The route's minimum output is bounded by oracle prices, not only by the provider's own numbers.
+const usdcSide = { decimals: 6, price: 1 }, usdySide = { decimals: 6, price: 1.15 }
+assert.doesNotThrow(() => assertOracleFairOutput({ inputAmountBaseUnits: '1000000', minimumOutputBaseUnits: '862307', input: usdcSide, output: usdySide }),
+  'a fair route (0.5% slippage, 0.1% fee) passes')
+assert.throws(() => assertOracleFairOutput({ inputAmountBaseUnits: '1000000', minimumOutputBaseUnits: '434782', input: usdcSide, output: usdySide }),
+  /below the oracle price/, 'a route paying half the oracle value is refused')
+assert.throws(() => assertOracleFairOutput({ inputAmountBaseUnits: '1000000', minimumOutputBaseUnits: '862307', input: usdcSide, output: { decimals: 6 } }),
+  /oracle prices are unavailable/i, 'a missing oracle price fails closed')
 
 console.log('swap execution guard ok')

@@ -4,16 +4,6 @@ export function normalizeSwapFlowDirection(flow) {
   return null
 }
 
-export function routeSwapDirection(flow, requestedInput, requestedOutput) {
-  const forced = normalizeSwapFlowDirection(flow)
-  if (forced) return forced
-  const inputId = requestedInput === 'svm-usdy' ? 'svm-usdy' : 'svm-usdc'
-  const outputId = requestedOutput === 'svm-usdc' || requestedOutput === 'svm-usdy'
-    ? requestedOutput
-    : (inputId === 'svm-usdc' ? 'svm-usdy' : 'svm-usdc')
-  return { inputId, outputId: outputId === inputId ? (inputId === 'svm-usdc' ? 'svm-usdy' : 'svm-usdc') : outputId }
-}
-
 export function flowContextMatches(context, current) {
   return !!context && !!current && context.wallet === current.wallet && context.flow === current.flow
     && context.market === current.market && context.routeFlow === current.routeFlow

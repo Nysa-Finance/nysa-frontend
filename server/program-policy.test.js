@@ -1,33 +1,20 @@
 import assert from 'node:assert/strict'
-import { evaluateProgramPolicy } from './program-policy.js'
+import { APPROVED_PROGRAMS, evaluateProgramPolicy } from './program-policy.js'
 
-const reviewed = {
-  programId: 'SyntheticVerifiedProgram11111111111111111111111',
-  network: 'mainnet-beta',
-  programVersion: 'v1.2.3',
-  deploymentVerified: true,
-  auditReports: [{ url: 'https://audit.example/report.pdf', programVersion: 'v1.2.3', coversDeployedVersion: true }],
-  routeLabels: ['Synthetic Venue'],
-  reviewedBy: 'Nysa security reviewer',
-}
+const jupiter = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'
+const whirlpool = 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc'
+const unknown = 'UnknownProgram1111111111111111111111111111111'
 
-assert.deepEqual(evaluateProgramPolicy(['UnknownProgram1111111111111111111111111111111'], []), {
+assert.equal(APPROVED_PROGRAMS.size, 4, 'only the reviewed swap programs are approved')
+assert.equal(evaluateProgramPolicy([jupiter, whirlpool], ['Whirlpool'], { Whirlpool: [whirlpool] }).approved, true)
+assert.deepEqual(evaluateProgramPolicy([jupiter, unknown]), {
   approved: false,
-  unreviewed: [{ programId: 'UnknownProgram1111111111111111111111111111111', reason: 'No evidence record exists.' }],
+  unreviewed: [{ programId: unknown, reason: 'Program is not on Nysa’s approved list.' }],
 })
-assert.equal(evaluateProgramPolicy([reviewed.programId], [reviewed]).approved, true)
-assert.equal(evaluateProgramPolicy([reviewed.programId, 'AnotherProgram11111111111111111111111111111'], [reviewed]).approved, false)
-assert.equal(evaluateProgramPolicy([reviewed.programId], [{ ...reviewed, deploymentVerified: false }]).unreviewed[0].reason, 'Deployment is not verified.')
-assert.equal(evaluateProgramPolicy([reviewed.programId], [{ ...reviewed, auditReports: [{ ...reviewed.auditReports[0], coversDeployedVersion: false }] }]).unreviewed[0].reason, 'No audit covers the verified deployed version.')
-assert.equal(evaluateProgramPolicy([reviewed.programId], [{ ...reviewed, auditReports: [{ ...reviewed.auditReports[0], programVersion: 'v0.9.0' }] }]).approved, false)
-assert.equal(evaluateProgramPolicy([reviewed.programId], [{ ...reviewed, reviewedBy: '' }]).unreviewed[0].reason, 'Review owner is missing.')
-assert.equal(evaluateProgramPolicy([], [reviewed]).unreviewed[0].reason, 'Route does not identify its invoked programs.')
-assert.equal(evaluateProgramPolicy([reviewed.programId], [reviewed], ['Synthetic Venue']).approved, false)
-assert.equal(evaluateProgramPolicy([reviewed.programId], [reviewed], ['Synthetic Venue'], {}).approved, false)
-assert.equal(evaluateProgramPolicy([reviewed.programId], [reviewed], ['Synthetic Venue'], { 'Synthetic Venue': [reviewed.programId] }).approved, true)
-assert.deepEqual(evaluateProgramPolicy([reviewed.programId], [reviewed], ['Unreviewed Venue']), {
-  approved: false,
-  unreviewed: [{ programId: null, routeLabel: 'Unreviewed Venue', reason: 'Route label does not resolve to an exact DEX program ID.' }],
-})
+assert.equal(evaluateProgramPolicy([]).unreviewed[0].reason, 'Route does not identify its invoked programs.')
+assert.equal(evaluateProgramPolicy([jupiter], ['Other Venue']).approved, false, 'a route label without an exact program fails')
+assert.equal(evaluateProgramPolicy([jupiter], ['Whirlpool'], { Whirlpool: [whirlpool] }).approved, false,
+  'a mapped DEX program must be present in the route program set')
+assert.equal(evaluateProgramPolicy([unknown], [], {}, new Set([unknown])).approved, true, 'the approved list is injectable for tests')
 
-console.log('program-policy ok')
+console.log('program policy ok')

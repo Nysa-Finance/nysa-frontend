@@ -104,7 +104,12 @@ const appContext = () => ({
   currentLedgerInstant: { blockTime: 1 }, collateral: TOKENS['svm-usdy'], liability: TOKENS['svm-usdc'],
   collateralReserve: appCollateral, liabilityReserve: appLiability,
 })
-const appRoute = { inputMint: usdc, outputMint: usdy, outputAmountBaseUnits: '100000000', fee: { mint: usdy, amountBaseUnits: '1000' } }
+// A complete fee-verified route: buildLoopOpenApplication compares it field by field (loopRoutesMatchWithinRounding).
+const appRoute = {
+  inputMint: usdc, outputMint: usdy, outputAmountBaseUnits: '100000000', minimumOutputBaseUnits: '99500000', routePlan: [],
+  feeAccount: wallet, feeAccountMint: usdy, feeAccountMintVerified: true,
+  fee: { bps: 10, mint: usdy, amountBaseUnits: '1000', routeDeltaVerified: true },
+}
 const appPreview = {
   id: 'app-preview', wallet, marketId: 'sol-usdy-usdc', fundingAmount: '100', leverage: 1.5,
   sdk: {

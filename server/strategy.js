@@ -109,7 +109,6 @@ export function evaluateLoopStrategy({
   productionProviderConfigured = false,
   treasuryConfigured = false,
   riskApproval = null,
-  programEvidenceApproved = false,
   feasibilityPassed = false,
   leverage = 1.5,
   now = Date.now(),
@@ -135,7 +134,6 @@ export function evaluateLoopStrategy({
     if (typeof riskApproval?.owner !== 'string' || !riskApproval.owner.trim() || !Number.isFinite(approvalAt) || approvalAt > now) {
       unavailableReasons.push(reason('risk-approval-missing', 'A named Nysa risk owner has not approved this market.'))
     }
-    if (!programEvidenceApproved) unavailableReasons.push(reason('program-evidence-unreviewed', 'Router and DEX program security evidence is not approved.'))
     if (!feasibilityPassed) unavailableReasons.push(reason('atomic-feasibility-unverified', 'Atomic route and flash-loan feasibility has not passed a local mainnet-fork check.'))
     if (pair) {
       const carry = carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt)

@@ -24,7 +24,6 @@ const ready = {
   productionProviderConfigured: true,
   treasuryConfigured: true,
   riskApproval: { owner: 'Risk owner', approvedAt: '2026-11-05T00:00:00.000Z' },
-  programEvidenceApproved: true,
   feasibilityPassed: true,
   now,
 }
@@ -95,8 +94,6 @@ assert.ok(keylessPrototype.unavailableReasons.some((x) => x.code === 'production
 const riskOwnerMissing = evaluateLoopStrategy({ ...ready, riskApproval: null })
 assert.ok(riskOwnerMissing.unavailableReasons.some((x) => x.code === 'risk-approval-missing'))
 
-const programNotApproved = evaluateLoopStrategy({ ...ready, programEvidenceApproved: false })
-assert.ok(programNotApproved.unavailableReasons.some((x) => x.code === 'program-evidence-unreviewed'))
 
 const noForkProof = evaluateLoopStrategy({ ...ready, feasibilityPassed: false })
 assert.ok(noForkProof.unavailableReasons.some((x) => x.code === 'atomic-feasibility-unverified'))

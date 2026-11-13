@@ -3,7 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { startAnalytics } from './analytics.js'
 import { applySeo } from './seo.js'
 import App from './App.vue'
-import { VAULTS } from './config.js'
+import { LOOP_ENABLED, VAULTS } from './config.js'
 // Fonts served from our own origin (no Google Fonts request): only the weights and styles the UI uses, latin subset.
 import '@fontsource/poppins/latin-300.css'
 import '@fontsource/poppins/latin-400.css'
@@ -30,7 +30,7 @@ const router = createRouter({
     { path: '/borrow/:id', name: 'market-detail', component: () => import('./pages/MarketDetail.vue') },
     { path: '/portfolio', name: 'portfolio', component: () => import('./pages/Portfolio.vue') },
     { path: '/swap', name: 'swap', component: () => import('./pages/Swap.vue') },
-    { path: '/loop', name: 'loop', component: () => import('./pages/Loop.vue') },
+    ...(LOOP_ENABLED ? [{ path: '/loop', name: 'loop', component: () => import('./pages/Loop.vue') }] : []),
     // Old links: Lend is now Earn (the vault); a market page is now its borrow page.
     { path: '/lend', redirect: { name: 'earn' } },
     { path: '/market/:id', redirect: (to) => (to.query.mode === 'lend' && VAULTS[0] ? { name: 'vault', params: { id: VAULTS[0].id } } : { name: 'market-detail', params: to.params, query: to.query }) },
@@ -42,6 +42,14 @@ const router = createRouter({
 })
 
 router.afterEach(applySeo)
+
+// Phones with a comma-decimal locale (it, de, fr…) show "," on the decimal keypad: turn it into "." before v-model reads it.
+document.addEventListener('input', ({ target: el }) => {
+  if (el.inputMode !== 'decimal' || !el.value.includes(',')) return
+  const caret = el.selectionStart
+  el.value = el.value.replaceAll(',', '.')
+  el.setSelectionRange(caret, caret)
+}, true)
 
 createApp(App).use(router).mount('#app')
 startAnalytics()

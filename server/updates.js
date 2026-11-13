@@ -6,7 +6,7 @@
 // The position list replaces getProgramAccounts, which rate-limited RPC plans refuse (Alchemy free).
 import { createRequire } from 'node:module'
 import { address, getBase58Decoder, getBase58Encoder } from '@solana/kit'
-import { rpc as client } from './rpc.js'
+import { rpc } from './rpc.js'
 import { LIVE, VAULTS, TOKENS } from '../src/config.js'
 import { getVault } from './market.js'
 import { compact, usd, dur, short } from '../src/logic.js'
@@ -31,27 +31,14 @@ const ADMIN = {
   socializeLoss: 'Bad debt socialized',
   socializeLossV2: 'Bad debt socialized',
 }
-const IX_MODULES = {
-  initLendingMarket: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initLendingMarket.js'),
-  initObligation: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initObligation.js'), // indexed, not listed
-  liquidateObligationAndRedeemReserveCollateral: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/liquidateObligationAndRedeemReserveCollateral.js'),
-  liquidateObligationAndRedeemReserveCollateralV2: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/liquidateObligationAndRedeemReserveCollateralV2.js'),
-  updateLendingMarket: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/updateLendingMarket.js'),
-  updateLendingMarketOwner: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/updateLendingMarketOwner.js'),
-  initReserve: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initReserve.js'),
-  seedDepositOnInitReserve: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/seedDepositOnInitReserve.js'),
-  updateReserveConfig: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/updateReserveConfig.js'),
-  cloneReserveConfig: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/cloneReserveConfig.js'),
-  initFarmsForReserve: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/initFarmsForReserve.js'),
-  withdrawProtocolFee: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/withdrawProtocolFee.js'),
-  socializeLoss: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/socializeLoss.js'),
-  socializeLossV2: require('@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/socializeLossV2.js'),
-}
-const IXS = Object.fromEntries(Object.entries(IX_MODULES).map(([name, m]) => [Buffer.from(m.DISCRIMINATOR).toString('hex'), { name, layout: m.layout }]))
+const kl = (name) => require(`@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/${name}.js`)
+// initObligation: indexed (the position list), not listed.
+const IX_NAMES = [...Object.keys(ADMIN), 'initObligation', 'liquidateObligationAndRedeemReserveCollateral', 'liquidateObligationAndRedeemReserveCollateralV2']
+const IXS = Object.fromEntries(IX_NAMES.map((name) => [Buffer.from(kl(name).DISCRIMINATOR).toString('hex'), { name, layout: kl(name).layout }]))
 const MARKET_MODES = Object.fromEntries(Object.values(require('@kamino-finance/klend-sdk/dist/@codegen/klend/types/UpdateLendingMarketMode.js'))
   .filter((c) => typeof c === 'function' && 'discriminator' in c).map((c) => [c.discriminator, c.kind]))
 
-// ---- value formatting (pure, tested in _market-updates.test.js) ----
+// ---- value formatting (pure, tested in updates.test.js) ----
 const MAX64 = 0xffffffffffffffffn
 const u64 = (v, o = 0) => v.readBigUInt64LE(o)
 const pctOf = (x) => `${+Number(x).toFixed(2)}%`
@@ -66,6 +53,8 @@ const amount = (n, t) => {
   const v = Number(n) / 10 ** t.decimals
   return v > 0 && v < 1 ? `${+v.toPrecision(3)} ${t.name}` : compact(v, t.name) // small minimums stay visible (0.001 USDC)
 }
+// Capacity per interval; an interval of 0 turns the cap off (klend).
+const withdrawalCap = (v, t) => (u64(v, 8) ? `${amount(u64(v), t)} per ${secs(u64(v, 8))}` : 'off')
 function curve(v) {
   const pts = []
   for (let i = 0; i + 8 <= v.length; i += 8) {
@@ -89,8 +78,8 @@ const RESERVE = {
   UpdateDepositLimit: ['Supply cap', (v, t) => amount(u64(v), t)],
   UpdateBorrowLimit: ['Borrow cap', (v, t) => amount(u64(v), t)],
   UpdateBorrowLimitOutsideElevationGroup: ['Borrow cap outside elevation groups', (v, t) => amount(u64(v), t)],
-  UpdateDepositWithdrawalCap: ['Deposit withdrawal cap', (v, t) => `${amount(u64(v), t)} per ${secs(u64(v, 8))}`],
-  UpdateDebtWithdrawalCap: ['Debt withdrawal cap', (v, t) => `${amount(u64(v), t)} per ${secs(u64(v, 8))}`],
+  UpdateDepositWithdrawalCap: ['Deposit withdrawal cap', withdrawalCap],
+  UpdateDebtWithdrawalCap: ['Debt withdrawal cap', withdrawalCap],
   UpdateBorrowRateCurve: ['Interest rate curve', curve],
   UpdateBorrowFactor: ['Borrow factor', (v) => pctOf(u64(v))],
   UpdateReserveStatus: ['Reserve status', (v) => ['Active', 'Obsolete', 'Hidden'][v[0]] ?? String(v[0])],
@@ -205,7 +194,7 @@ const bool = (v) => (v[0] ? 'on' : 'off')
 const VAULT_FIELDS = {
   PerformanceFeeBps: ['Performance fee', (v) => bps(u64(v))],
   ManagementFeeBps: ['Management fee', (v) => bps(u64(v))],
-  DepositCap: ['Deposit cap', (v, t) => amount(u64(v), t)],
+  DepositCap: ['Deposit cap', (v, t) => (u64(v) ? amount(u64(v), t) : 'unlimited')], // 0 = uncapped
   MinDepositAmount: ['Min deposit', (v, t) => amount(u64(v), t)],
   MinWithdrawAmount: ['Min withdrawal', (v, t) => amount(u64(v), t)],
   MinInvestAmount: ['Min invest amount', (v, t) => amount(u64(v), t)],
@@ -241,12 +230,12 @@ export function describeVault(name, args, vaultToken, reserveToken) {
 // ---- indexing ----
 
 // src: { address, vault?: { name, token } }: a market (Kamino Lend instructions) or a vault (kVault instructions).
-async function indexNew(rpc, src, state) {
+async function indexNew(src, state, client = rpc) {
   const marketAddr = src.address
   const b58 = getBase58Encoder()
   const sigs = []
   for (let before; ;) {
-    const page = await rpc.getSignaturesForAddress(address(marketAddr), { limit: 1000, before, until: state.lastSig[marketAddr] ?? undefined }).send()
+    const page = await client.getSignaturesForAddress(address(marketAddr), { limit: 1000, before, until: state.lastSig[marketAddr] ?? undefined }).send()
     sigs.push(...page)
     if (page.length < 1000) break
     before = page.at(-1).signature
@@ -256,7 +245,7 @@ async function indexNew(rpc, src, state) {
   const ok = sigs.filter((s) => !s.err).reverse() // oldest first
   for (let i = 0; i < ok.length; i += 4) {
     // Version 1 is Solana's newer transaction format (same JSON fields here); asking for 0 would fail on those.
-    const txs = await Promise.all(ok.slice(i, i + 4).map((s) => rpc.getTransaction(s.signature, { encoding: 'json', maxSupportedTransactionVersion: 1 }).send()))
+    const txs = await Promise.all(ok.slice(i, i + 4).map((s) => client.getTransaction(s.signature, { encoding: 'json', maxSupportedTransactionVersion: 1 }).send()))
     txs.forEach((t, j) => {
       if (!t) return
       const sig = ok[i + j].signature
@@ -341,8 +330,8 @@ function vaultToken(v) {
 
 // Bring the index up to date and return it: { lastSig, updates, liquidations, obligations: { [market]: [address] },
 // owners: { [obligation]: wallet }, vaultUsers: { [vault]: [wallet] } }.
-// Also used by the snapshot (every 12 hours) to find every position and vault depositor without getProgramAccounts.
-export async function refreshIndex(rpc, {
+// Also used by the snapshot (every hour, through freshIndex) to find every position and vault depositor without getProgramAccounts.
+export async function refreshIndex(client = rpc, {
   markets = LIVE,
   vaults = VAULTS,
   readIndex = () => read(INDEX),
@@ -351,8 +340,8 @@ export async function refreshIndex(rpc, {
 } = {}) {
   const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, vaultUsers: {}, ...JSON.parse((await readIndex()) ?? '{}') }
   let changed = false
-  for (const m of markets) changed = (await indexNew(rpc, { address: m.kaminoMarket }, state)) || changed
-  for (const v of vaults) changed = (await indexNew(rpc, { address: v.address, vault: { name: v.name, token: resolveVaultToken(v) } }, state)) || changed
+  for (const m of markets) changed = (await indexNew({ address: m.kaminoMarket }, state, client)) || changed
+  for (const v of vaults) changed = (await indexNew({ address: v.address, vault: { name: v.name, token: resolveVaultToken(v) } }, state, client)) || changed
   if (changed) await writeIndex(JSON.stringify(state))
   return state
 }
@@ -362,7 +351,7 @@ let cached = null, cachedAt = 0
 export function freshIndex() {
   if (!cached || Date.now() - cachedAt > 60_000) {
     cachedAt = Date.now()
-    cached = refreshIndex(client).catch((e) => { cached = null; throw e })
+    cached = refreshIndex().catch((e) => { cached = null; throw e })
   }
   return cached
 }

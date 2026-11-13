@@ -20,16 +20,15 @@ import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
-import { LIVE, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
+import { LIVE, LOOP_ENABLED, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
 import { buildSwap, configuredFeeAccountForMint, SwapError } from './swap.js'
 import { LOOP_PREVIEW_MAX_AGE_MS, loopCarryStillCurrent, loopMarketRiskFromSnapshot, loopMarketRiskStillCurrent } from './loop-preview-validation.js'
 import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, swapPairAvailability, swapReadiness } from './swap-routes.js'
-import { PROGRAM_EVIDENCE } from './program-policy.js'
 import { runWithRequestAbortSignal } from './request-signal.js'
-import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransaction, createAuthorizedSwapSender, swapIntentStillAuthorized, validateProviderSwapInstructions, SwapExecutionError } from './swap-execution.js'
-import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash } from './tx-intent.js'
+import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransaction, createAuthorizedSwapSender, swapIntentStillAuthorized, assertOracleFairOutput, validateProviderSwapInstructions, SwapExecutionError } from './swap-execution.js'
+import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash, messageMatchesWithLighthouse } from './tx-intent.js'
 import { createLendingTransactionIntentService } from './lending-intents.js'
 import { noteBuilt } from './relay.js'
 import { DefiniteSendRefusal, SendOutcomeUnknownError } from './send-safety.js'
@@ -112,6 +111,15 @@ function blocked(res, wallet, { failClosed }) {
   return false
 }
 
+// Geoblocking: markets flagged `geoBlocked` (config.js) can't be entered from these countries (CF-IPCountry: Cloudflare's
+// country for the visitor's IP; T1 = Tor). Supplying, borrowing and liquidating are refused there; repaying and
+// withdrawing stay open, so nobody is locked out of their own funds.
+// ponytail: country by IP only, a VPN gets through; regions (Crimea, Donetsk, Luhansk) need Cloudflare's location headers.
+const GEO_BLOCKED = new Set(['US', 'CA', 'CU', 'IR', 'KP', 'SY', 'RU', 'BY', 'T1'])
+const GEO_KINDS = new Set(['deposit', 'borrow', 'liquidate'])
+const geoBlocked = (req) => GEO_BLOCKED.has(req.headers['cf-ipcountry'])
+const GEO_REFUSED = { error: 'This market is not available in your country (United States, Canada and sanctioned countries). You can still repay and withdraw.', geoBlocked: true }
+
 // ---- Server-Sent Events: the market snapshot on connect and after every refresh ----
 // Streams are capped per client IP too, so one client can't take every slot; a browser turned away polls /api/market.
 const clients = new Set()
@@ -146,6 +154,13 @@ onSnapshot((snapshot) => { const msg = event(snapshot); for (const c of clients)
 setInterval(() => { for (const c of clients) c.write(': ping\n\n') }, 25_000).unref() // under Cloudflare's 100s idle cut
 
 // ---- routes ----
+// Swap feature flag. Without the Jupiter key and the fee accounts in .env, swap is off. With them and SWAP_WALLETS
+// (comma-separated addresses), only those wallets can quote, build and relay a swap: a private beta on mainnet.
+// Without SWAP_WALLETS it is open to everyone.
+const SWAP_WALLETS = new Set((process.env.SWAP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
+const swapOpenTo = (wallet) => SWAP_WALLETS.size === 0 || SWAP_WALLETS.has(wallet)
+const SWAP_NOT_ENABLED = { error: 'Swap is not available for this wallet yet.' }
+
 function currentSwapReadiness(request = {}) {
   const snapshot = getSnapshot()
   const availability = swapPairAvailability({
@@ -157,19 +172,20 @@ function currentSwapReadiness(request = {}) {
   })
   const localTestWallet = isLocalForkWallet(request.wallet, { rpcUrl: RPC_URL })
   const localExecution = localForkProgramEvidenceReady() && (!request.wallet || localTestWallet)
+  const providerConfigured = !!process.env.JUPITER_API_KEY || localExecution
+  const feeAccountsConfigured = !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
+    && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
+    && !!process.env.SWAP_FEE_TREASURY_AUTHORITY
+  const walletEnabled = swapOpenTo(request.wallet)
   const readiness = swapReadiness({
-    providerConfigured: !!process.env.JUPITER_API_KEY || localExecution,
-    feeAccountsConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
-      && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
-      && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
-    programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localExecution,
-    feasibilityPassed: localExecution,
-    walletPathsValidated: localExecution,
-    transactionBuilderAvailable: true,
+    providerConfigured,
+    feeAccountsConfigured,
+    walletEnabled,
     marketDataAvailable: availability.available,
     marketAvailabilityReasons: availability.reasons,
   })
-  return { readiness, availability }
+  // Whether the frontend shows the swap entry points to this wallet (not the market-data state, which comes and goes).
+  return { readiness, availability, visible: providerConfigured && feeAccountsConfigured && walletEnabled }
 }
 
 // Loop exits use the same route/program/fee/fork gates as swaps, but do not depend on new-entry allocation policy.
@@ -183,12 +199,12 @@ function currentLoopRouteReadiness() {
     feeAccountsConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
       && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
       && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
-    programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localExecution,
-    feasibilityPassed: localExecution,
-    walletPathsValidated: localExecution,
-    transactionBuilderAvailable: true,
     marketDataAvailable: snapshotFresh,
-    marketAvailabilityReasons: snapshotFresh ? [] : [{ code: 'market-data-stale', message: 'Fresh market data is unavailable for a safe loop transaction.' }],
+    marketAvailabilityReasons: [
+      ...(snapshotFresh ? [] : [{ code: 'market-data-stale', message: 'Fresh market data is unavailable for a safe loop transaction.' }]),
+      // The loop is not released on mainnet yet: its transactions build only on the local fork.
+      ...(localExecution ? [] : [{ code: 'fork-proof-missing', message: 'The required local-fork fee and rollback checks have not passed.' }]),
+    ],
   })
   return routeReadiness
 }
@@ -209,7 +225,6 @@ function loopStrategyForAction(snapshot, leverage = 1.5) {
     riskApproval: localExecution
       ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
       : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-    programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localExecution,
     feasibilityPassed: localExecution,
     leverage,
   })
@@ -231,7 +246,7 @@ function currentLoopActionReadiness(body, { previewAcknowledgementValid = false,
   })
 }
 
-const swapIntentStore = createSwapIntentStore()
+const swapIntentStore = createSwapIntentStore({ messageMatcher: messageMatchesWithLighthouse }) // Phantom's guard
 const lendingIntentStore = createLendingTransactionIntentStore({ ttlMs: 10 * 60_000 })
 const lendingTransactions = createLendingTransactionIntentService({
   intentStore: lendingIntentStore,
@@ -257,6 +272,14 @@ const swapExecution = createSwapExecutionService({
       feeAccountMint: request.outputMint,
       feeBalanceDeltaVerified: false,
     })
+    // Independent price bound: Jupiter chooses the pool, so the result must agree with the Kamino oracle prices.
+    const reserves = getSnapshot()?.reserves ?? {}
+    const side = (mint) => {
+      const token = Object.values(TOKENS).find((t) => t.mint === mint)
+      return { decimals: token.decimals, price: reserves[token.token_id]?.price }
+    }
+    assertOracleFairOutput({ inputAmountBaseUnits: request.amountBaseUnits, minimumOutputBaseUnits: built.minimumOutputBaseUnits,
+      input: side(request.inputMint), output: side(request.outputMint) })
     if (!localExecution) return built
     if (!await verifyLocalForkRoute(built)) throw new SwapRouteError('The local route does not use only the approved DEX and executable programs cloned into Surfpool.')
     return { ...built, programPolicy: { approved: true, unreviewed: [] }, executable: true }
@@ -276,7 +299,7 @@ const sendAuthorizedSwap = createAuthorizedSwapSender({
       outputMint: metadata.outputMint,
     }).readiness.executionEnabled
     if (localForkDappEnabled) return readiness && await localIntentAuthorized(intent)
-    return swapIntentStillAuthorized(intent, { executionEnabled: readiness, evidence: PROGRAM_EVIDENCE })
+    return swapIntentStillAuthorized(intent, { executionEnabled: readiness })
   },
   send: ({ tx, wallet, intent }) => sendSigned({ tx, wallet, approvedProgramIds: intent.metadata?.programIds ?? [] }),
 })
@@ -337,7 +360,7 @@ const loopExecution = createLoopExecutionService({
   authorize: async ({ intent }) => {
     const ready = currentLoopRouteReadiness().executionEnabled
     if (localForkDappEnabled) return ready && await localIntentAuthorized(intent)
-    return swapIntentStillAuthorized(intent, { executionEnabled: ready, evidence: PROGRAM_EVIDENCE })
+    return swapIntentStillAuthorized(intent, { executionEnabled: ready })
   },
   authorizeSetup: async ({ intent }) => intent?.metadata?.kind === 'loop-setup'
     && (!localForkDappEnabled || isLocalForkWallet(intent?.wallet, { rpcUrl: RPC_URL }))
@@ -351,8 +374,10 @@ const loopExecution = createLoopExecutionService({
 
 const routes = [
   ['GET', /^\/api\/swap-readiness$/, (req, res) => {
-    const { readiness, availability } = currentSwapReadiness()
-    return send(res, 200, { ...readiness, marketAvailability: availability,
+    const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
+    if (wallet && !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
+    const { readiness, availability, visible } = currentSwapReadiness({ wallet: wallet ?? undefined })
+    return send(res, 200, { ...readiness, visible, marketAvailability: availability,
       executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
   }],
   ['POST', /^\/api\/swap-quote$/, async (req, res) => {
@@ -365,6 +390,7 @@ const routes = [
       throw error
     }
     if (blocked(res, request.wallet, { failClosed: true })) return
+    if (!swapOpenTo(request.wallet)) return send(res, 403, SWAP_NOT_ENABLED)
     const { availability } = currentSwapReadiness(request)
     if (!availability.available) return send(res, 503, { error: availability.reasons.map((reason) => reason.message).join(' ') })
     try {
@@ -443,7 +469,6 @@ const routes = [
       riskApproval: localForkProgramEvidenceReady()
         ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
         : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-      programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localForkProgramEvidenceReady(),
       feasibilityPassed: localForkProgramEvidenceReady(),
     })
     const routeReadiness = currentLoopRouteReadiness()
@@ -487,7 +512,6 @@ const routes = [
       riskApproval: localForkProgramEvidenceReady()
         ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
         : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-      programEvidenceApproved: PROGRAM_EVIDENCE.length > 0 || localForkProgramEvidenceReady(),
       feasibilityPassed: localForkProgramEvidenceReady(),
       leverage: Number(body.leverage),
     })
@@ -583,6 +607,7 @@ const routes = [
     if (!KINDS.includes(b.kind)) throw new UserError('Unknown action')
     if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
     if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
+      if (!LOOP_ENABLED) throw new UserError('Unknown action')
       if (localForkDappEnabled && !isLocalForkWallet(b.wallet, { rpcUrl: RPC_URL })) {
         return send(res, 503, { error: 'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.' })
       }
@@ -599,6 +624,7 @@ const routes = [
     if (b.kind === 'liquidate' && !isAddress(String(b.borrower))) throw new UserError('Invalid borrower address')
     if (blocked(res, b.wallet, { failClosed: true })) return
     if (b.kind === 'liquidate' && isSanctioned(b.borrower)) return send(res, 403, BLOCKED_LOAN)
+    if (GEO_KINDS.has(b.kind) && marketById(b.market)?.geoBlocked && geoBlocked(req)) return send(res, 403, GEO_REFUSED)
     if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
       try { return send(res, 200, await loopExecution.build(b)) }
       catch (error) {
@@ -704,6 +730,7 @@ const routes = [
     ])
     send(res, 200, { positions, vaults, feeReceivers: getFeeReceiverMetadata() }, { maxAge: 30 })
   }],
+  ['GET', /^\/api\/geo$/, (req, res) => send(res, 200, { blocked: geoBlocked(req) })],
   ['GET', /^\/api\/fee-receivers$/, (req, res) => send(res, 200, getFeeReceiverMetadata(), { maxAge: 30 })],
   ['GET', /^\/api\/market-updates$/, async (req, res) => send(res, 200, await marketUpdates(), { maxAge: 60 })],
   ['GET', /^\/api\/liquidations$/, async (req, res) => send(res, 200, await marketLiquidations(), { maxAge: 60 })],
@@ -718,7 +745,7 @@ const routes = [
 
 // Client-side routes of the SPA (keep in sync with src/main.js).
 // '/', '/lend' and '/market/:id' are old links the SPA redirects (to Earn, a vault or a borrow market page).
-const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', '/loop', '/analytics', '/liquidations', '/dashboard'])
+const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(LOOP_ENABLED ? ['/loop'] : []), '/analytics', '/liquidations', '/dashboard'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
   || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
   || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
@@ -727,7 +754,7 @@ const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), '/swap', '/loop', '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
+${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) => `/borrow/${m.id}`), ...(currentSwapReadiness().visible ? ['/swap'] : []), ...(LOOP_ENABLED ? ['/loop'] : []), '/analytics', '/liquidations'].map((p) => `  <url><loc>${SITE}${p}</loc></url>`).join('\n')}
 </urlset>
 `
 
@@ -759,6 +786,7 @@ const server = http.createServer(async (req, res) => {
   try {
     const { pathname } = new URL(req.url, 'http://localhost')
     if (pathname.startsWith('/api/')) {
+      if (!LOOP_ENABLED && pathname.startsWith('/api/loop-')) return send(res, 404, { error: 'Not found' })
       for (const [method, re, handler] of routes) {
         const match = pathname.match(re)
         if (!match) continue
