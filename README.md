@@ -84,9 +84,10 @@ The shared backend adapter uses Jupiter V2 Build's native `platformFeeBps=10` an
 validates the provider's route-based fee amount, net output and fee-account mint; it never adds a separate fee transfer.
 Keyless Jupiter access is available for prototype/read-only requests at 0.5 requests per second.
 
-Swap execution turns on when the server has `JUPITER_API_KEY`, `SWAP_FEE_ACCOUNT_USDC`, `SWAP_FEE_ACCOUNT_USDY` and
-`SWAP_FEE_TREASURY_AUTHORITY` in `.env` (both fee accounts must exist on-chain, owned by that authority) and fresh market
-data shows a nonzero Nysa vault allocation to the USDY market; removing the keys turns it off. Never put them in browser
+Swap execution turns on when the server has `JUPITER_API_KEY`, a `SWAP_FEE_ACCOUNT_<TOKEN NAME>` for every token of
+every market pair (`SWAP_FEE_ACCOUNT_USDC`, `SWAP_FEE_ACCOUNT_USDY`, …; also listed in `docker-compose.yml`) and
+`SWAP_FEE_TREASURY_AUTHORITY` in `.env` (every fee account must exist on-chain, owned by that authority) and fresh market
+data shows a nonzero Nysa vault allocation to the pair's market; removing the keys turns it off. Never put them in browser
 config. To try it on mainnet before launch, also set `SWAP_WALLETS` to a comma-separated list of addresses:
 only those wallets can quote, build and relay a swap, and only they see the Swap tab and the swap banners (the server
 enforces it; hiding the links is just presentation). Remove `SWAP_WALLETS` to open swap to everyone. Changing these

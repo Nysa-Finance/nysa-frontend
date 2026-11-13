@@ -1,5 +1,6 @@
 // Checks every market entry in config.js, so a mistake in a new market fails here and not in production.
 import assert from 'node:assert/strict'
+import { existsSync } from 'node:fs'
 import { LIVE, TOKENS, VAULTS, tokensOf } from './config.js'
 
 const unique = (list, what) => assert.equal(new Set(list).size, list.length, `duplicate ${what}`)
@@ -14,6 +15,7 @@ for (const [id, t] of Object.entries(TOKENS)) {
   assert.equal(t.token_id, id)
   assert.match(t.mint, ADDRESS, `${id} mint`)
   assert.ok(t.name && t.icon && Number.isInteger(t.decimals) && t.price > 0, `${id} needs name, icon, decimals and a price`)
+  assert.ok(existsSync(new URL(`../public${t.icon}`, import.meta.url)), `${id}: icon file public${t.icon} is missing`)
 }
 for (const m of LIVE) {
   assert.match(m.id, /^[\w-]+$/, `${m.id}: the id is used in URLs`)

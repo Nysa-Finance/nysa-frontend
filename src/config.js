@@ -2,10 +2,13 @@
 // Live numbers, risk parameters, rate curves and oracle feeds come from chain via the backend (server/market.js); the
 // risk values here are only shown until the first market update arrives (riskOf in store.js).
 //
-// Adding a market: one entry in LIVE (and a TOKENS entry for each token not listed yet, with its icon in
+// Adding a market: one entry in LIVE (and a TOKENS entry for each token not listed yet, with its icon file in
 // public/tokens/). Everything else follows from it: pages, URLs, live data, positions, transactions, Market Updates,
 // Farm Points. `reserves` is the market's own Kamino reserve of each token: two markets lending the same token (USDC)
 // each have their own. `npm test` checks the entry (src/config.test.js).
+// Swaps between a pair's tokens need a fee token account per token: SWAP_FEE_ACCOUNT_<NAME> (e.g. SWAP_FEE_ACCOUNT_USDC)
+// in .env and in docker-compose.yml; until every swap token has one, swap stays off. A route through a DEX not in
+// server/program-policy.js is refused: review and add it there first.
 export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-of-service'
 // WalletConnect project id (Reown dashboard, cloud.reown.com). Public by design, it ships in the page; the project's
 // allowed domains on Reown are what stop others from using it. Empty = WalletConnect is not offered.
@@ -15,7 +18,7 @@ export const LOOP_ENABLED = false
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 
-// A token, wherever it is used. `price` is only shown until the first market update arrives.
+// A token, wherever it is used. `price` is only shown until the first market update arrives. `icon`: a file in public/.
 export const TOKENS = {
   'svm-usdy': { token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.png', decimals: 6, price: 1.09, rwa: true, mint: 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6' },
   'svm-usdc': { token_id: 'svm-usdc', name: 'USDC', icon: '/tokens/usdc.webp', decimals: 6, price: 1, mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
@@ -61,3 +64,5 @@ export const vaultById = (id) => VAULTS.find((v) => v.id === id)
 export const tok = (id) => TOKENS[id]
 export const marketById = (id) => LIVE.find((m) => m.id === id)
 export const tokensOf = (m) => [...new Set([...m.collateral, ...m.loans])].map(tok)
+// Tokens the Swap page trades: both sides of every market pair, loan tokens first (it opens on "sell USDC").
+export const swapTokens = [...new Set(LIVE.flatMap((m) => m.pairs.map((p) => p.liability)).concat(LIVE.flatMap((m) => m.pairs.map((p) => p.collateral))))].map(tok)

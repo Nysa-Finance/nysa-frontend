@@ -10,6 +10,7 @@ services:
       SOLANA_RPC_FALLBACK: ${SOLANA_RPC_FALLBACK:-} # empty = public mainnet RPC
       # Swap (README "Swap fees and loop preview"): off until the key and fee accounts are set.
       JUPITER_API_KEY: ${JUPITER_API_KEY:-}
+      # one SWAP_FEE_ACCOUNT_<TOKEN NAME> per token of every market pair (src/config.js swapTokens)
       SWAP_FEE_ACCOUNT_USDC: ${SWAP_FEE_ACCOUNT_USDC:-}
       SWAP_FEE_ACCOUNT_USDY: ${SWAP_FEE_ACCOUNT_USDY:-}
       SWAP_FEE_TREASURY_AUTHORITY: ${SWAP_FEE_TREASURY_AUTHORITY:-}

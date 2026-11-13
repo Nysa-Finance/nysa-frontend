@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { LIVE, TOKENS } from '../src/config.js'
-import { createPublicSwapQuote, parseSwapQuoteRequest, publicSwapQuote, swapPairAvailability, swapReadiness } from './swap-routes.js'
+import { createPublicSwapQuote, parseSwapQuoteRequest, publicSwapQuote, marketForPair, swapPairAvailability, swapReadiness } from './swap-routes.js'
+import { feeAccountEnv, swapFeeAccountsConfigured } from './swap.js'
+import { getFeeReceiverMetadata } from './analytics.js'
 
 const wallet = '11111111111111111111111111111111'
 const usdc = TOKENS['svm-usdc']
@@ -78,5 +80,25 @@ assert.equal(swapReadiness({ providerConfigured: true, feeAccountsConfigured: tr
 assert.equal(swapReadiness({ providerConfigured: true, feeAccountsConfigured: true, marketDataAvailable: true }).executionEnabled, true)
 assert.deepEqual(swapReadiness({ providerConfigured: true, feeAccountsConfigured: true, walletEnabled: false, marketDataAvailable: true }).unavailableReasons
   .map((r) => r.code), ['swap-wallet-not-enabled'], 'a wallet outside the SWAP_WALLETS beta cannot execute')
+
+// A pair finds its market either way round; mints outside every pair find none.
+assert.equal(marketForPair(usdc.mint, usdy.mint), LIVE[0])
+assert.equal(marketForPair(usdy.mint, usdc.mint), LIVE[0])
+assert.equal(marketForPair(usdc.mint, usdc.mint), null)
+assert.equal(marketForPair(), LIVE[0], 'no pair asked: the first market')
+// Fee account env var from the token name; swap stays off until every swap token has one.
+assert.equal(feeAccountEnv({ name: 'USDC' }), 'SWAP_FEE_ACCOUNT_USDC')
+assert.equal(feeAccountEnv({ name: 'oTFY' }), 'SWAP_FEE_ACCOUNT_OTFY')
+assert.equal(feeAccountEnv({ name: 'USD₮0' }), 'SWAP_FEE_ACCOUNT_USD_0')
+const savedEnv = { ...process.env }
+Object.assign(process.env, { SWAP_FEE_ACCOUNT_USDC: wallet, SWAP_FEE_TREASURY_AUTHORITY: wallet })
+delete process.env.SWAP_FEE_ACCOUNT_USDY
+assert.equal(swapFeeAccountsConfigured(), false, 'a swap token without a fee account keeps swap off')
+process.env.SWAP_FEE_ACCOUNT_USDY = wallet
+assert.equal(swapFeeAccountsConfigured(), true)
+process.env = savedEnv
+// Analytics lists a fee receiver for every swap token, read from its env var.
+assert.deepEqual(getFeeReceiverMetadata({ env: { SWAP_FEE_ACCOUNT_USDC: wallet }, rpcUrl: 'https://rpc.example' }).accounts.map((a) => [a.tokenId, a.address]),
+  [['svm-usdc', wallet], ['svm-usdy', null]])
 
 console.log('swap routes ok')

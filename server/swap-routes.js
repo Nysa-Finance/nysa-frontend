@@ -1,5 +1,5 @@
 import { isAddress } from '@solana/kit'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, TOKENS, swapTokens } from '../src/config.js'
 import { buildSwap, configuredFeeAccountForMint } from './swap.js'
 
 export const SWAP_QUOTE_MAX_AGE_MS = 15_000
@@ -28,6 +28,15 @@ export function parseSwapQuoteRequest(body) {
     amountBaseUnits: body.amountBaseUnits,
     slippageBps,
   }
+}
+
+// The market whose collateral/loan pair is these two mints (either direction); the first market when none is given.
+export function marketForPair(inputMint, outputMint) {
+  if (!inputMint && !outputMint) return LIVE[0]
+  return LIVE.find((m) => m.pairs.some(({ collateral, liability }) => {
+    const mints = [TOKENS[collateral].mint, TOKENS[liability].mint]
+    return mints.includes(inputMint) && mints.includes(outputMint) && inputMint !== outputMint
+  })) ?? null
 }
 
 export function swapPairAvailability({ market, vaults = {}, snapshotUpdatedAt = 0, inputMint, outputMint, now = Date.now() } = {}) {
@@ -146,7 +155,7 @@ export function swapReadiness({
 } = {}) {
   const unavailableReasons = [
     ...(!providerConfigured ? [{ code: 'provider-unconfigured', message: 'Production swap-provider configuration is missing.' }] : []),
-    ...(!feeAccountsConfigured ? [{ code: 'fee-accounts-unconfigured', message: 'Verified USDY and USDC fee accounts are required.' }] : []),
+    ...(!feeAccountsConfigured ? [{ code: 'fee-accounts-unconfigured', message: 'Verified fee accounts for every swap token are required.' }] : []),
     ...(!walletEnabled ? [{ code: 'swap-wallet-not-enabled', message: 'Swap is not available for this wallet yet.' }] : []),
     ...(!marketDataAvailable ? [{ code: 'market-allocation-missing', message: 'No fresh nonzero allocation is available for the supported collateral market.' }] : []),
     ...(marketAvailabilityReasons ?? []),
@@ -154,7 +163,7 @@ export function swapReadiness({
   return {
     quoteEnabled: marketDataAvailable,
     executionEnabled: unavailableReasons.length === 0,
-    supportedMints: ['svm-usdc', 'svm-usdy'].map((id) => ({ id, mint: TOKENS[id].mint, name: TOKENS[id].name, decimals: TOKENS[id].decimals })),
+    supportedMints: swapTokens.map((t) => ({ id: t.token_id, mint: t.mint, name: t.name, decimals: t.decimals })),
     unavailableReasons,
   }
 }

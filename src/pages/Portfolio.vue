@@ -46,6 +46,8 @@ const loans = computed(() =>
     }),
   ).filter((l) => l.units > 0),
 )
+// The pair of the first open loan, for the swap banner: its debt token to its market's collateral.
+const loanPair = computed(() => loans.value[0] && loans.value[0].m.pairs.find((p) => p.liability === loans.value[0].t.token_id))
 const supplied = computed(() => deposits.value.reduce((s, d) => s + d.usd, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd, 0) + loopTotals.value.suppliedUsd)
 // USDC lent straight to a market (not through a vault): can be withdrawn, and moved into the vault.
 const directLending = computed(() => deposits.value.filter((d) => d.m.loans.includes(d.t.token_id)))
@@ -92,8 +94,8 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     <div class="loop-heading"><div><h2>Nysa Multiply positions</h2><p class="n-muted">Loop collateral and debt stay separate from vanilla lending positions.</p></div><span class="n-chip">{{ loopPositions.length }} identified</span></div>
     <div v-for="position in loopPositions" :key="position.id" class="loop-position-row">
       <div><div class="loop-market">{{ position.market.name }}</div><div class="n-muted">Multiply · {{ position.obligation.address.slice(0, 6) }}…{{ position.obligation.address.slice(-4) }}</div></div>
-      <div><div class="loop-label">Collateral</div><div class="n-num">{{ amt(Number(position.collateral.amount), 4) }} {{ position.collateral.tokenId === 'svm-usdy' ? 'USDY' : position.collateral.tokenId }}</div><div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div></div>
-      <div><div class="loop-label">Debt</div><div class="n-num">{{ amt(Number(position.liability.amount), 4) }} {{ position.liability.tokenId === 'svm-usdc' ? 'USDC' : position.liability.tokenId }}</div><div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div></div>
+      <div><div class="loop-label">Collateral</div><div class="n-num">{{ amt(Number(position.collateral.amount), 4) }} {{ tok(position.collateral.tokenId)?.name ?? position.collateral.tokenId }}</div><div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div></div>
+      <div><div class="loop-label">Debt</div><div class="n-num">{{ amt(Number(position.liability.amount), 4) }} {{ tok(position.liability.tokenId)?.name ?? position.liability.tokenId }}</div><div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div></div>
       <div><div class="loop-label">Health factor</div><div class="n-num">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div></div>
       <div><button v-if="LOOP_ENABLED" class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
     </div>
@@ -115,8 +117,8 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     You have {{ directLending.map((d) => `${amtDust(d.units)} ${d.t.name}`).join(' + ') }} lent directly to a market. Lending now goes through
     <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
   </div>
-  <div v-if="state.swapVisible && loans.length" class="n-banner swap-portfolio-cta">
-    Want USDY after borrowing USDC? <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdc', output: 'svm-usdy' } }" class="link">Swap USDC to USDY</RouterLink>.
+  <div v-if="state.swapVisible && loanPair" class="n-banner swap-portfolio-cta">
+    Want {{ tok(loanPair.collateral).name }} after borrowing {{ tok(loanPair.liability).name }}? <RouterLink :to="{ name: 'swap', query: { input: loanPair.liability, output: loanPair.collateral } }" class="link">Swap {{ tok(loanPair.liability).name }} to {{ tok(loanPair.collateral).name }}</RouterLink>.
     Locked collateral is never used for a swap.
   </div>
 
