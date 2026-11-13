@@ -34,9 +34,15 @@ const active = (t) => route.path === t.to || route.path.startsWith(`${t.to}/`) /
       <div class="n-nav-right">
         <span class="n-pill net"><span class="n-dot" />Solana</span>
         <button v-if="!state.address" class="n-btn-grad" @click="state.connectOpen = true">Connect wallet</button>
-        <template v-else>
-          <button class="n-pill" @click="menu = !menu"><span class="n-dot" />{{ short(state.address) }}</button>
+        <button v-else class="n-pill" @click="menu = !menu"><span class="n-dot" />{{ short(state.address) }}</button>
+        <!-- Phones: one round wallet button in place of the two above (style.css). -->
+        <button class="n-wallet-btn" :aria-label="state.address ? `Wallet ${short(state.address)}` : 'Connect wallet'" @click="state.address ? (menu = !menu) : (state.connectOpen = true)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 8V5a1 1 0 0 0-1-1H6a2 2 0 0 0 0 4h12a1 1 0 0 1 1 1v3m0 4v3a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V6" /><path d="M20 12v4h-4a2 2 0 0 1 0-4h4" /></svg>
+          <span v-if="state.address" class="n-dot" />
+        </button>
+        <template v-if="state.address">
           <div v-if="menu" class="n-menu" @click="menu = false">
+            <span class="n-menu-addr">{{ short(state.address) }}</span>
             <RouterLink to="/portfolio">Portfolio</RouterLink>
             <a :href="explorer(state.address)" target="_blank" rel="noopener noreferrer">View on Solscan ↗&#xFE0E;</a>
             <button @click="disconnect">Disconnect</button>
@@ -59,7 +65,7 @@ const active = (t) => route.path === t.to || route.path.startsWith(`${t.to}/`) /
       <RouterLink v-for="t in visibleTabs" :key="t.to" :to="t.to" :class="{ on: active(t) }" @click="sections = false"><img :src="t.icon" alt="" />{{ t.label }}</RouterLink>
     </nav>
     <button class="n-fab" :aria-expanded="sections" :aria-label="sections ? 'Close menu' : 'Open menu'" @click="sections = !sections">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path :d="sections ? 'M6 6l12 12M18 6L6 18' : 'M4 7h16M4 12h16M4 17h16'" /></svg>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
     </button>
     <ConnectModal v-if="state.connectOpen" @close="state.connectOpen = false" />
     <WalletHandoff />
