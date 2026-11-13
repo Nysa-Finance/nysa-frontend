@@ -1,5 +1,5 @@
 import { AccountRole, address, fetchEncodedAccount, getAddressDecoder, getBase58Decoder } from '@solana/kit'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, TOKENS, swapTokens } from '../src/config.js'
 import { calculateSwapFeeBaseUnits } from '../src/swap-fees.js'
 import { APPROVED_PROGRAMS, evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
@@ -86,13 +86,18 @@ async function readFeeTokenAccount(feeAccount) {
   }
 }
 
+// The env var holding a token's swap fee token account: SWAP_FEE_ACCOUNT_USDC, SWAP_FEE_ACCOUNT_USDY, …
+export const feeAccountEnv = (token) => `SWAP_FEE_ACCOUNT_${token.name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
+
 export function configuredFeeAccountForMint(mint) {
   const token = Object.values(TOKENS).find((candidate) => candidate.mint === mint)
-  if (!token) return null
-  const envName = token.token_id === 'svm-usdc' ? 'SWAP_FEE_ACCOUNT_USDC' : token.token_id === 'svm-usdy' ? 'SWAP_FEE_ACCOUNT_USDY' : null
-  const account = envName ? process.env[envName] : null
+  const account = token ? process.env[feeAccountEnv(token)] : null
   return account ? { account, mint } : null
 }
+
+// Swap needs a fee account for every swappable token and the treasury authority that owns them.
+export const swapFeeAccountsConfigured = () =>
+  swapTokens.every((t) => configuredFeeAccountForMint(t.mint)) && !!process.env.SWAP_FEE_TREASURY_AUTHORITY
 
 const safeAddress = (value, label) => {
   if (typeof value !== 'string' || !value) throw new SwapError(`Invalid ${label}.`)

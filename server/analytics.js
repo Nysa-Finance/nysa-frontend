@@ -1,13 +1,14 @@
 // Positions for the Analytics page: every obligation in each LIVE market (addresses from the market index, read in one
 // batch against the market cache), riskiest first; and every holder of each vault's shares. Cached for a minute.
 import { address, fetchEncodedAccounts, getAddressDecoder, isAddress } from '@solana/kit'
-import { LIVE, TOKENS, VAULTS } from '../src/config.js'
+import { LIVE, VAULTS, swapTokens } from '../src/config.js'
 import { localForkExecutionEnabled } from './local-fork-execution.js'
 import { RPC_URL, rpc } from './rpc.js'
 import { getLive, getVault, num } from './market.js'
 import { freshIndex } from './updates.js'
 import { vaultShares } from './account.js'
 import { indexedPositionSummary, obligationPair } from './positions.js'
+import { feeAccountEnv } from './swap.js'
 
 const addrDecoder = getAddressDecoder()
 
@@ -24,10 +25,7 @@ export function getFeeReceiverMetadata({ env = process.env, rpcUrl = RPC_URL } =
   return {
     network: local ? 'surfpool-local' : isLoopbackRpc(rpcUrl) ? 'unknown' : 'mainnet',
     treasuryAuthority: publicAddress(env.SWAP_FEE_TREASURY_AUTHORITY),
-    accounts: [
-      { tokenId: 'svm-usdc', mint: TOKENS['svm-usdc'].mint, address: publicAddress(env.SWAP_FEE_ACCOUNT_USDC) },
-      { tokenId: 'svm-usdy', mint: TOKENS['svm-usdy'].mint, address: publicAddress(env.SWAP_FEE_ACCOUNT_USDY) },
-    ],
+    accounts: swapTokens.map((t) => ({ tokenId: t.token_id, mint: t.mint, address: publicAddress(env[feeAccountEnv(t)]) })),
   }
 }
 

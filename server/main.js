@@ -23,9 +23,9 @@ import { read, POINTS, HISTORY } from './storage.js'
 import { LIVE, LOOP_ENABLED, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
-import { buildSwap, configuredFeeAccountForMint, SwapError } from './swap.js'
+import { buildSwap, configuredFeeAccountForMint, swapFeeAccountsConfigured, SwapError } from './swap.js'
 import { LOOP_PREVIEW_MAX_AGE_MS, loopCarryStillCurrent, loopMarketRiskFromSnapshot, loopMarketRiskStillCurrent } from './loop-preview-validation.js'
-import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, swapPairAvailability, swapReadiness } from './swap-routes.js'
+import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, marketForPair, swapPairAvailability, swapReadiness } from './swap-routes.js'
 import { runWithRequestAbortSignal } from './request-signal.js'
 import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransaction, createAuthorizedSwapSender, swapIntentStillAuthorized, assertOracleFairOutput, validateProviderSwapInstructions, SwapExecutionError } from './swap-execution.js'
 import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash, messageMatchesWithLighthouse } from './tx-intent.js'
@@ -163,19 +163,20 @@ const SWAP_NOT_ENABLED = { error: 'Swap is not available for this wallet yet.' }
 
 function currentSwapReadiness(request = {}) {
   const snapshot = getSnapshot()
+  const market = marketForPair(request.inputMint, request.outputMint)
+  const pair = market?.pairs[0]
   const availability = swapPairAvailability({
-    market: marketById('sol-usdy-usdc'),
+    market,
     vaults: snapshot?.vaults ?? {},
     snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
-    inputMint: request.inputMint ?? TOKENS['svm-usdc'].mint,
-    outputMint: request.outputMint ?? TOKENS['svm-usdy'].mint,
+    // No pair asked: the market's first one, loan token to collateral (buying collateral).
+    inputMint: request.inputMint ?? (pair && TOKENS[pair.liability].mint),
+    outputMint: request.outputMint ?? (pair && TOKENS[pair.collateral].mint),
   })
   const localTestWallet = isLocalForkWallet(request.wallet, { rpcUrl: RPC_URL })
   const localExecution = localForkProgramEvidenceReady() && (!request.wallet || localTestWallet)
   const providerConfigured = !!process.env.JUPITER_API_KEY || localExecution
-  const feeAccountsConfigured = !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
-    && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
-    && !!process.env.SWAP_FEE_TREASURY_AUTHORITY
+  const feeAccountsConfigured = swapFeeAccountsConfigured()
   const walletEnabled = swapOpenTo(request.wallet)
   const readiness = swapReadiness({
     providerConfigured,
