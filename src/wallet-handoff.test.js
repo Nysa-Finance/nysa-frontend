@@ -39,22 +39,27 @@ store.state.address = wallet
 store.state.lendingPending = null
 store.state.swapOutcome = null
 
-const source = await readFile(new URL('./components/WalletHandoff.vue', import.meta.url), 'utf8')
-const { descriptor, errors } = parse(source, { filename: 'WalletHandoff.vue' })
-assert.deepEqual(errors, [])
-let component = compileScript(descriptor, { id: 'wallet-handoff-test', inlineTemplate: true }).content
-component = component
-  .replace('from "vue"', `from "${import.meta.resolve('vue')}"`)
-  .replace("from 'vue'", `from '${import.meta.resolve('vue')}'`)
-  .replace("from '../store.js'", `from '${new URL('./store.js', import.meta.url).href}'`)
-  .replace("from '../config.js'", `from '${new URL('./config.js', import.meta.url).href}'`)
-const componentUrl = `data:text/javascript;base64,${Buffer.from(component).toString('base64')}`
-const { default: WalletHandoff } = await import(componentUrl)
+// Compile a component to a data: module; `imports` maps its relative .vue imports to already compiled ones.
+async function componentUrl(name, imports = {}) {
+  const source = await readFile(new URL(`./components/${name}.vue`, import.meta.url), 'utf8')
+  const { descriptor, errors } = parse(source, { filename: `${name}.vue` })
+  assert.deepEqual(errors, [])
+  let component = compileScript(descriptor, { id: `${name}-test`, inlineTemplate: true }).content
+    .replace('from "vue"', `from "${import.meta.resolve('vue')}"`)
+    .replace("from 'vue'", `from '${import.meta.resolve('vue')}'`)
+    .replace("from '../store.js'", `from '${new URL('./store.js', import.meta.url).href}'`)
+    .replace("from '../config.js'", `from '${new URL('./config.js', import.meta.url).href}'`)
+  for (const [path, url] of Object.entries(imports)) component = component.replace(`from '${path}'`, `from '${url}'`)
+  return `data:text/javascript;base64,${Buffer.from(component).toString('base64')}`
+}
+const { default: WalletHandoff } = await import(await componentUrl('WalletHandoff', { './TxProgress.vue': await componentUrl('TxProgress') }))
 
 function element(type, text = '') {
   return { type, text, props: {}, children: [], parent: null }
 }
+const root = element('root')
 const renderer = createRenderer({
+  querySelector: () => root, // the transaction sheet teleports to <body>
   createElement: (type) => element(type),
   createText: (text) => element('#text', text),
   createComment: (text) => element('#comment', text),
@@ -79,7 +84,6 @@ const renderer = createRenderer({
     node.parent = null
   },
 })
-const root = element('root')
 const app = renderer.createApp(WalletHandoff)
 app.mount(root)
 const nodes = (node) => [node, ...node.children.flatMap(nodes)]
@@ -122,9 +126,11 @@ assert.ok(nodes(root).some((node) => node.type === 'a' && node.props.href === 'h
   'the durable card exposes the saved signature for reconciliation')
 let stack = nodes(root).find((node) => node.props.class === 'ho-stack')
 let stackedCards = nodes(root).filter((node) => node.type === 'div' && node.props.class?.includes('ho '))
-assert.equal(stackedCards.length, 2, 'the sending handoff and durable pending signature remain visible as separate cards')
+const sheet = () => nodes(root).find((node) => node.props.class?.includes('sheet '))
+assert.equal(stackedCards.length, 1, 'the durable pending signature stays a card')
+assert.ok(sheet().props.class.includes('running') && sheet().parent.parent !== stack, 'the sending handoff is the transaction sheet, apart from the cards')
 assert.ok(stackedCards.every((node) => node.parent === stack),
-  'the sending handoff and pending signature use normal-flow stacked cards')
+  'the pending signature uses a normal-flow stacked card')
 store.state.handoff = {
   status: 'error', label: 'Full close',
   error: 'Relay outcome is unknown; Nysa is checking the saved signature.',
@@ -136,9 +142,8 @@ assert.ok(nodes(root).some((node) => textOf(node).includes('outcome is unknown')
   'a signatureless same-label error does not replace the current signature status with stale error text')
 stack = nodes(root).find((node) => node.props.class === 'ho-stack')
 stackedCards = nodes(root).filter((node) => node.type === 'div' && node.props.class?.includes('ho '))
-assert.equal(stackedCards.length, 2, 'the signatureless error and pending signature remain separate cards')
-assert.ok(stackedCards.every((node) => node.parent === stack),
-  'the signatureless error and pending signature do not overlap')
+assert.equal(stackedCards.length, 1, 'the pending signature stays a card')
+assert.ok(sheet().props.class.includes('error'), 'the signatureless error is the transaction sheet')
 store.state.handoff = null
 await nextTick()
 assert.ok(nodes(root).some((node) => textOf(node).includes('outcome is unknown')),
