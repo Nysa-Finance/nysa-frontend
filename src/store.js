@@ -1568,19 +1568,20 @@ export function start() {
 
 // Sequential multi-step transaction runner shared by the Lend/Borrow panels.
 export function useTx() {
-  const tx = reactive({ status: 'idle', steps: [], i: 0, error: null, signature: null })
+  const tx = reactive({ status: 'idle', steps: [], i: 0, error: null, signature: null, note: null })
   return {
     tx,
-    reset: () => Object.assign(tx, { status: 'idle', steps: [], i: 0, error: null, signature: null }),
+    reset: () => Object.assign(tx, { status: 'idle', steps: [], i: 0, error: null, signature: null, note: null }),
     async run(steps) {
       if (tx.status === 'running') return false
-      Object.assign(tx, { status: 'running', steps: steps.map((s) => s.label), i: 0, error: null, signature: null })
+      Object.assign(tx, { status: 'running', steps: steps.map((s) => s.label), i: 0, error: null, signature: null, note: null })
       for (const [i, s] of steps.entries()) {
         tx.i = i
         try {
           const sig = await s.run()
           if (typeof sig === 'string') tx.signature = sig
         } catch (e) {
+          if (e?.message === 'Transaction cancelled') return (tx.status = 'idle', false) // the user's own Cancel on the wallet sheet
           tx.error = `${s.label} — ${/reject/i.test(e?.message) ? 'Transaction rejected in your wallet.' : e?.message ?? 'Transaction failed'}`
           tx.status = 'error'
           loadAccount(true)

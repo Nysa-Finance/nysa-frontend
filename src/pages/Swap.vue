@@ -3,9 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { amountToBaseUnits } from '../swap-flow.js'
 import { createLatestRequestGate } from '../swap-quote-request.js'
-import { loadAccount, signAndSendSwap, state } from '../store.js'
-import { LIVE, TOKENS, txUrl } from '../config.js'
+import { signAndSendSwap, state, useTx } from '../store.js'
+import { LIVE, TOKENS } from '../config.js'
 import TokenIcon from '../components/TokenIcon.vue'
+import TxProgress from '../components/TxProgress.vue'
 import { formatBaseUnits } from '../swap-fees.js'
 
 const SLIPPAGES = [10, 30, 50] // bps; the server refuses more than 50
@@ -22,9 +23,9 @@ const slippageBps = ref(50)
 const readiness = ref(null)
 const quote = ref(null)
 const quoting = ref(false)
-const stage = ref(null) // 'building' | 'signing' while a swap is in flight
 const error = ref(null)
-const done = ref(null) // last confirmed swap signature
+const { tx, run, reset } = useTx()
+const busy = computed(() => tx.status === 'running')
 const requests = createLatestRequestGate()
 let debounce, refresh
 
@@ -46,10 +47,9 @@ const rate = computed(() => quote.value && (Number(quote.value.outputAmountBaseU
   / (Number(quote.value.amountBaseUnits) / 10 ** input.value.decimals))
 const action = computed(() => {
   if (!state.address) return { label: 'Connect wallet', run: () => { state.connectOpen = true } }
+  if (busy.value || (state.swapPending && !state.swapPending.signature)) return { label: 'Confirm in your wallet…' }
   if (state.swapPending) return { label: 'Previous swap pending…' }
   if (blockedReasons.value.length) return { label: 'Swap unavailable' }
-  if (stage.value === 'building') return { label: 'Preparing swap…' }
-  if (stage.value === 'signing') return { label: 'Confirm in your wallet…' }
   if (!amountBaseUnits.value) return { label: 'Enter an amount' }
   if (insufficient.value) return { label: `Insufficient ${input.value.name}` }
   if (!quote.value) return { label: quoting.value ? 'Finding the best route…' : 'No route available' }
@@ -74,7 +74,7 @@ async function loadReadiness() {
 
 async function fetchQuote() {
   clearTimeout(refresh)
-  if (!state.address || !amountBaseUnits.value || stage.value || blockedReasons.value.length) return void (quoting.value = false)
+  if (!state.address || !amountBaseUnits.value || busy.value || blockedReasons.value.length) return void (quoting.value = false)
   const body = request()
   const req = requests.begin(JSON.stringify(body))
   const current = () => req.isCurrent(JSON.stringify(request()))
@@ -96,23 +96,18 @@ async function swap() {
   const outputToken = output.value
   clearTimeout(refresh)
   requests.invalidate()
-  stage.value = 'building'
   error.value = null
-  done.value = null
-  try {
+  let handedOff = false // iOS wallet apps: the page leaves for the wallet, and WalletHandoff shows the rest
+  await run([{ label: `Swap ${input.value.name} for ${outputToken.name}`, run: async () => {
     const built = await post('/api/swap-build', body)
-    stage.value = 'signing'
     const outcome = await signAndSendSwap({ built, request: body, outputTokenId: outputToken.token_id })
-    if (outcome.status === 'confirmed') {
-      done.value = { signature: outcome.signature, amount: outcome.amountBaseUnits ? `${fmt(outputToken, outcome.amountBaseUnits)} ${outputToken.name}` : null }
-      amount.value = ''
-    }
-    loadAccount(true)
-  } catch (cause) { error.value = cause.message }
-  finally {
-    stage.value = null
-    fetchQuote()
-  }
+    if (outcome.status !== 'confirmed') return void (handedOff = true)
+    if (outcome.amountBaseUnits) tx.note = `Received ${fmt(outputToken, outcome.amountBaseUnits)} ${outputToken.name}.`
+    amount.value = ''
+    return outcome.signature
+  } }])
+  if (handedOff) reset()
+  fetchQuote()
 }
 
 function flip() { [inputId.value, outputId.value] = [outputId.value, inputId.value] }
@@ -151,26 +146,26 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
       <div class="row"><span>Sell</span></div>
       <div class="row">
         <span class="token"><TokenIcon :token="input" size="sm" />
-          <select v-model="inputId" :disabled="!!stage" aria-label="Token to sell"><option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option></select>
+          <select v-model="inputId" :disabled="busy" aria-label="Token to sell"><option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option></select>
         </span>
-        <input v-model="amount" :disabled="!!stage" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Amount to sell" />
+        <input v-model="amount" :disabled="busy" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Amount to sell" />
       </div>
       <div class="row small">
         <span>Available: {{ balanceOf(input) == null ? '-' : fmt(input, balanceOf(input)) }}</span>
         <span class="n-quick">
-          <button :disabled="!!stage || balanceOf(input) == null" @click="fill(2n)">Half</button>
-          <button :disabled="!!stage || balanceOf(input) == null" @click="fill(1n)">Max</button>
+          <button :disabled="busy || balanceOf(input) == null" @click="fill(2n)">Half</button>
+          <button :disabled="busy || balanceOf(input) == null" @click="fill(1n)">Max</button>
         </span>
       </div>
     </div>
 
-    <button class="flip" :disabled="!!stage" aria-label="Switch sell and buy tokens" @click="flip">⇅</button>
+    <button class="flip" :disabled="busy" aria-label="Switch sell and buy tokens" @click="flip">⇅</button>
 
     <div class="box">
       <div class="row"><span>Buy</span></div>
       <div class="row">
         <span class="token"><TokenIcon :token="output" size="sm" />
-          <select v-model="outputId" :disabled="!!stage" aria-label="Token to buy"><option v-for="token in outputs" :key="token.token_id" :value="token.token_id">{{ token.name }}</option></select>
+          <select v-model="outputId" :disabled="busy" aria-label="Token to buy"><option v-for="token in outputs" :key="token.token_id" :value="token.token_id">{{ token.name }}</option></select>
         </span>
         <output :class="{ dim: !quote }" aria-label="Estimated amount to buy">{{ quote ? fmt(output, quote.outputAmountBaseUnits) : quoting ? '…' : '0' }}</output>
       </div>
@@ -180,7 +175,7 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
     <div class="row bar">
       <span v-if="quote" class="chip">1 {{ input.name }} ≈ {{ rate.toFixed(4) }} {{ output.name }}</span><span v-else />
       <label class="chip">Slippage
-        <select v-model.number="slippageBps" :disabled="!!stage" aria-label="Maximum slippage">
+        <select v-model.number="slippageBps" :disabled="busy" aria-label="Maximum slippage">
           <option v-for="bps in SLIPPAGES" :key="bps" :value="bps">{{ (bps / 100).toFixed(2) }}%</option>
         </select>
       </label>
@@ -189,9 +184,9 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
     <button class="n-btn-block" :disabled="!action.run" @click="action.run?.()">{{ action.label }}</button>
 
     <p v-if="error" class="n-warn" role="status">{{ error }}</p>
-    <p v-if="state.swapPending" class="n-warn" role="status">A previous swap is still being confirmed. Nysa checks it automatically; wait before swapping again.</p>
+    <p v-if="state.swapPending?.signature && !busy" class="n-warn" role="status">A previous swap is still being confirmed. Nysa checks it automatically; wait before swapping again.</p>
     <ul v-if="blockedReasons.length" class="n-warn reasons"><li v-for="reason in blockedReasons" :key="reason.code">{{ reason.message }}</li></ul>
-    <p v-if="done" class="n-note" role="status">Swap confirmed{{ done.amount ? `: received ${done.amount}` : '' }}. <a :href="txUrl(done.signature)" target="_blank" rel="noopener" class="link">View on Solscan</a></p>
+    <TxProgress :tx="tx" @dismiss="reset" />
 
     <div v-if="quote" class="details">
       <div class="n-kv"><span class="k">Minimum received</span><span class="v">{{ fmt(output, quote.minimumOutputBaseUnits) }} {{ output.name }}</span></div>
@@ -221,5 +216,4 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
 .chip select { color: var(--n-text); background: var(--n-bg-2); cursor: pointer; }
 .reasons { padding-left: 18px; }
 .details { display: grid; gap: 8px; margin-top: 8px; padding: 14px 16px; border: 1px solid var(--n-line); border-radius: 12px; }
-.link { color: var(--n-pink); }
 </style>
