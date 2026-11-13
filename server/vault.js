@@ -5,7 +5,7 @@ import { createRequire } from 'node:module'
 import { KaminoVaultClient, KaminoVault, getSingleReserve, DEFAULT_RECENT_SLOT_DURATION_MS } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, VAULTS, TOKENS } from '../src/config.js'
+import { LIVE, OTHER_MARKETS, VAULTS, TOKENS } from '../src/config.js'
 import { rpc, NONE } from './rpc.js'
 
 const require = createRequire(import.meta.url)
@@ -50,17 +50,18 @@ export async function readVault(v, markets, now) {
   const weights = new Map(vaultClient.getVaultAllocations(state))
   const caps = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), String(x.tokenAllocationCap)]))
 
-  // Exposure: each allocated reserve, its market (a LIVE market when it is one of ours) and that market's collateral.
+  // Exposure: each allocated reserve, its market (one of ours, with a page, or one of OTHER_MARKETS) and its collateral.
   const allocations = reserveAddrs.map((a) => {
     const r = reserves.get(a)
     const m = LIVE.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
+    const known = m ?? OTHER_MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
     const invested = n(holdings.investedInReserves.get(a))
     return {
       reserve: String(a),
       market: String(r.state.lendingMarket),
-      marketId: m?.id ?? null,
-      marketName: m?.name ?? null,
-      collateral: m?.collateral ?? [],
+      marketId: m?.id ?? null, // only Nysa markets have a page
+      marketName: known?.name ?? null,
+      collateral: known?.collateral ?? [],
       weight: Number(weights.get(a)?.targetWeight ?? 0),
       cap: caps.get(String(a)) === U64_MAX ? null : Number(caps.get(String(a))) / 10 ** dec, // tokens; null = uncapped
       invested,
@@ -69,7 +70,6 @@ export async function readVault(v, markets, now) {
       supplyApy: r.totalSupplyAPY(now) * 100,
     }
   })
-  const exposure = LIVE.filter((m) => allocations.some((x) => x.market === m.kaminoMarket))
   // Utilization as Kamino shows it: the part of the vault's tokens that borrowers hold (uninvested tokens count as idle).
   const borrowed = reserveAddrs.reduce((s, a) => s + n(holdings.investedInReserves.get(a)) * reserves.get(a).calculateUtilizationRatio(), 0)
   // Rewards shown as APY on top of the supply APY, as Kamino does.
@@ -114,9 +114,8 @@ export async function readVault(v, markets, now) {
       allocationAdmin: String(state.allocationAdmin),
       oracles,
       allocations,
-      // Markets the vault is exposed to: their ids and collateral tokens (the Earn table's Exposure icons).
-      exposureMarkets: exposure.map((m) => m.id),
-      exposureTokens: [...new Set(exposure.flatMap((m) => m.collateral))],
+      // Collateral tokens of the markets the vault is exposed to (the Earn table's Exposure icons).
+      exposureTokens: [...new Set(allocations.flatMap((x) => x.collateral))],
     },
   }
 }

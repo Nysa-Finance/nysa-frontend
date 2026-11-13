@@ -2,8 +2,8 @@
 // A vault's exposure: a donut of where its deposits are (each allocated market, the liquidity buffer, tokens waiting for
 // the next sync) and a table of those markets with their targets. Before anything is invested it shows the targets.
 import { ref, computed } from 'vue'
-import { tok } from '../config.js'
-import { pct, usd, pieSlices, arcPath } from '../logic.js'
+import { tok, explorer } from '../config.js'
+import { pct, usd, short, pieSlices, arcPath } from '../logic.js'
 import TokenIcon from './TokenIcon.vue'
 
 const props = defineProps({ vault: Object, price: Number })
@@ -59,7 +59,7 @@ const C = 90, R = 84, RI = 56
       <div class="n-cell" data-label="Market">
         <i class="dot" :style="{ background: COLORS[i % COLORS.length] }" />
         <RouterLink v-if="x.marketId" :to="{ name: 'market-detail', params: { id: x.marketId } }" class="ex-link">{{ x.marketName }}</RouterLink>
-        <span v-else class="mono">{{ x.market.slice(0, 4) }}…{{ x.market.slice(-4) }}</span>
+        <a v-else class="ex-link" :class="{ mono: !x.marketName }" :href="explorer(x.market)" target="_blank" rel="noopener noreferrer">{{ x.marketName ?? short(x.market, 4, 4) }} ↗&#xFE0E;</a>
       </div>
       <div class="n-cell" data-label="Collateral"><div class="n-tok-group"><TokenIcon v-for="c in x.collateral" :key="c" :token="tok(c)" size="sm" /></div></div>
       <div class="n-cell n-num" data-label="Allocation">{{ pct(x.share, 1) }}</div>
