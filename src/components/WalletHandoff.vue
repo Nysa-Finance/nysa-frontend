@@ -3,6 +3,7 @@
 import { computed, ref } from 'vue'
 import { state, cancelHandoff, cancelLendingBuildReservation, cancelLendingSetupRecovery, dismissHandoff, reconcileLocalPendingAction, resumeLendingSetupRecovery } from '../store.js'
 import { txUrl } from '../config.js'
+import TxProgress from './TxProgress.vue'
 
 const pendingAction = computed(() => {
   const pending = state.lendingPending
@@ -27,6 +28,11 @@ const pendingAction = computed(() => {
     message,
     walletMismatch: state.address !== pending.wallet,
   }
+})
+// The handoff as the app's transaction sheet (TxProgress): 'sending' is its running state.
+const handoffTx = computed(() => state.handoff && {
+  ...state.handoff, steps: [state.handoff.label], i: 0,
+  status: state.handoff.status === 'sending' ? 'running' : state.handoff.status,
 })
 const checkingLocalExpiry = ref(false)
 async function checkLocalExpiry() {
@@ -57,8 +63,6 @@ async function checkLocalExpiry() {
       <div class="ho-actions">
         <a class="ho-link" :href="txUrl(pendingAction.signature)" target="_blank" rel="noopener noreferrer">View transaction ↗</a>
         <button v-if="pendingAction.canCheckLocalExpiry" class="ho-link" :disabled="checkingLocalExpiry" @click="checkLocalExpiry">{{ checkingLocalExpiry ? 'Checking Surfpool…' : 'Check dropped local transaction' }}</button>
-        <button class="ho-link" @click="dismissHandoff">Dismiss</button>
-        <button class="ho-link" @click="dismissHandoff">Dismiss</button>
       </div>
     </div>
     <div v-if="state.lendingSetupRecovery" class="ho error" role="status">
@@ -70,31 +74,13 @@ async function checkLocalExpiry() {
         <button class="ho-link" :disabled="state.setupRecoveryBusy || !!state.lendingPending" @click="cancelLendingSetupRecovery">Cancel action</button>
       </div>
     </div>
-    <div v-if="state.handoff" class="ho" :class="state.handoff.status" role="status">
-      <div class="ho-label">{{ state.handoff.label }}</div>
-      <template v-if="state.handoff.status === 'ready'">
-        <div class="ho-msg">Approve it in {{ state.handoff.wallet }}, then you'll come back here.</div>
-        <div class="ho-actions">
-          <a class="ho-btn" :href="state.handoff.url">Open {{ state.handoff.wallet }}</a>
-          <button class="ho-link" @click="cancelHandoff">Cancel</button>
-        </div>
-      </template>
-      <div v-else-if="state.handoff.status === 'sending'" class="ho-msg"><span class="ho-spin" />Sending and confirming…</div>
-      <template v-else>
-        <div class="ho-msg">{{ state.handoff.status === 'success' ? 'Confirmed.' : state.handoff.error }}</div>
-        <div class="ho-actions">
-          <a v-if="state.handoff.signature" class="ho-link" :href="txUrl(state.handoff.signature)" target="_blank" rel="noopener noreferrer">View transaction ↗</a>
-          <button class="ho-link" @click="dismissHandoff">Dismiss</button>
-        </div>
-      </template>
-    </div>
   </div>
+  <TxProgress v-if="handoffTx" :tx="handoffTx" handoff @dismiss="dismissHandoff" @cancel="cancelHandoff" />
 </template>
 
 <style scoped>
 .ho-stack { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: 440px; max-height: calc(100vh - 32px); overflow-y: auto; margin: 0 auto; pointer-events: none; }
 .ho { position: relative; flex: 0 0 auto; width: 100%; margin: 0; padding: 16px 18px; border: 1px solid var(--n-line-2); border-radius: 12px; background: var(--n-bg-2); box-shadow: 0 20px 60px -10px #000c; font-size: 13px; color: var(--n-text-2); pointer-events: auto; }
-.ho.success { border-color: #3ddc8466; }
 .ho.error { border-color: #ff5d5d66; }
 .ho-label { font-weight: 600; font-size: 14px; color: #fff; }
 .ho-msg { margin-top: 4px; display: flex; align-items: center; gap: 8px; }
@@ -103,5 +89,4 @@ async function checkLocalExpiry() {
 .ho-btn { font-weight: 600; color: #fff; background: var(--grad); padding: 10px 18px; border-radius: 999px; }
 .ho-btn:disabled, .ho-link:disabled { opacity: .45; cursor: not-allowed; }
 .ho-link { color: var(--n-text-3); font-size: 13px; background: none; border: 0; padding: 0; cursor: pointer; }
-.ho-spin { width: 14px; height: 14px; border: 2px solid var(--n-line-2); border-top-color: var(--n-pink); border-radius: 50%; animation: spin .7s linear infinite; }
 </style>

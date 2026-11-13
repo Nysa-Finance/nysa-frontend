@@ -109,7 +109,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     <span>Unclaimed rewards from {{ c.m.name }}: <b>{{ c.items.map(([name, a]) => `${amt(a, 4)} ${name}`).join(' + ') }}</b></span>
     <button class="n-btn-sm" :disabled="claimTx.status === 'running'" @click="claim(c.m)">Claim</button>
   </div>
-  <TxProgress :tx="claimTx" style="margin: -10px 0 22px" @dismiss="resetClaim" />
+  <TxProgress :tx="claimTx" @dismiss="resetClaim" />
   <div v-if="directLending.length && VAULTS[0]" class="n-banner">
     You have {{ directLending.map((d) => `${amtDust(d.units)} ${d.t.name}`).join(' + ') }} lent directly to a market. Lending now goes through
     <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
