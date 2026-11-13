@@ -15,6 +15,7 @@ import MarketUpdates from '../components/MarketUpdates.vue'
 import VaultPanel from '../components/VaultPanel.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 import NotFound from './NotFound.vue'
+import { narrow } from '../narrow.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -72,6 +73,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
             </div>
             <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'vault' })">Check your points →</button>
           </div>
+          <div id="side-mobile" /><!-- phones: the deposit panel moves here, above the numbers -->
           <div class="n-stats stat-3 head-stats">
             <div class="n-stat"><div class="k">Total deposits</div><div class="v"><span v-if="live">{{ usd(live.totalUsd) }}</span><span v-else class="n-skel" /></div></div>
             <div class="n-stat"><div class="k">APY</div><div class="v accent"><span v-if="live">{{ pct(live.apy) }}<span v-if="live.rewardsApy" class="n-boost" :title="vaultApyNote(live)" :aria-label="vaultApyNote(live)">⚡</span></span><span v-else class="n-skel" /></div></div>
@@ -120,7 +122,9 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
       </div>
 
       <aside class="side">
-        <VaultPanel :key="route.fullPath" :vault="v" :live="live" :initial-tab="route.query.tab" />
+        <Teleport defer to="#side-mobile" :disabled="!narrow">
+          <VaultPanel :key="route.fullPath" :vault="v" :live="live" :initial-tab="route.query.tab" />
+        </Teleport>
       </aside>
     </div>
     <FarmPointsModal v-if="pointsOpen" @close="pointsOpen = false" />
@@ -155,5 +159,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
   .farm-cta { flex-direction: column; align-items: stretch; }
   .n-detail-grid { grid-template-columns: 1fr; gap: 30px; }
   .side { position: static; }
+  #side-mobile { margin-bottom: 22px; }
+  #side-mobile:empty { display: none; }
 }
 </style>

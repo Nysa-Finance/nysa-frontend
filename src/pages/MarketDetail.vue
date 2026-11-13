@@ -15,6 +15,7 @@ import FarmPointsModal from '../components/FarmPointsModal.vue'
 import NotFound from './NotFound.vue'
 import Section from '../components/Section.vue'
 import MarketUpdates from '../components/MarketUpdates.vue'
+import { narrow } from '../narrow.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -64,6 +65,7 @@ function openDd() {
             </div>
             <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'market' })">Check your points →</button>
           </div>
+          <div id="side-mobile" /><!-- phones: the borrow panel moves here, above the numbers -->
           <div class="n-stats stat-2 head-stats">
             <div class="n-stat"><div class="k">Collateral deposited</div><div class="v"><span v-if="state.loaded">{{ usd(sum(m.collateral, 'supplyUsd')) }}</span><span v-else class="n-skel" /></div></div>
             <div class="n-stat"><div class="k">Global borrowed</div><div class="v"><span v-if="state.loaded">{{ usd(sum(m.loans, 'borrowUsd')) }}</span><span v-else class="n-skel" /></div></div>
@@ -160,6 +162,7 @@ function openDd() {
       </div>
 
       <aside class="side">
+        <Teleport defer to="#side-mobile" :disabled="!narrow">
         <RouterLink v-if="mode === 'withdraw'" :to="{ name: 'market-detail', params: { id: m.id } }" class="side-switch">← Back to borrowing</RouterLink>
         <p v-if="geoBlocked" class="geo-note">This market is not available in your country (United States, Canada and sanctioned countries). You can still repay a loan and withdraw collateral.</p>
         <LendPanel
@@ -173,6 +176,7 @@ function openDd() {
           v-if="mode !== 'withdraw'" :key="'b' + route.fullPath + geoBlocked" :market="m" :collateral-tokens="collateral" :loan-tokens="loans"
           :initial-tab="route.query.tab" :initial-asset="route.query.asset" :repay-only="geoBlocked"
         />
+        </Teleport>
       </aside>
     </div>
     <FarmPointsModal v-if="pointsOpen" @close="pointsOpen = false" />
@@ -227,6 +231,8 @@ function openDd() {
   .farm-cta { flex-direction: column; align-items: stretch; }
   .n-detail-grid { grid-template-columns: 1fr; gap: 30px; }
   .side { position: static; }
+  #side-mobile { margin-bottom: 22px; }
+  #side-mobile:empty { display: none; }
   .addr-row { padding: 14px 18px; gap: 12px; }
   .addr-k { white-space: normal; }
   .addr-note { display: block; margin: 2px 0 0; }
