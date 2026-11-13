@@ -45,6 +45,8 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 8px; padding: 6px; font-size: 13px; }
 .n-menu a, .n-menu button { display: block; width: 100%; text-align: left; padding: 9px 12px; border-radius: 6px; color: var(--n-text-2); }
 .n-menu a:hover, .n-menu button:hover { background: var(--n-bg-3); color: #fff; }
+/* Phones only (see the 860px block): a round button at the bottom right opens the sections menu. */
+.n-fab, .n-fab-menu, .n-fab-shade { display: none; }
 .n-footer { border-top: 1px solid var(--n-line); padding: 22px 48px; display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; color: var(--n-text-4); font-size: 12px; }
 .n-footer nav { display: flex; gap: 18px; }
 .n-footer a { color: var(--n-text-3); }
@@ -167,6 +169,16 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
   .stat-4 { grid-template-columns: repeat(2, 1fr); }
 }
 @media (max-width: 860px) {
+  .n-nav { row-gap: 0; }
+  .n-tabs { display: none; }
+  .n-fab { display: grid; place-items: center; position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 80; width: 54px; height: 54px; border-radius: 50%; background: var(--n-grad); color: #fff; box-shadow: 0 10px 30px -6px #000c; }
+  .n-fab svg { width: 24px; height: 24px; }
+  .n-fab-shade { display: block; position: fixed; inset: 0; z-index: 78; background: #0009; }
+  .n-fab-menu { display: grid; gap: 2px; position: fixed; right: 16px; bottom: calc(82px + env(safe-area-inset-bottom)); z-index: 79; min-width: 210px; padding: 6px; border: 1px solid var(--n-line-2); border-radius: 16px; background: var(--n-bg-2); box-shadow: 0 20px 60px -10px #000c; }
+  .n-fab-menu a { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 10px; font-size: 15px; font-weight: 500; color: var(--n-text-2); }
+  .n-fab-menu a.on { color: #fff; background: var(--n-bg-3); }
+  .n-fab-menu img { width: 18px; height: 18px; }
+  .n-footer { padding-bottom: calc(88px + env(safe-area-inset-bottom)); } /* keep the footer links clear of the button */
   .n-h1 { font-size: 32px; }
   .n-thead { display: none; }
   .n-tr { display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 16px 18px; }
