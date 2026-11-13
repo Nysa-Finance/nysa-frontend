@@ -12,6 +12,8 @@ const positions = ref(undefined) // undefined = loading, null = unavailable
 const holders = ref(undefined) // { [vaultId]: [{ owner, wallet, staked }] }; undefined = loading, null = unavailable
 const feeReceivers = ref(undefined) // undefined = loading, null = unavailable
 const feeCopyStatus = ref('')
+const copied = ref(null) // the address whose button shows ✓ Copied
+let copiedTimer
 const pointsOpen = ref(false)
 const nowSec = ref(Date.now() / 1000)
 
@@ -50,7 +52,10 @@ async function copyFeeReceiver(label, value) {
   }
   try {
     await globalThis.navigator.clipboard.writeText(value)
-    feeCopyStatus.value = `${label} address copied.`
+    feeCopyStatus.value = ''
+    copied.value = value
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => { copied.value = null }, 1500)
   } catch {
     feeCopyStatus.value = `Copy unavailable. Select the ${label} address to copy it.`
   }
@@ -147,7 +152,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
             <template v-if="feeReceivers.treasuryAuthority">
               <code class="receiver-address">{{ feeReceivers.treasuryAuthority }}</code>
               <div class="receiver-actions">
-                <button class="n-btn-sm ghost" type="button" @click="copyFeeReceiver('treasury authority', feeReceivers.treasuryAuthority)">Copy address</button>
+                <button class="n-btn-sm ghost" type="button" @click="copyFeeReceiver('treasury authority', feeReceivers.treasuryAuthority)" :class="{ copied: copied === feeReceivers.treasuryAuthority }" aria-live="polite">{{ copied === feeReceivers.treasuryAuthority ? '✓ Copied' : 'Copy address' }}</button>
                 <a v-if="feeReceivers.network === 'mainnet'" class="sub-link" :href="explorer(feeReceivers.treasuryAuthority)" target="_blank" rel="noopener noreferrer">Solscan ↗</a>
                 <span v-else class="receiver-network-note">{{ feeReceivers.network === 'surfpool-local' ? 'Local Surfpool address' : 'Explorer unavailable until network is verified' }}</span>
               </div>
@@ -159,7 +164,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
             <template v-if="account.address">
               <code class="receiver-address">{{ account.address }}</code>
               <div class="receiver-actions">
-                <button class="n-btn-sm ghost" type="button" @click="copyFeeReceiver(`${account.name} fee account`, account.address)">Copy address</button>
+                <button class="n-btn-sm ghost" type="button" @click="copyFeeReceiver(`${account.name} fee account`, account.address)" :class="{ copied: copied === account.address }" aria-live="polite">{{ copied === account.address ? '✓ Copied' : 'Copy address' }}</button>
                 <a v-if="feeReceivers.network === 'mainnet'" class="sub-link" :href="explorer(account.address)" target="_blank" rel="noopener noreferrer">Solscan ↗</a>
                 <span v-else class="receiver-network-note">{{ feeReceivers.network === 'surfpool-local' ? 'Local Surfpool address' : 'Explorer unavailable until network is verified' }}</span>
               </div>
@@ -300,6 +305,8 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
 .receiver-mint { margin-top: 12px; overflow-wrap: anywhere; }
 .receiver-mint code { font-family: var(--mono); user-select: all; }
 .receiver-copy-status { margin: 12px 0 0; color: var(--n-text-2); font-size: 12px; }
+.receiver-actions .copied { border-color: #3ddc8459; color: var(--n-green); animation: copied-pop .25s ease-out; }
+@keyframes copied-pop { 50% { transform: scale(1.06); } }
 .n-thead { font-size: 11px; padding: 14px 20px; }
 .n-tr.sm { padding: 15px 20px; font-size: 14px; }
 .or-grid { grid-template-columns: 1.5fr 1fr 1fr .8fr .9fr .8fr; }
