@@ -57,9 +57,6 @@ function openDd() {
             <button class="n-pill" @click="openDd"><span class="n-dot" />Safety Score {{ m.dueDiligence.safetyScore }}/10</button>
           </div>
           <p class="n-sub blurb">{{ m.blurb }}</p>
-          <div v-if="state.swapVisible" class="n-banner swap-cta">
-            Need USDY after borrowing USDC? <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdc', output: 'svm-usdy' } }">Swap USDC to USDY</RouterLink>.
-          </div>
           <div v-if="m.farmPoints" class="farm-cta">
             <div>
               <div class="farm-cta-t">This market is eligible for farming Nysa Points.</div>
@@ -193,8 +190,6 @@ function openDd() {
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
 .farm-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ec008c59; border-radius: 8px; background: #ec008c0f; }
-.swap-cta { margin-bottom: 22px; line-height: 1.6; }
-.swap-cta a { color: var(--n-pink); font-weight: 500; }
 .withdraw-swap-cta { margin-top: 14px; line-height: 1.6; }
 .withdraw-swap-cta a { color: var(--n-pink); font-weight: 500; }
 .farm-cta-t { font-size: 14px; font-weight: 500; }
