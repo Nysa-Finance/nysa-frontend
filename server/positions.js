@@ -112,6 +112,17 @@ export function indexedPositionSummary(obligation) {
   }
 }
 
+// The collateral and debt tokens of a loan in market `m` (config.js): the largest deposit and the largest borrow by
+// value, so liquidating it repays its main debt and seizes its main collateral. { collateral, debt }: token ids or null.
+export function obligationPair(m, obligation) {
+  const tokenOf = new Map(Object.entries(m.reserves).map(([id, reserve]) => [reserve, id]))
+  const largest = (positions, ids) => [...(positions ?? new Map()).entries()]
+    .filter(([reserve, p]) => ids.includes(tokenOf.get(String(reserve))) && Number(p.amount) > 0)
+    .sort(([, a], [, b]) => Number(b.marketValueRefreshed) - Number(a.marketValueRefreshed))
+    .map(([reserve]) => tokenOf.get(String(reserve)))[0] ?? null
+  return { collateral: largest(obligation?.deposits, m.collateral), debt: largest(obligation?.borrows, m.loans) }
+}
+
 /** Shape one already-resolved Multiply PDA as an identified wallet position; it never reads or mutates chain state. */
 export function multiplyPosition({
   wallet,

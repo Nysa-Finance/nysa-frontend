@@ -7,11 +7,12 @@ import { tok } from '../config.js'
 import { amt, usdFull, num, floorTo, short, hfText, hfColor } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
-const props = defineProps({ market: Object, borrower: String })
+// collateral, debt: the token ids of the loan's largest deposit and largest borrow (from /api/analytics).
+const props = defineProps({ market: Object, borrower: String, collateral: String, debt: String })
 const emit = defineEmits(['close', 'done'])
 const { tx, run, reset } = useTx()
 
-const debt = tok(props.market.pairs[0].liability), coll = tok(props.market.pairs[0].collateral)
+const debt = tok(props.debt), coll = tok(props.collateral)
 const info = ref(null), infoError = ref(null)
 const amount = ref('')
 const quote = ref(null), quoting = ref(false), quoteError = ref(null)

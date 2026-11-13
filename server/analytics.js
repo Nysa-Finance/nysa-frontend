@@ -7,7 +7,7 @@ import { RPC_URL, rpc } from './rpc.js'
 import { getLive, getVault, num } from './market.js'
 import { freshIndex } from './updates.js'
 import { vaultShares } from './account.js'
-import { indexedPositionSummary } from './positions.js'
+import { indexedPositionSummary, obligationPair } from './positions.js'
 
 const addrDecoder = getAddressDecoder()
 
@@ -41,8 +41,12 @@ export async function readPositions({ indexReader = freshIndex, markets = LIVE, 
       if (!ob) continue
       const summary = summarize(ob)
       if (!summary) continue
+      const pair = obligationPair(m, ob)
       out.push({
         owner: String(ob.state.owner),
+        market: m.id,
+        collateral: pair.collateral, // token ids; `debt` (below) is the debt's USD value
+        debtToken: pair.debt,
         ...summary,
       })
     }

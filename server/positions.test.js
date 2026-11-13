@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import BN from 'bn.js'
-import { loopPositionIdentity, multiplyPosition } from './positions.js'
+import { loopPositionIdentity, multiplyPosition, obligationPair } from './positions.js'
 
 const wallet = '11111111111111111111111111111111'
 const baseIdentity = {
@@ -108,3 +108,13 @@ assert.throws(() => multiplyPosition({
 }), /owner/i, 'foreign obligation data must not be attributed to the requested wallet')
 
 console.log('identified Multiply positions ok')
+
+// A loan's pair is its largest deposit and its largest borrow, among the market's own collateral and loan reserves.
+const twoCollateral = { reserves: { a: 'RA', b: 'RB', usdc: 'RU' }, collateral: ['a', 'b'], loans: ['usdc'] }
+const pos = (amount, value) => ({ amount, marketValueRefreshed: value })
+assert.deepEqual(obligationPair(twoCollateral, {
+  deposits: new Map([['RA', pos(5, 50)], ['RB', pos(9, 90)], ['OTHER', pos(1, 999)]]),
+  borrows: new Map([['RU', pos(3, 30)]]),
+}), { collateral: 'b', debt: 'usdc' })
+assert.deepEqual(obligationPair(twoCollateral, { deposits: new Map([['RA', pos(0, 0)]]), borrows: new Map() }), { collateral: null, debt: null })
+console.log('obligation pair ok')

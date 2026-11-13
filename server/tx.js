@@ -21,6 +21,7 @@ import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
 import { confirmedTokenDeltas } from './token-deltas.js'
 import { assertRawWithdrawalWithinAllowance, requestedTokenBaseUnits, requestedWithdrawalBaseUnits } from './withdrawal.js'
 import { relaySignedTransaction } from './send-safety.js'
+import { obligationPair } from './positions.js'
 
 const require = createRequire(import.meta.url)
 const klendErrors = require('@kamino-finance/klend-sdk/dist/@codegen/klend/errors/custom.js')
@@ -272,16 +273,20 @@ async function claim(owner, m) {
 }
 
 // ---- liquidation: repay part of an unhealthy loan's debt, receive its collateral plus a bonus ----
-// ponytail: one collateral/debt pair per market (the live one); pick the pair from the request with a second pair.
-const pairOf = (m) => ({ debt: tok(m.pairs[0].liability), coll: tok(m.pairs[0].collateral) })
+// The loan's own pair: its largest debt and largest collateral in this market.
+function pairOf(m, ob) {
+  const { collateral, debt } = obligationPair(m, ob)
+  if (!collateral || !debt) throw new UserError('This wallet has no open loan in this market')
+  return { debt: tok(debt), coll: tok(collateral) }
+}
 
 // How much of a loan can be liquidated now, following Kamino's rules (liquidation_operations.rs): up to the market's
 // close factor of the debt (all of it past the insolvency-risk LTV), capped per transaction; a loan worth less than
 // the full-liquidation threshold must be repaid in full.
 export async function liquidationInfo(m, borrower) {
   const { market } = getLive(m)
-  const { debt, coll } = pairOf(m)
   const ob = await market.getObligationByWallet(address(borrower), obligationType())
+  const { debt, coll } = pairOf(m, ob)
   return liquidationLimits(market, ob, reserveOf(market, debt), debt, coll)
 }
 function liquidationLimits(market, ob, repay, debt, coll) {
@@ -296,7 +301,7 @@ function liquidationLimits(market, ob, repay, debt, coll) {
   return {
     liquidatable: ltv >= liqLtv && liqLtv > 0,
     hf: ltv > 0 ? liqLtv / ltv : null,
-    debt: borrowed, debtToken: debt.name, collToken: coll.name,
+    debt: borrowed, debtToken: debt.name, collToken: coll.name, debtId: debt.token_id, collId: coll.token_id,
     maxRepay: fullOnly ? borrowed : borrowed * (debtUsd > 0 ? maxUsd / debtUsd : 0),
     fullOnly,
   }
@@ -307,9 +312,9 @@ function liquidationLimits(market, ob, repay, debt, coll) {
 // preview: only the quote, no transaction.
 async function liquidate(liquidator, m, borrower, amount, preview) {
   const { market, now } = getLive(m)
-  const { debt, coll } = pairOf(m)
-  const repay = reserveOf(market, debt), withdraw = reserveOf(market, coll)
   const ob = await market.getObligationByWallet(address(borrower), obligationType())
+  const { debt, coll } = pairOf(m, ob)
+  const repay = reserveOf(market, debt), withdraw = reserveOf(market, coll)
   if (!ob?.getBorrowByReserve(repay.address)?.amount.gt(0)) throw new UserError('This wallet has no open loan in this market')
   const base = new Decimal(amount).mul(new Decimal(10).pow(debt.decimals)).floor().toFixed()
   const make = async (min) => {
