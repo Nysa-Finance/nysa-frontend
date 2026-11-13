@@ -2,13 +2,13 @@ import Decimal from 'decimal.js'
 
 const U64_MAX = 18_446_744_073_709_551_615n
 
-export async function readFreshWithdrawalAllowance({ wallet, refreshMarket, getAccount, tokenId = 'svm-usdy' } = {}) {
+export async function readFreshWithdrawalAllowance({ wallet, refreshMarket, getAccount, marketId = 'sol-usdy-usdc', tokenId = 'svm-usdy' } = {}) {
   if (typeof wallet !== 'string' || !wallet || typeof refreshMarket !== 'function' || typeof getAccount !== 'function') {
     throw new TypeError('Fresh withdrawal allowance dependencies are required.')
   }
   const snapshot = await refreshMarket()
   const account = await getAccount(wallet, true)
-  const maxWithdrawBaseUnits = account?.positionsBaseUnits?.[tokenId]?.maxWithdraw
+  const maxWithdrawBaseUnits = account?.positionsBaseUnits?.[marketId]?.[tokenId]?.maxWithdraw
   if (typeof maxWithdrawBaseUnits !== 'string' || !/^\d+$/.test(maxWithdrawBaseUnits)) {
     throw new Error('Fresh withdrawal allowance is unavailable.')
   }

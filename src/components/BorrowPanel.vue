@@ -16,8 +16,8 @@ const repayAmt = ref('')
 
 const loan = computed(() => props.loanTokens.find((t) => t.token_id === loanId.value) ?? props.loanTokens[0])
 const coll = computed(() => props.collateralTokens.find((t) => t.token_id === collId.value) ?? props.collateralTokens[0])
-const loanRow = computed(() => rowOf(loan.value.token_id))
-const collRow = computed(() => rowOf(coll.value.token_id))
+const loanRow = computed(() => rowOf(props.market, loan.value.token_id))
+const collRow = computed(() => rowOf(props.market, coll.value.token_id))
 const on = computed(() => !!state.address)
 const loanPrice = computed(() => priceOf(loan.value.token_id))
 const liquidity = computed(() => loanRow.value?.reserve.availableLiquidity ?? 0)
@@ -25,14 +25,14 @@ const debt = computed(() => loanRow.value?.borrowed ?? 0)
 const debtUsd = computed(() => debt.value * loanPrice.value)
 const pairLtv = (cid) => {
   const pair = props.market.pairs.find((p) => p.collateral === cid && p.liability === loan.value.token_id)
-  return pair ? riskOf(pair).maxLtv : 0
+  return pair ? riskOf(props.market, pair).maxLtv : 0
 }
 
 // Existing collateral + whatever the user is about to deposit.
 const collateral = computed(() =>
   props.collateralTokens
     .map((t) => {
-      const units = (rowOf(t.token_id)?.supplied ?? 0) + (t.token_id === coll.value.token_id ? num(deposit.value) : 0)
+      const units = (rowOf(props.market, t.token_id)?.supplied ?? 0) + (t.token_id === coll.value.token_id ? num(deposit.value) : 0)
       return { token: t, usd: units * priceOf(t.token_id), ltv: pairLtv(t.token_id) }
     })
     .filter((c) => c.usd > 0),
@@ -90,7 +90,7 @@ const canCloseAll = computed(() => repayWallet.value >= ceilTo(debt.value, loan.
 const shortfall = computed(() => Math.max(ceilTo(debt.value, loan.value.decimals) - repayWallet.value, 0))
 const atMaxPartial = computed(() => !canCloseAll.value && debt.value > 0 && num(repayAmt.value) > 0 && num(repayAmt.value) === plan.value.maxPartial)
 // Collateral to preselect when jumping to Withdraw: the first one actually deposited, else the first listed.
-const withdrawAsset = computed(() => (props.collateralTokens.find((t) => (rowOf(t.token_id)?.supplied ?? 0) > 0) ?? props.collateralTokens[0])?.token_id)
+const withdrawAsset = computed(() => (props.collateralTokens.find((t) => (rowOf(props.market, t.token_id)?.supplied ?? 0) > 0) ?? props.collateralTokens[0])?.token_id)
 // MAX closes the loan when the wallet covers it, otherwise repays as much as Kamino allows.
 const quickRepay = (p) => {
   const d = loan.value.decimals

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { state, loadAnalytics, loadPoints } from '../store.js'
+import { state, reserveOf, loadAnalytics, loadPoints } from '../store.js'
 import { LIVE, TOKENS, VAULTS, tokensOf, explorer } from '../config.js'
 import { usd, pct, amt, compact, short, ago, dur, hfText, hfColor } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -72,7 +72,7 @@ const feeReceiverAccounts = computed(() => (feeReceivers.value?.accounts ?? []).
 })))
 
 // Reserve data is live from the backend's market stream (store.js); only positions are fetched here.
-const reserves = computed(() => tokensOf(m).filter((t) => state.reserves[t.token_id]).map((t) => ({ token: t, ...state.reserves[t.token_id] })))
+const reserves = computed(() => tokensOf(m).filter((t) => reserveOf(m, t.token_id)).map((t) => ({ token: t, ...reserveOf(m, t.token_id) })))
 const collateral = computed(() => reserves.value.filter((r) => m.collateral.includes(r.token.token_id)))
 const borrowable = computed(() => reserves.value.filter((r) => m.loans.includes(r.token.token_id)))
 // TVL: everything supplied in the market (vault deposits it has invested included) + what vaults hold uninvested.
@@ -185,7 +185,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
         <div v-for="r in reserves" :key="r.token.token_id" class="n-tr sm or-grid">
           <div class="n-cell n-asset" data-label="Feed">
             <TokenIcon :token="r.token" size="sm" />
-            <div><div>{{ r.token.name }}</div><a class="sub-link" :href="explorer(r.token.priceFeed)" target="_blank" rel="noopener noreferrer">{{ r.token.feedNote }} ↗&#xFE0E;</a></div>
+            <div><div>{{ r.token.name }}</div><a class="sub-link" :href="explorer(r.priceFeed)" target="_blank" rel="noopener noreferrer">{{ r.feedNote }} ↗&#xFE0E;</a></div>
           </div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-muted" data-label="Last update">{{ ago(r.oracleTs, nowSec * 1000) }}</div>

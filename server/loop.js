@@ -1321,7 +1321,7 @@ export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage
   const fundingBaseUnits = parseBaseUnits(String(fundingAmount), collateral.decimals).toString()
   const feeAccount = configuredFeeAccountForMint(collateral.mint)
   const strategyView = strategy ?? { enabled: false, unavailableReasons: [], carry: { estimatedCarryPct: null } }
-  const reserves = snapshot?.reserves ?? {}
+  const reserves = snapshot?.reserves?.['sol-usdy-usdc'] ?? {}
   const snapshotFundingPriceUsd = Number(reserves[collateral.token_id]?.price)
   const fundingPriceUsd = Number.isFinite(snapshotFundingPriceUsd) && snapshotFundingPriceUsd > 0
     ? snapshotFundingPriceUsd : collateral.price

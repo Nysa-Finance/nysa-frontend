@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict'
-import { TOKENS } from '../src/config.js'
+import { LIVE, TOKENS } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy } from './strategy.js'
 
 const now = Date.parse('2026-11-05T12:00:00.000Z')
 const market = {
-  id: 'sol-usdy-usdc', visible: true, kaminoMarket: 'market-address',
+  id: 'sol-usdy-usdc', visible: true, kaminoMarket: 'market-address', reserves: LIVE[0].reserves,
   pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc' }],
 }
 const vaults = {
-  rwa: { allocations: [{ market: 'market-address', reserve: TOKENS['svm-usdc'].reserve, collateral: ['svm-usdy'], invested: 100 }] },
+  rwa: { allocations: [{ market: 'market-address', reserve: LIVE[0].reserves['svm-usdc'], collateral: ['svm-usdy'], invested: 100 }] },
 }
 const reserves = {
   'svm-usdy': { price: 1.1, supplyAPR: 4.5, oracleTs: now / 1000, maxAge: 60 },
@@ -75,7 +75,7 @@ assert.deepEqual(negativeCarryStillBlockedByAllocation.unavailableReasons.map((i
 
 const allocationMissing = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [] } } })
 assert.ok(allocationMissing.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))
-const collateralReserveOnly = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [{ ...vaults.rwa.allocations[0], reserve: TOKENS['svm-usdy'].reserve }] } } })
+const collateralReserveOnly = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [{ ...vaults.rwa.allocations[0], reserve: LIVE[0].reserves['svm-usdy'] }] } } })
 assert.ok(collateralReserveOnly.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))
 
 const inactive = evaluateLoopStrategy({ ...ready, market: { ...market, visible: false } })

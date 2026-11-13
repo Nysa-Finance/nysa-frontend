@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { state, rowOf } from '../store.js'
+import { state, reserveOf } from '../store.js'
 import { LIVE, tok } from '../config.js'
 import { usd, pct } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
@@ -9,8 +9,8 @@ import TokenIcon from '../components/TokenIcon.vue'
 const router = useRouter()
 // LTV: the highest max LTV among the market's collaterals (what you can borrow per $ of collateral), read on-chain.
 const rows = computed(() => LIVE.flatMap((m) => m.loans.map((id) => ({
-  m, t: tok(id), r: rowOf(id)?.reserve,
-  ltv: Math.max(...m.collateral.map((c) => state.reserves[c]?.maxLtv ?? NaN)),
+  m, t: tok(id), r: reserveOf(m, id),
+  ltv: Math.max(...m.collateral.map((c) => reserveOf(m, c)?.maxLtv ?? NaN)),
 }))))
 const go = (m) => router.push({ name: 'market-detail', params: { id: m.id } })
 </script>

@@ -20,21 +20,22 @@ const multiplyObligation = {
   obligationAddress: 'Multiply1111111111111111111111111111111111',
   state: {
     owner: wallet,
-    deposits: [{ depositReserve: TOKENS['svm-usdy'].reserve, depositedAmount: '150000000' }],
-    borrows: [{ borrowReserve: TOKENS['svm-usdc'].reserve, borrowedAmountSf: '50000000000000000000000000' }],
+    deposits: [{ depositReserve: LIVE[0].reserves['svm-usdy'], depositedAmount: '150000000' }],
+    borrows: [{ borrowReserve: LIVE[0].reserves['svm-usdc'], borrowedAmountSf: '50000000000000000000000000' }],
   },
   refreshedStats: { userTotalBorrow: '100', borrowLiquidationLimit: '150' },
   getDepositByReserve: () => ({ amount: '150000000' }),
   getBorrowByReserve: () => ({ amount: '50000000' }),
-  getDeposits: () => [{ reserveAddress: TOKENS['svm-usdy'].reserve, amount: '150000000' }],
-  getBorrows: () => [{ reserveAddress: TOKENS['svm-usdc'].reserve, amount: '50000000' }],
+  getDeposits: () => [{ reserveAddress: LIVE[0].reserves['svm-usdy'], amount: '150000000' }],
+  getBorrows: () => [{ reserveAddress: LIVE[0].reserves['svm-usdc'], amount: '50000000' }],
 }
 const reservesByAddress = new Map([
-  [TOKENS['svm-usdy'].reserve, { address: TOKENS['svm-usdy'].reserve, getLiquidityMint: () => TOKENS['svm-usdy'].mint, getMintFactor: () => '1000000' }],
-  [TOKENS['svm-usdc'].reserve, { address: TOKENS['svm-usdc'].reserve, getLiquidityMint: () => TOKENS['svm-usdc'].mint, getMintFactor: () => '1000000' }],
+  [LIVE[0].reserves['svm-usdy'], { address: LIVE[0].reserves['svm-usdy'], getLiquidityMint: () => TOKENS['svm-usdy'].mint, getMintFactor: () => '1000000' }],
+  [LIVE[0].reserves['svm-usdc'], { address: LIVE[0].reserves['svm-usdc'], getLiquidityMint: () => TOKENS['svm-usdc'].mint, getMintFactor: () => '1000000' }],
 ])
 const market = {
   programId: 'KaminoProgram1111111111111111111111111111',
+  getAddress: () => marketConfig.kaminoMarket,
   getReserveByAddress: (reserve) => reservesByAddress.get(String(reserve)),
   getExistingReserveByAddress: (reserve) => reservesByAddress.get(String(reserve)),
   getObligationByWallet: async (_owner, type) => type.constructor.name === 'VanillaObligation' ? vanillaObligation : multiplyObligation,

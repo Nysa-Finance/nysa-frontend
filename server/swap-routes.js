@@ -44,7 +44,7 @@ export function swapPairAvailability({ market, vaults = {}, snapshotUpdatedAt = 
     const liability = TOKENS[pair.liability]
     const allocated = Object.values(vaults ?? {}).some((vault) => (vault?.allocations ?? []).some((allocation) =>
       allocation.market === market.kaminoMarket
-        && allocation.reserve === liability.reserve
+        && allocation.reserve === market.reserves?.[liability.token_id]
         && (allocation.collateral ?? []).includes(collateral.token_id)
         && Number.isFinite(allocation.invested)
         && allocation.invested > 0))

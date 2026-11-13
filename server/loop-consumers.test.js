@@ -161,7 +161,7 @@ const transferSource = bs58.encode(Buffer.alloc(32, 50))
 const usdcConfig = TOKENS['svm-usdc']
 const usdyConfig = TOKENS['svm-usdy']
 const transactionKeys = [owner, payer, vanillaAddress, multiplyAddress, marketConfig.kaminoMarket, authority,
-  usdcConfig.reserve, usdcConfig.mint, repayVault, usdyConfig.reserve, usdyConfig.mint, usdyConfig.mint,
+  LIVE[0].reserves['svm-usdc'], usdcConfig.mint, repayVault, LIVE[0].reserves['svm-usdy'], usdyConfig.mint, usdyConfig.mint,
   collateralSupply, withdrawVault, liquidator, 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD',
   'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', transferSource]
 const ix = (programIdIndex, accounts, data) => ({ programIdIndex, accounts, data: bs58.encode(data) })

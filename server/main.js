@@ -215,7 +215,7 @@ function loopStrategyForAction(snapshot, leverage = 1.5) {
     market: marketById('sol-usdy-usdc'),
     allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
     vaults: snapshot?.vaults ?? {},
-    reserves: snapshot?.reserves ?? {},
+    reserves: snapshot?.reserves?.['sol-usdy-usdc'] ?? {},
     snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
     providerConfigured: true, // keyless access remains quote-only; route execution is separately denied below.
     productionProviderConfigured: !!process.env.JUPITER_API_KEY || localExecution,
@@ -273,10 +273,10 @@ const swapExecution = createSwapExecutionService({
       feeBalanceDeltaVerified: false,
     })
     // Independent price bound: Jupiter chooses the pool, so the result must agree with the Kamino oracle prices.
-    const reserves = getSnapshot()?.reserves ?? {}
+    const reserves = Object.values(getSnapshot()?.reserves ?? {}) // per market
     const side = (mint) => {
       const token = Object.values(TOKENS).find((t) => t.mint === mint)
-      return { decimals: token.decimals, price: reserves[token.token_id]?.price }
+      return { decimals: token.decimals, price: reserves.find((r) => r[token.token_id])?.[token.token_id].price }
     }
     assertOracleFairOutput({ inputAmountBaseUnits: request.amountBaseUnits, minimumOutputBaseUnits: built.minimumOutputBaseUnits,
       input: side(request.inputMint), output: side(request.outputMint) })
@@ -459,7 +459,7 @@ const routes = [
       market,
       allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
       vaults: snapshot?.vaults ?? {},
-      reserves: snapshot?.reserves ?? {},
+      reserves: snapshot?.reserves?.['sol-usdy-usdc'] ?? {},
       snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
       providerConfigured: true, // Jupiter permits keyless prototype requests, rate-limited to 0.5 RPS.
       productionProviderConfigured: !!process.env.JUPITER_API_KEY || localForkProgramEvidenceReady(),
@@ -502,7 +502,7 @@ const routes = [
       market: marketById('sol-usdy-usdc'),
       allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
       vaults: snapshot?.vaults ?? {},
-      reserves: snapshot?.reserves ?? {},
+      reserves: snapshot?.reserves?.['sol-usdy-usdc'] ?? {},
       snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
       providerConfigured: true, // Keyless requests remain usable for read-only prototype quotes.
       productionProviderConfigured: !!process.env.JUPITER_API_KEY || localForkProgramEvidenceReady(),
