@@ -1,7 +1,7 @@
 // Checks every market entry in config.js, so a mistake in a new market fails here and not in production.
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { LIVE, TOKENS, VAULTS, tokensOf } from './config.js'
+import { LIVE, OTHER_MARKETS, TOKENS, VAULTS, tokensOf } from './config.js'
 
 const unique = (list, what) => assert.equal(new Set(list).size, list.length, `duplicate ${what}`)
 const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
@@ -32,5 +32,10 @@ for (const m of LIVE) {
     assert.ok(m.collateral.includes(p.collateral) && m.loans.includes(p.liability), `${m.id}: pair ${p.collateral}/${p.liability} uses a token outside the market`)
     assert.ok(p.maxLtv < p.liqLtv && p.liqLtv <= 100, `${m.id}: max LTV must be under the liquidation LTV`)
   }
+}
+unique([...LIVE, ...OTHER_MARKETS].map((m) => m.kaminoMarket), 'Kamino market (a market is either ours or other)')
+for (const m of OTHER_MARKETS) {
+  assert.match(m.kaminoMarket, ADDRESS, `${m.name} kaminoMarket`)
+  assert.ok(m.name && m.collateral.length && m.collateral.every((id) => TOKENS[id]), `${m.name} needs a name and collateral listed in TOKENS`)
 }
 console.log('config ok:', LIVE.length, 'market(s),', VAULTS.length, 'vault(s)')

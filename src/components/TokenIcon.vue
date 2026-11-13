@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 defineProps({ token: Object, size: String, stack: Boolean })
-const COLORS = { USDC: '#2775CA', USDT: '#26A17B', USDY: '#4B6BFB', WETH: '#8A92B2', WBTC: '#F09242' }
+const COLORS = { USDC: '#2775CA', USDT: '#26A17B', USDY: '#4B6BFB', WETH: '#8A92B2', WBTC: '#F09242', oTFY: '#FFFFFF' } // behind transparent logos
 const broken = ref(false)
 </script>
 

@@ -21,6 +21,7 @@ export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 // A token, wherever it is used. `price` is only shown until the first market update arrives. `icon`: a file in public/.
 export const TOKENS = {
   'svm-usdy': { token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.png', decimals: 6, price: 1.09, rwa: true, mint: 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6' },
+  'svm-otfy': { token_id: 'svm-otfy', name: 'oTFY', icon: '/tokens/otfy.png', decimals: 9, price: 1.03, rwa: true, mint: 'BwB3tNH92jKw6naNGDYDbDwRo8bvYxZVvZjRZRcoWR2h' },
   'svm-usdc': { token_id: 'svm-usdc', name: 'USDC', icon: '/tokens/usdc.webp', decimals: 6, price: 1, mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
 }
 
@@ -50,6 +51,12 @@ export const LIVE = [
     pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc', maxLtv: 90, liqLtv: 95, maxDiscount: 5, minDiscount: 2, supplyCap: 250_000, borrowCap: 250_000 }],
     dueDiligence,
   },
+]
+
+// Kamino markets a vault may allocate to that have no page here (not curated by Nysa): their name and collateral, shown
+// in the vault's exposure. Which markets a vault actually uses is read on-chain; one missing here shows as its address.
+export const OTHER_MARKETS = [
+  { kaminoMarket: '3hd61ZpG35tBwrmDvdmYVJoazC2mjJxHb6rEYEWs4QhH', name: 'Obligate Market', collateral: ['svm-otfy'] },
 ]
 
 // Kamino Earn vaults curated by Nysa (Earn page). Name, token, allocations and exposure are read on-chain
