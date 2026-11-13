@@ -1,13 +1,13 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state, reserveOf, loadAnalytics, loadPoints } from '../store.js'
-import { LIVE, TOKENS, VAULTS, tokensOf, explorer } from '../config.js'
+import { LIVE, TOKENS, VAULTS, tokensOf, marketById, explorer } from '../config.js'
 import { usd, pct, amt, compact, short, ago, dur, hfText, hfColor } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import Section from '../components/Section.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 
-const m = LIVE[0] // ponytail: single live market; iterate LIVE here when a second one ships
+const multi = LIVE.length > 1 // name each row's market only when there is more than one
 const positions = ref(undefined) // undefined = loading, null = unavailable
 const holders = ref(undefined) // { [vaultId]: [{ owner, wallet, staked }] }; undefined = loading, null = unavailable
 const feeReceivers = ref(undefined) // undefined = loading, null = unavailable
@@ -71,10 +71,11 @@ const feeReceiverAccounts = computed(() => (feeReceivers.value?.accounts ?? []).
   name: TOKENS[account.tokenId]?.name ?? account.tokenId,
 })))
 
-// Reserve data is live from the backend's market stream (store.js); only positions are fetched here.
-const reserves = computed(() => tokensOf(m).filter((t) => reserveOf(m, t.token_id)).map((t) => ({ token: t, ...reserveOf(m, t.token_id) })))
-const collateral = computed(() => reserves.value.filter((r) => m.collateral.includes(r.token.token_id)))
-const borrowable = computed(() => reserves.value.filter((r) => m.loans.includes(r.token.token_id)))
+// Every reserve of every market, live from the backend's market stream (store.js); only positions are fetched here.
+const reserves = computed(() => LIVE.flatMap((m) => tokensOf(m).filter((t) => reserveOf(m, t.token_id))
+  .map((t) => ({ m, key: m.id + t.token_id, token: t, ...reserveOf(m, t.token_id) }))))
+const collateral = computed(() => reserves.value.filter((r) => r.m.collateral.includes(r.token.token_id)))
+const borrowable = computed(() => reserves.value.filter((r) => r.m.loans.includes(r.token.token_id)))
 // TVL: everything supplied in the market (vault deposits it has invested included) + what vaults hold uninvested.
 const vaultCashUsd = computed(() => VAULTS.reduce((s, v) => { const x = state.vaults[v.id]; return s + (x && x.total > 0 ? x.available * (x.totalUsd / x.total) : 0) }, 0))
 const tvl = computed(() => reserves.value.reduce((s, r) => s + r.supplyUsd, 0) + vaultCashUsd.value)
@@ -87,7 +88,7 @@ const maxSupply = computed(() => Math.max(...reserves.value.map((r) => r.supplyU
 // Kamino rejects prices older than the reserve's maxAge; RefreshReserve in every user tx pulls a fresh Scope price.
 const age = (r) => nowSec.value - r.oracleTs
 const fresh = (r) => r.oracleTs > 0 && age(r) <= r.maxAge
-const stale = computed(() => reserves.value.filter((r) => !fresh(r)).map((r) => r.token.name))
+const stale = computed(() => [...new Set(reserves.value.filter((r) => !fresh(r)).map((r) => r.token.name))])
 
 // Each vault and its depositors (shares in the wallet + staked in the vault farm), valued at the live share price.
 const vaults = computed(() => VAULTS.map((v) => {
@@ -182,10 +183,10 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
       <div class="n-table">
         <div class="n-thead or-grid"><div>Feed</div><div>Price</div><div>Last update</div><div>Window</div><div>Expires in</div><div>Status</div></div>
         <div v-if="!state.loaded" class="n-empty">Reading on-chain data…</div>
-        <div v-for="r in reserves" :key="r.token.token_id" class="n-tr sm or-grid">
+        <div v-for="r in reserves" :key="r.key" class="n-tr sm or-grid">
           <div class="n-cell n-asset" data-label="Feed">
             <TokenIcon :token="r.token" size="sm" />
-            <div><div>{{ r.token.name }}</div><a class="sub-link" :href="explorer(r.priceFeed)" target="_blank" rel="noopener noreferrer">{{ r.feedNote }} ↗&#xFE0E;</a></div>
+            <div><div>{{ r.token.name }}<span v-if="multi" class="mkt"> · {{ r.m.name }}</span></div><a class="sub-link" :href="explorer(r.priceFeed)" target="_blank" rel="noopener noreferrer">{{ r.feedNote }} ↗&#xFE0E;</a></div>
           </div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-muted" data-label="Last update">{{ ago(r.oracleTs, nowSec * 1000) }}</div>
@@ -199,8 +200,8 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <Section title="Markets by size">
       <template #meta>by total supplied</template>
       <div class="bars">
-        <div v-for="r in [...reserves].sort((a, b) => b.supplyUsd - a.supplyUsd)" :key="r.token.token_id" class="bar-row">
-          <div class="n-asset"><TokenIcon :token="r.token" size="sm" />{{ r.token.name }}</div>
+        <div v-for="r in [...reserves].sort((a, b) => b.supplyUsd - a.supplyUsd)" :key="r.key" class="bar-row">
+          <div class="n-asset"><TokenIcon :token="r.token" size="sm" />{{ r.token.name }}<span v-if="multi" class="mkt">{{ r.m.name }}</span></div>
           <div class="bar"><span :style="{ width: Math.max((r.supplyUsd / maxSupply) * 100, 1) + '%' }" /></div>
           <div class="n-num">{{ usd(r.supplyUsd) }}</div>
         </div>
@@ -211,8 +212,8 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
       <template #meta>{{ collateral.length }} {{ collateral.length === 1 ? 'reserve' : 'reserves' }} · borrowing disabled</template>
       <div class="n-table">
         <div class="n-thead co-grid"><div>Asset</div><div>Price</div><div>Total deposited</div><div>Max LTV</div><div>Supply cap</div><div>Status</div></div>
-        <div v-for="r in collateral" :key="r.token.token_id" class="n-tr sm co-grid">
-          <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="r.token" size="sm" />{{ r.token.name }}</div>
+        <div v-for="r in collateral" :key="r.key" class="n-tr sm co-grid">
+          <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="r.token" size="sm" /><div>{{ r.token.name }}<div v-if="multi" class="mkt">{{ r.m.name }}</div></div></div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-num" data-label="Total deposited">{{ usd(r.supplyUsd) }}</div>
           <div class="n-cell n-num" data-label="Max LTV">{{ pct(r.maxLtv, 0) }}</div>
@@ -226,8 +227,8 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
       <template #meta>{{ borrowable.length }} {{ borrowable.length === 1 ? 'reserve' : 'reserves' }}</template>
       <div class="n-table">
         <div class="n-thead bo-grid"><div>Asset</div><div>Price</div><div>Supplied</div><div>Borrowed</div><div>Utilization</div><div>Supply APY</div><div>Borrow APY</div></div>
-        <div v-for="r in borrowable" :key="r.token.token_id" class="n-tr sm bo-grid">
-          <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="r.token" size="sm" />{{ r.token.name }}</div>
+        <div v-for="r in borrowable" :key="r.key" class="n-tr sm bo-grid">
+          <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="r.token" size="sm" /><div>{{ r.token.name }}<div v-if="multi" class="mkt">{{ r.m.name }}</div></div></div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-num" data-label="Supplied">{{ usd(r.supplyUsd) }}</div>
           <div class="n-cell n-num" data-label="Borrowed">{{ usd(r.borrowUsd) }}</div>
@@ -262,13 +263,13 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     </Section>
 
     <Section title="Positions">
-      <template #meta>{{ positions ? `${positions.length} open in the market · sorted by risk` : '' }}</template>
+      <template #meta>{{ positions ? `${positions.length} open · sorted by risk` : '' }}</template>
       <div class="n-table">
         <div class="n-thead po-grid"><div>Wallet</div><div>Deposits</div><div>Debt</div><div>LTV</div><div>Liq. LTV</div><div>Health factor</div></div>
         <div v-if="positions === null" class="n-empty">Open positions are temporarily unavailable.</div>
-        <div v-else-if="positions?.length === 0" class="n-empty">No open positions in this market yet.</div>
-        <div v-for="p in positions ?? []" :key="p.owner" class="n-tr sm po-grid">
-          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗&#xFE0E;</a></div>
+        <div v-else-if="positions?.length === 0" class="n-empty">No open positions yet.</div>
+        <div v-for="p in positions ?? []" :key="p.market + p.owner" class="n-tr sm po-grid">
+          <div class="n-cell" data-label="Wallet"><div><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗&#xFE0E;</a><div v-if="multi" class="mkt">{{ marketById(p.market)?.name }}</div></div></div>
           <div class="n-cell n-num" data-label="Deposits">{{ usd(p.deposits) }}</div>
           <div class="n-cell n-num" data-label="Debt">{{ usd(p.debt) }}</div>
           <div class="n-cell n-num" data-label="LTV">{{ pct(p.ltv, 1) }}</div>
@@ -318,6 +319,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
 .hint { margin-top: 12px; color: var(--n-text-4); font-size: 12px; line-height: 1.6; }
 .sub-link { color: var(--n-text-3); font-size: 12px; font-weight: 400; }
 .sub-link:hover { color: var(--n-pink); }
+.mkt { color: var(--n-text-4); font-size: 11px; font-weight: 400; }
 .sub-link.mono { font-family: var(--mono); font-size: 13px; color: var(--n-text-2); }
 .bars { display: flex; flex-direction: column; gap: 14px; }
 .bar-row { display: grid; grid-template-columns: 140px 1fr 90px; gap: 16px; align-items: center; font-size: 14px; }
