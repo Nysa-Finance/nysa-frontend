@@ -5,6 +5,8 @@ export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-
 // WalletConnect project id (Reown dashboard, cloud.reown.com). Public by design, it ships in the page; the project's
 // allowed domains on Reown are what stop others from using it. Empty = WalletConnect is not offered.
 export const WALLETCONNECT_PROJECT_ID = 'fe76c05c2791f7d71839bb257f55afb5'
+// Multiply loop (Loop page, /api/loop-*, loop actions in /api/tx): off for everyone until it is released.
+export const LOOP_ENABLED = false
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 

@@ -1,33 +1,49 @@
 // Positions for the Analytics page: every obligation in each LIVE market (addresses from the market index, read in one
 // batch against the market cache), riskiest first; and every holder of each vault's shares. Cached for a minute.
-import { address, fetchEncodedAccounts, getAddressDecoder } from '@solana/kit'
-import { LIVE, VAULTS } from '../src/config.js'
-import { rpc } from './rpc.js'
+import { address, fetchEncodedAccounts, getAddressDecoder, isAddress } from '@solana/kit'
+import { LIVE, TOKENS, VAULTS } from '../src/config.js'
+import { localForkExecutionEnabled } from './local-fork-execution.js'
+import { RPC_URL, rpc } from './rpc.js'
 import { getLive, getVault, num } from './market.js'
 import { freshIndex } from './updates.js'
 import { vaultShares } from './account.js'
+import { indexedPositionSummary } from './positions.js'
 
 const addrDecoder = getAddressDecoder()
 
-async function readPositions() {
-  const index = await freshIndex()
+const publicAddress = (value) => typeof value === 'string' && isAddress(value) ? value : null
+const isLoopbackRpc = (value) => {
+  if (typeof value !== 'string') return false
+  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname.toLowerCase()) }
+  catch { return false }
+}
+
+// Fee receivers are public configuration; this metadata performs no chain reads and never returns RPC settings.
+export function getFeeReceiverMetadata({ env = process.env, rpcUrl = RPC_URL } = {}) {
+  const local = localForkExecutionEnabled({ env, rpcUrl })
+  return {
+    network: local ? 'surfpool-local' : isLoopbackRpc(rpcUrl) ? 'unknown' : 'mainnet',
+    treasuryAuthority: publicAddress(env.SWAP_FEE_TREASURY_AUTHORITY),
+    accounts: [
+      { tokenId: 'svm-usdc', mint: TOKENS['svm-usdc'].mint, address: publicAddress(env.SWAP_FEE_ACCOUNT_USDC) },
+      { tokenId: 'svm-usdy', mint: TOKENS['svm-usdy'].mint, address: publicAddress(env.SWAP_FEE_ACCOUNT_USDY) },
+    ],
+  }
+}
+
+export async function readPositions({ indexReader = freshIndex, markets = LIVE, marketReader = getLive, summarize = indexedPositionSummary } = {}) {
+  const index = await indexReader()
   const out = []
-  for (const m of LIVE) {
-    const { market, now } = getLive(m)
+  for (const m of markets) {
+    const { market, now } = marketReader(m)
     const addrs = index.obligations[m.kaminoMarket] ?? []
     for (const ob of addrs.length ? await market.getMultipleObligationsByAddress(addrs.map(address), now) : []) {
       if (!ob) continue
-      const s = ob.refreshedStats
-      const debt = num(s.userTotalBorrow)
-      const deposits = num(s.userTotalDeposit)
-      if (deposits <= 0 && debt <= 0) continue
+      const summary = summarize(ob)
+      if (!summary) continue
       out.push({
         owner: String(ob.state.owner),
-        deposits,
-        debt,
-        ltv: debt > 0 ? num(s.loanToValue) * 100 : 0,
-        liqLtv: num(s.liquidationLtv) * 100 || 0,
-        hf: debt > 0 ? num(s.borrowLiquidationLimit) / debt : null, // null = no debt (infinite health)
+        ...summary,
       })
     }
   }

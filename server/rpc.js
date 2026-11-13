@@ -30,10 +30,14 @@ function withRetry(transport) {
 
 // Any request the main RPC fails (HTTP error, network, timeout; JSON-RPC errors are answers, not failures) goes to the
 // fallback; the main one is tried again on the next request, so it takes over as soon as it is back.
-function createRpc() {
+export function createRpc(url) {
+  const targetUrl = url ?? RPC_URL
+  if (!targetUrl) throw new Error('SOLANA_RPC is not configured.')
   // A main RPC that hangs instead of failing would hold every read: give up on it after 20 s.
-  const mainTransport = createDefaultRpcTransport({ url: RPC_URL })
+  const mainTransport = createDefaultRpcTransport({ url: targetUrl })
   const main = withRetry((req) => mainTransport({ ...req, signal: AbortSignal.any([req.signal, AbortSignal.timeout(20_000)].filter(Boolean)) }))
+  // Explicit endpoints are used by the guarded local-fork verifier and must never fall back to Mainnet.
+  if (url != null) return createSolanaRpcFromTransport(main)
   const fallback = withRetry(createDefaultRpcTransport({ url: FALLBACK_RPC_URL }))
   let warned = 0
   return createSolanaRpcFromTransport(async (req) => {

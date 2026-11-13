@@ -8,6 +8,12 @@ services:
       SOLANA_RPC: ${SOLANA_RPC:-}
       VITE_SOLANA_RPC: ${VITE_SOLANA_RPC:-} # old name, still accepted
       SOLANA_RPC_FALLBACK: ${SOLANA_RPC_FALLBACK:-} # empty = public mainnet RPC
+      # Swap (README "Swap fees and loop preview"): off until the key and fee accounts are set.
+      JUPITER_API_KEY: ${JUPITER_API_KEY:-}
+      SWAP_FEE_ACCOUNT_USDC: ${SWAP_FEE_ACCOUNT_USDC:-}
+      SWAP_FEE_ACCOUNT_USDY: ${SWAP_FEE_ACCOUNT_USDY:-}
+      SWAP_FEE_TREASURY_AUTHORITY: ${SWAP_FEE_TREASURY_AUTHORITY:-}
+      SWAP_WALLETS: ${SWAP_WALLETS:-} # private beta: only these wallets can swap
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped

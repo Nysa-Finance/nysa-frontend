@@ -9,7 +9,7 @@ import { address } from '@solana/kit'
 import { LIVE, tokensOf } from '../src/config.js'
 import { rewardApr, short } from '../src/logic.js'
 import { rpc, NONE } from './rpc.js'
-import { createRefresher } from './refresh.js'
+import { createLatestReadPublisher, createRefresher } from './refresh.js'
 import { readVaults } from './vault.js'
 
 const require = createRequire(import.meta.url)
@@ -120,6 +120,13 @@ const listeners = new Set()
 export const getSnapshot = () => snapshot
 export const onSnapshot = (fn) => listeners.add(fn)
 
+function publishRead(r) {
+  live = r.live
+  liveVaults = r.vaults
+  snapshot = r.snapshot
+  for (const fn of listeners) fn(snapshot)
+}
+
 // KaminoMarket + ledger instant + farm states of a market, as of the last refresh.
 export function getLive(m) {
   const l = live.get(m.id)
@@ -134,15 +141,16 @@ export function getVault(id) {
 }
 
 // Concurrent callers share one read (refresh.js). On failure the previous data stays served and the next tick retries.
-const refresher = createRefresher(() => readAll()
-  .then((r) => {
-    live = r.live
-    liveVaults = r.vaults
-    snapshot = r.snapshot
-    for (const fn of listeners) fn(snapshot)
-  })
+const publishLatestRead = createLatestReadPublisher(publishRead)
+const readAndPublish = () => publishLatestRead(readAll)
+const refresher = createRefresher(() => readAndPublish()
   .catch((e) => console.error('[market] refresh failed', e)), { every: REFRESH_MS, soon: SOON_MS, minGap: SOON_GAP_MS })
 
 export const refreshMarket = refresher.run
+/** Force execution-critical reserve state to be read successfully before an allowance-bound withdrawal build. */
+export async function refreshMarketForExecution() {
+  const refreshed = await readAndPublish()
+  return refreshed.snapshot
+}
 // After a transaction built or relayed here confirms (tx.js): refresh shortly, so balances and APYs update for everyone.
 export const refreshSoon = refresher.soon

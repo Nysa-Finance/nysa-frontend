@@ -3,15 +3,22 @@ import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, rowOf, priceOf, loadPoints, myPoints, riskOf, claimRewards, useTx } from '../store.js'
-import { LIVE, VAULTS, tok, tokensOf } from '../config.js'
+import { LIVE, LOOP_ENABLED, VAULTS, tok, tokensOf } from '../config.js'
 import { usd, pct, amt, amtDust, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 import TxProgress from '../components/TxProgress.vue'
+import { loopPortfolioTotals, portfolioHealthFactor } from '../loop-positions.js'
 
 const router = useRouter()
 const view = ref('deposits')
 const on = computed(() => !!state.address)
+const loopPositions = computed(() => state.loopPositions ?? [])
+const loopTotals = computed(() => loopPortfolioTotals(
+  loopPositions.value,
+  Object.fromEntries(Object.keys(state.reserves).map((id) => [id, priceOf(id)])),
+  state.reserves,
+))
 
 // Earn vault deposits: shares valued in the vault's token.
 const vaultDeposits = computed(() =>
@@ -38,23 +45,24 @@ const loans = computed(() =>
     }),
   ).filter((l) => l.units > 0),
 )
-const supplied = computed(() => deposits.value.reduce((s, d) => s + d.usd, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd, 0))
+const supplied = computed(() => deposits.value.reduce((s, d) => s + d.usd, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd, 0) + loopTotals.value.suppliedUsd)
 // USDC lent straight to a market (not through a vault): can be withdrawn, and moved into the vault.
 const directLending = computed(() => deposits.value.filter((d) => d.m.loans.includes(d.t.token_id)))
-const borrowed = computed(() => loans.value.reduce((s, l) => s + l.usd, 0))
+const borrowed = computed(() => loans.value.reduce((s, l) => s + l.usd, 0) + loopTotals.value.borrowedUsd)
 const netApy = computed(() => {
   if (!supplied.value) return null
-  const earn = deposits.value.reduce((s, d) => s + d.usd * d.apr, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd * d.apr, 0) - loans.value.reduce((s, l) => s + l.usd * l.apr, 0)
+  const earn = deposits.value.reduce((s, d) => s + d.usd * d.apr, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd * d.apr, 0) - loans.value.reduce((s, l) => s + l.usd * l.apr, 0) + loopTotals.value.netAprUsd
   return earn / supplied.value
 })
-const hf = computed(() => (loans.value.length ? Math.min(...loans.value.map((l) => l.hf)) : Infinity))
-const hfText = (v) => (on.value ? hfFmt(v) : '—')
-const hfColor = (v) => (on.value ? hfTone(v) : 'var(--n-text-3)')
+const hf = computed(() => portfolioHealthFactor(loans.value.map((loan) => loan.hf), loopTotals.value))
+const hfText = (v) => (on.value ? v === null ? '—' : hfFmt(v) : '—')
+const hfColor = (v) => (on.value && v !== null ? hfTone(v) : 'var(--n-text-3)')
 const pointsOpen = ref(false)
 const points = computed(myPoints)
 onMounted(loadPoints)
 const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params: { id: m.id }, query: { mode, tab, asset } })
 const goVault = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query: { tab } })
+const manageLoop = (position) => router.push({ name: 'loop', query: { position: position.id } })
 // Unclaimed farm rewards from direct market deposits, per market.
 const claimable = computed(() => LIVE.map((m) => {
   const by = {}
@@ -79,6 +87,18 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     <div class="n-stat"><div class="k">Health Factor</div><div class="v" :style="{ color: hfColor(hf) }">{{ hfText(hf) }}</div></div>
   </div>
 
+  <section v-if="on && loopPositions.length" class="n-panel loop-position-panel">
+    <div class="loop-heading"><div><h2>Nysa Multiply positions</h2><p class="n-muted">Loop collateral and debt stay separate from vanilla lending positions.</p></div><span class="n-chip">{{ loopPositions.length }} identified</span></div>
+    <div v-for="position in loopPositions" :key="position.id" class="loop-position-row">
+      <div><div class="loop-market">{{ position.market.name }}</div><div class="n-muted">Multiply · {{ position.obligation.address.slice(0, 6) }}…{{ position.obligation.address.slice(-4) }}</div></div>
+      <div><div class="loop-label">Collateral</div><div class="n-num">{{ amt(Number(position.collateral.amount), 4) }} {{ position.collateral.tokenId === 'svm-usdy' ? 'USDY' : position.collateral.tokenId }}</div><div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div></div>
+      <div><div class="loop-label">Debt</div><div class="n-num">{{ amt(Number(position.liability.amount), 4) }} {{ position.liability.tokenId === 'svm-usdc' ? 'USDC' : position.liability.tokenId }}</div><div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div></div>
+      <div><div class="loop-label">Health factor</div><div class="n-num">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div></div>
+      <div><button v-if="LOOP_ENABLED" class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
+    </div>
+    <p v-if="LOOP_ENABLED" class="loop-unavailable">Atomic full close remains unavailable until the swap route and local fork checks pass.</p>
+  </section>
+
   <div v-if="on" class="n-banner fp-banner">
     <span v-if="points">Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span>
     <span v-else>Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as supplied balance × time, snapshotted every hour.</span>
@@ -93,6 +113,10 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   <div v-if="directLending.length && VAULTS[0]" class="n-banner">
     You have {{ directLending.map((d) => `${amtDust(d.units)} ${d.t.name}`).join(' + ') }} lent directly to a market. Lending now goes through
     <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
+  </div>
+  <div v-if="state.swapVisible && loans.length" class="n-banner swap-portfolio-cta">
+    Want USDY after borrowing USDC? <RouterLink :to="{ name: 'swap', query: { input: 'svm-usdc', output: 'svm-usdy' } }" class="link">Swap USDC to USDY</RouterLink>.
+    Locked collateral is never used for a swap.
   </div>
 
   <div class="n-seg toggle">
@@ -148,4 +172,14 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
 .reward-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-left-color: var(--n-green); }
 .reward-banner b { color: #fff; font-weight: 600; }
 .link { color: var(--n-pink); }
+.swap-portfolio-cta { line-height: 1.6; }
+.loop-position-panel { margin: 22px 0; }
+.loop-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
+.loop-heading h2 { margin: 0 0 6px; font-size: 17px; }
+.loop-heading p { margin: 0; }
+.loop-position-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr .7fr auto; gap: 16px; align-items: center; padding: 14px 0; border-top: 1px solid var(--n-border); }
+.loop-market { font-weight: 600; }
+.loop-label { margin-bottom: 5px; color: var(--n-text-3); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+.loop-unavailable { margin: 8px 0 0; color: var(--n-text-3); font-size: 12px; }
+@media (max-width: 760px) { .loop-position-row { grid-template-columns: 1fr 1fr; } .loop-position-row > :first-child { grid-column: 1 / -1; } }
 </style>

@@ -1,0 +1,150 @@
+{
+  "name": "Synthetic USDY/USDC fee examples",
+  "feeBps": 10,
+  "period": {
+    "label": "30 synthetic days",
+    "periods": 30,
+    "unit": "day"
+  },
+  "tokens": {
+    "USDC": {
+      "decimals": 6,
+      "assumedUsdPrice": "1"
+    },
+    "USDY": {
+      "decimals": 6,
+      "assumedUsdPrice": "1.10"
+    }
+  },
+  "events": [
+    {
+      "id": "one-small-standalone",
+      "source": "standalone",
+      "outcome": "completed",
+      "inputMint": "USDC",
+      "inputAmount": "100",
+      "feeMint": "USDC",
+      "feeBasisMint": "USDC",
+      "feeBasisAmount": "100",
+      "hops": 1,
+      "frequency": {
+        "count": 1,
+        "period": "scenario",
+        "periods": 1
+      }
+    },
+    {
+      "id": "one-large-standalone",
+      "source": "standalone",
+      "outcome": "completed",
+      "inputMint": "USDC",
+      "inputAmount": "10000",
+      "feeMint": "USDC",
+      "feeBasisMint": "USDC",
+      "feeBasisAmount": "10000",
+      "hops": 3,
+      "frequency": {
+        "count": 1,
+        "period": "scenario",
+        "periods": 1
+      }
+    },
+    {
+      "id": "repeated-small-standalone",
+      "source": "standalone",
+      "outcome": "completed",
+      "inputMint": "USDC",
+      "inputAmount": "100",
+      "feeMint": "USDC",
+      "feeBasisMint": "USDC",
+      "feeBasisAmount": "100",
+      "hops": 2,
+      "frequency": {
+        "count": 1000,
+        "period": "scenario",
+        "periods": 1
+      }
+    },
+    {
+      "id": "daily-small-loop",
+      "source": "loop",
+      "outcome": "completed",
+      "inputMint": "USDY",
+      "inputAmount": "100",
+      "feeMint": "USDC",
+      "feeBasisMint": "USDC",
+      "feeBasisAmount": "100",
+      "hops": 4,
+      "frequency": {
+        "count": 10,
+        "period": "day",
+        "periods": 30
+      }
+    },
+    {
+      "id": "fee-rounding-boundary",
+      "source": "standalone",
+      "outcome": "completed",
+      "inputMint": "USDC",
+      "inputAmount": "0.0009",
+      "feeMint": "USDC",
+      "feeBasisMint": "USDC",
+      "feeBasisAmount": "0.0009",
+      "frequency": {
+        "count": 10,
+        "period": "scenario",
+        "periods": 1
+      }
+    },
+    {
+      "id": "failed-example",
+      "source": "loop",
+      "outcome": "failed",
+      "inputMint": "USDC",
+      "inputAmount": "500",
+      "feeMint": "USDC",
+      "feeBasisMint": "USDC",
+      "feeBasisAmount": "500",
+      "frequency": {
+        "count": 2,
+        "period": "scenario",
+        "periods": 1
+      }
+    },
+    {
+      "id": "rejected-example",
+      "source": "standalone",
+      "outcome": "rejected",
+      "inputMint": "USDC",
+      "inputAmount": "1000",
+      "feeMint": "USDC",
+      "feeBasisMint": "USDC",
+      "feeBasisAmount": "1000",
+      "frequency": {
+        "count": 1,
+        "period": "scenario",
+        "periods": 1
+      }
+    }
+  ],
+  "costs": [
+    {
+      "id": "synthetic-provider-cost-per-completed-swap",
+      "basis": "perCompletedSwap",
+      "mint": "USDC",
+      "amount": "0.02"
+    },
+    {
+      "id": "synthetic-attempt-cost",
+      "basis": "perAttempt",
+      "mint": "USDC",
+      "amount": "0.01"
+    },
+    {
+      "id": "synthetic-monthly-operations-cost",
+      "basis": "fixed",
+      "mint": "USDC",
+      "amount": "50"
+    }
+  ]
+}

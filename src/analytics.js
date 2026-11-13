@@ -27,5 +27,5 @@ export const skipNextPageview = () => { skipPageview = true }
 
 export function event(name, props) {
   if (enabled) track(name, { props })
-  else if (import.meta.env.PROD) early.push([name, props])
+  else if (import.meta.env?.PROD) early.push([name, props])
 }
