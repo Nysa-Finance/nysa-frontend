@@ -114,6 +114,7 @@ export const state = reactive({
   swapPending: safe(() => JSON.parse(localStorage.getItem('nysaPendingSwap'))),
   swapOutcome: safe(() => JSON.parse(localStorage.getItem('nysaSwapFlowOutcome'))),
   blockedWallet: null, // address refused by the backend's sanctions screening (shown in a notice, then disconnected)
+  localFork: false, // the backend runs on a local fork (surfpool): wallets only sign, the backend sends (server/rpc.js)
   swapVisible: false, // show the swap entry points: the server executes swaps for this wallet (SWAP_WALLETS beta, README)
 })
 
@@ -193,6 +194,7 @@ function showMarket(s) {
   state.reserves = s.reserves
   state.vaults = s.vaults ?? {}
   state.rewards = s.rewards
+  state.localFork = s.localFork === true
   state.loaded = true
   state.loading = false
   state.error = null
@@ -1288,7 +1290,9 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
         throw pendingActionError('Confirmed account setup changed while the action was being prepared.')
       }
       assertCanStartLendingAction(persistedLendingPending(), params, resumeSignature, id)
-      if (params.loopAction || (params.swapFlow && params.swapFlowStage)) {
+      // Sign here, send through the backend: flows (exact build intent) and, on a local fork, every action, since the
+      // wallet would send it to mainnet instead of the fork.
+      if (params.loopAction || (params.swapFlow && params.swapFlowStage) || state.localFork) {
         const sign = wallet.features['solana:signTransaction']?.signTransaction
         if (typeof sign !== 'function') throw new Error('This wallet cannot safely sign a recoverable Nysa flow transaction.')
         await promoteActionReservationToWalletPrompt(id, {

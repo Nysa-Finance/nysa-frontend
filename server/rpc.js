@@ -3,6 +3,14 @@
 import { createDefaultRpcTransport, createSolanaRpcFromTransport } from '@solana/kit'
 
 export const RPC_URL = process.env.SOLANA_RPC || process.env.VITE_SOLANA_RPC // VITE_ name kept for old .env files
+export const isLoopbackRpc = (value) => {
+  if (typeof value !== 'string') return false
+  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname.toLowerCase()) }
+  catch { return false }
+}
+// A local fork (surfpool on localhost) for testing: the browser then has wallets only sign, and the server sends the
+// transaction to the fork (a wallet would send it to mainnet). Never true in production, whose RPC isn't local.
+export const LOCAL_FORK = isLoopbackRpc(RPC_URL)
 // Used when RPC_URL fails (down, bad key, out of credits): rate-limited, but keeps the site live.
 export const FALLBACK_RPC_URL = process.env.SOLANA_RPC_FALLBACK || 'https://api.mainnet-beta.solana.com'
 

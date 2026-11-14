@@ -8,7 +8,7 @@ import {
 import { address } from '@solana/kit'
 import { LIVE, tokensOf } from '../src/config.js'
 import { rewardApr, short } from '../src/logic.js'
-import { rpc, NONE } from './rpc.js'
+import { rpc, NONE, LOCAL_FORK } from './rpc.js'
 import { createLatestReadPublisher, createRefresher } from './refresh.js'
 import { readVaults } from './vault.js'
 
@@ -116,7 +116,7 @@ async function readAll() {
     live.set(m.id, { market, now, farms: farmStates })
   }
   const vaults = await readVaults(new Map([...live.values()].map((l) => [String(l.market.getAddress()), l.market])), now)
-  return { live, vaults: vaults.live, snapshot: { updatedAt: Date.now(), slot: Number(now.slot), blockTime: Number(now.blockTime), reserves, rewards, vaults: vaults.views } }
+  return { live, vaults: vaults.live, snapshot: { updatedAt: Date.now(), slot: Number(now.slot), blockTime: Number(now.blockTime), localFork: LOCAL_FORK, reserves, rewards, vaults: vaults.views } }
 }
 
 let live = new Map()
