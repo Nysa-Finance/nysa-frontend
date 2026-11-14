@@ -717,7 +717,11 @@ const routes = [
     if (!m || !isAddress(borrower)) return send(res, 400, { error: 'Invalid market or wallet' })
     if (limited(req, 'liquidation', 60)) return send(res, 429, { error: 'Too many requests' })
     if (isSanctioned(borrower)) return send(res, 403, BLOCKED_LOAN)
-    send(res, 200, await liquidationInfo(m, borrower))
+    const info = await liquidationInfo(m, borrower)
+    // The cached list (a minute old at most) still shows this loan as liquidatable, but it no longer is (just
+    // liquidated, prices moved): drop the list so the next read is fresh. Only then, so this can't force rereads.
+    if (!info.liquidatable && (await getPositions().catch(() => [])).some((p) => p.market === m.id && p.owner === borrower && p.hf < 1)) getPositions.clear()
+    send(res, 200, info)
   }],
   ['GET', /^\/api\/tx\/(\w{64,90})$/, async (req, res, [signature]) => {
     if (limited(req, 'status', 120)) return send(res, 429, { error: 'Too many requests' })

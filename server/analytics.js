@@ -67,13 +67,15 @@ async function readHolders(v, index) {
 // Cached for a minute and shared between visitors; a failed read is retried on the next request.
 function cachedFor(ms, read) {
   let cached = null, cachedAt = 0
-  return () => {
+  const get = () => {
     if (!cached || Date.now() - cachedAt > ms) {
       cachedAt = Date.now()
       cached = read().catch((e) => { cached = null; throw e })
     }
     return cached
   }
+  get.clear = () => { cached = null }
+  return get
 }
 export const getPositions = cachedFor(60_000, readPositions)
 export const getVaultHolders = cachedFor(60_000, async () => {

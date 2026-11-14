@@ -23,6 +23,8 @@ const max = computed(() => (info.value ? floorTo(info.value.fullOnly ? info.valu
 async function loadInfo() {
   try {
     info.value = await loadLiquidationInfo(props.market, props.borrower)
+    // The list behind was older than this read (it refreshes every minute): have it reload.
+    if (!info.value.liquidatable) return emit('done')
     // Interest keeps growing until the transaction lands; Kamino only takes what is owed, so leave some headroom.
     if (info.value.fullOnly) amount.value = String(floorTo(info.value.debt * 1.001 + 10 ** -debt.decimals, debt.decimals))
   } catch (e) { infoError.value = e.message }
@@ -32,7 +34,6 @@ onMounted(loadInfo)
 const warning = computed(() => {
   if (!on.value) return 'Connect a Solana wallet to continue.'
   if (!info.value) return null
-  if (!info.value.liquidatable) return `This loan is healthy (health factor ${hfText(info.value.hf)}), so it can't be liquidated right now.`
   const a = num(amount.value)
   if (!a) return null
   if (a > balance.value) return `You only hold ${amt(balance.value)} ${debt.name}.`
@@ -67,7 +68,9 @@ const profit = computed(() => (quote.value ? receivedUsd.value - quote.value.rep
 const canSubmit = computed(() => on.value && !!quote.value && !warning.value && !quoting.value && tx.status !== 'running')
 
 async function submit() {
-  if (await run([{ label: `Liquidate ${short(props.borrower, 4)}`, run: () => liquidate(props.market, props.borrower, num(amount.value)) }])) emit('done')
+  if (!await run([{ label: `Liquidate ${short(props.borrower, 4)}`, run: () => liquidate(props.market, props.borrower, num(amount.value)) }])) return
+  await loadInfo() // the loan as it is now (often no longer liquidatable), which also refreshes the server's list
+  emit('done')
 }
 </script>
 
@@ -88,10 +91,15 @@ async function submit() {
         <div class="n-kv"><span class="k">Borrower</span><span class="v mono">{{ short(borrower, 6) }}</span></div>
         <div class="n-kv"><span class="k">Debt</span><span class="v">{{ info ? `${amt(info.debt, 2)} ${debt.name}` : '—' }}</span></div>
         <div class="n-kv"><span class="k">Health factor</span><span class="v" :style="info && { color: hfColor(info.hf) }">{{ info ? hfText(info.hf) : '—' }}</span></div>
-        <div class="n-kv"><span class="k">Repayable now</span><span class="v">{{ info ? `${amt(info.fullOnly ? info.debt : info.maxRepay, 2)} ${debt.name}` : '—' }}</span></div>
+        <div class="n-kv"><span class="k">Repayable now</span><span class="v">{{ info?.liquidatable ? `${amt(info.fullOnly ? info.debt : info.maxRepay, 2)} ${debt.name}` : '—' }}</span></div>
       </div>
       <p v-if="infoError" class="n-warn">{{ infoError }}</p>
 
+      <template v-if="info && !info.liquidatable">
+        <p class="n-note">This loan can't be liquidated anymore: its health factor is {{ hfText(info.hf) }}, above 1. It was probably just liquidated, or prices moved.</p>
+        <button class="n-btn-block" @click="emit('close')">Close</button>
+      </template>
+      <template v-else>
       <div class="n-label">Repay ({{ debt.name }})</div>
       <input v-model="amount" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00"
         :disabled="!on || !info?.liquidatable || info?.fullOnly" />
@@ -111,6 +119,7 @@ async function submit() {
 
       <p v-if="warning || quoteError" class="n-warn">{{ warning || quoteError }}</p>
       <button class="n-btn-block" :disabled="!canSubmit" @click="submit">Liquidate</button>
+      </template>
       <TxProgress :tx="tx" @dismiss="reset" />
     </div>
   </div>

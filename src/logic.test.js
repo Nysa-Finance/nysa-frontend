@@ -42,6 +42,9 @@ assert.deepEqual(parsePoints(pointsCsv(snap)).rows.map((r) => [r.address, r.poin
 
 assert.equal(hfText(Infinity), '∞')
 assert.equal(hfText(1.234), '1.23')
+assert.equal(hfText(1.15), '1.15')
+assert.equal(hfText(0.9996), '0.999', 'just under 1 never reads as a healthy 1.00')
+assert.equal(hfText(1.0031), '1.003')
 assert.deepEqual([dur(45), dur(180), dur(3600), dur(7200), dur(3 * 86400)], ['45s', '3m', '1h', '2h', '3d'])
 
 // Repay/withdraw dust: debt 0.7831105 USDC (interest in sub-units) → MAX sends 0.783111, and 0.78311 already counts as "all".
