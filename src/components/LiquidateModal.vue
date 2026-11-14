@@ -1,6 +1,5 @@
 <script setup>
-// Liquidate someone else's unhealthy loan: repay part of the debt, receive collateral plus a bonus. The quote is the
-// backend's simulation of the real transaction, so it shows exactly what the program would pay out.
+// The quote is the backend's simulation of the real transaction: exactly what the program would pay out.
 import { ref, computed, watch, onMounted } from 'vue'
 import { state, priceOf, loadLiquidationInfo, previewLiquidation, liquidate, useTx } from '../store.js'
 import { tok } from '../config.js'
@@ -41,7 +40,7 @@ const warning = computed(() => {
   return null
 })
 
-// Quote after typing stops; an older answer arriving late is ignored.
+// an older answer arriving late is ignored
 let timer, seq = 0
 watch([amount, info, on], () => {
   clearTimeout(timer)

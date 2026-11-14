@@ -1,4 +1,4 @@
-/** Add identified Multiply collateral/debt to the existing vanilla and vault totals without token-key collisions. */
+// Multiply positions stay separate from the vanilla and vault totals: no token-key collisions.
 export function loopPortfolioTotals(positions = [], prices = {}, rates = {}) {
   const seen = new Set()
   let suppliedUsd = 0
@@ -38,7 +38,7 @@ export function loopPortfolioTotals(positions = [], prices = {}, rates = {}) {
   }
 }
 
-/** Keep unknown health distinct from an infinite factor, which is reserved for debt-free portfolios. */
+// Unknown health stays distinct from an infinite factor, which means no debt at all.
 export function portfolioHealthFactor(loanHealthFactors = [], loopTotals = {}) {
   if (loopTotals.healthFactorKnown === false) return null
   const factors = loanHealthFactors.filter(Number.isFinite)
@@ -46,7 +46,6 @@ export function portfolioHealthFactor(loanHealthFactors = [], loopTotals = {}) {
   return factors.length ? Math.min(...factors) : Infinity
 }
 
-/** Apply the server's position-independent close blockers to one account-API-verified wallet position. */
 export function selectedLoopCloseReadiness(readiness, position, wallet, loopPositionReadStatus) {
   if (!readiness) return null
   const identityVerified = typeof wallet === 'string' && position?.wallet === wallet
@@ -77,7 +76,7 @@ export function selectedLoopCloseReadiness(readiness, position, wallet, loopPosi
   return { ...readiness, unavailableReasons, executionEnabled: verified && unavailableReasons.length === 0 }
 }
 
-/** A confirmed full close is complete only when the identified obligation is absent or has no debt/collateral. */
+// A full close is complete only when the identified obligation is absent or has no debt or collateral.
 export function loopPositionFullyClosed(positions, positionId, loopPositionReadStatus) {
   if (typeof positionId !== 'string' || !positionId) return false
   if (loopPositionReadStatus?.['sol-usdy-usdc'] !== 'verified') return false

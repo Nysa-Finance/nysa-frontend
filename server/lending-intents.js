@@ -1,6 +1,5 @@
 import { transactionMessageBytesFromBase64 } from './tx-intent.js'
 
-/** Bind ordinary and optional borrower-flow builds to the exact message returned to the wallet. */
 export function createLendingTransactionIntentService({ intentStore, build, relay, onBuild = () => {} } = {}) {
   if (!intentStore || typeof intentStore.issue !== 'function' || typeof intentStore.assertAndConsume !== 'function'
     || typeof build !== 'function' || typeof relay !== 'function' || typeof onBuild !== 'function') {

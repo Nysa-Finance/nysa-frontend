@@ -1,15 +1,12 @@
-// WalletConnect (Reown) for Solana: any wallet app that speaks WalletConnect (Trust Wallet, Exodus, OKX, Bitget, Ledger
-// Live, …) connects from a computer (QR code) or the same phone (the wallet list opens the app). Reown's AppKit modal
-// shows the QR code and the wallet list, as on Kamino; the connection itself is ours (manualWCControl): one
-// UniversalProvider, shaped like a Wallet Standard wallet so the store treats it as any other. Transactions are signed
-// in the wallet app and sent by our backend (/api/tx/send), as for the iOS deeplink wallets. Loaded only when picked.
+// Reown's AppKit modal only shows the pairing (QR code, wallet list); the connection itself is ours (manualWCControl),
+// shaped like a Wallet Standard wallet. Signed in the wallet app, sent by our backend. Loaded only when picked.
 import { getBase58Encoder } from '@solana/kit'
 import { WALLETCONNECT_PROJECT_ID } from './config.js'
 import { withSignature, fromBase64, toBase64 } from './wallets.js'
 
 const WC_NAME = 'WalletConnect'
-const CHAIN = 'solana:mainnet' // Wallet Standard id, as the store uses
-// Solana mainnet in WalletConnect (CAIP-2): the genesis hash, and the truncated id some wallets still use.
+const CHAIN = 'solana:mainnet'
+// CAIP-2: the genesis hash, and the truncated id some wallets still use.
 const SOLANA_IDS = ['solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp', 'solana:4sGjMW1sUnHzSxGspuhpqLDx6wiyjNtZ']
 const METADATA = () => ({ name: 'Nysa', description: 'Earn and borrow against tokenized real-world assets', url: location.origin, icons: [`${location.origin}/favicon.png`] })
 
@@ -23,7 +20,6 @@ const provider = () => (providerP ??= within(import('@walletconnect/universal-pr
   projectId: WALLETCONNECT_PROJECT_ID, metadata: METADATA(), telemetryEnabled: false,
 })), START_TIMEOUT_MS).catch((e) => { providerP = null; throw e }))
 
-// Reown's modal, driven by us: it only displays the pairing link (QR code, wallet list with links to the apps).
 let modalP = null
 const modal = () => (modalP ??= (async () => {
   const p = await provider()
@@ -36,7 +32,6 @@ const modal = () => (modalP ??= (async () => {
   })
 })().catch((e) => { modalP = null; throw e }))
 
-// The session's Solana mainnet accounts ("solana:<chain>:<address>"), as Wallet Standard accounts.
 const accountsOf = (session) => (session?.namespaces?.solana?.accounts ?? [])
   .map((a) => ({ chain: a.slice(0, a.lastIndexOf(':')), address: a.slice(a.lastIndexOf(':') + 1) }))
   .filter((a) => SOLANA_IDS.includes(a.chain))
@@ -44,7 +39,6 @@ const accountsOf = (session) => (session?.namespaces?.solana?.accounts ?? [])
 // The chain id the wallet used for this address, to address our requests the same way.
 const chainOf = (session, address) => (session?.namespaces?.solana?.accounts ?? []).find((a) => a.endsWith(`:${address}`))?.slice(0, -address.length - 1) ?? SOLANA_IDS[0]
 
-// send(signedBase64) -> signature (base58): the store's relay through our backend.
 export function createWalletConnectWallet(send) {
   const listeners = new Set()
   const emit = (accounts) => listeners.forEach((fn) => fn({ accounts }))
@@ -101,7 +95,6 @@ export function createWalletConnectWallet(send) {
       },
       'standard:disconnect': { async disconnect() { const p = await provider(); if (p.session) await p.disconnect() } },
       'standard:events': { on(event, fn) { if (event === 'change') listeners.add(fn); return () => listeners.delete(fn) } },
-      // Signed in the wallet app (solana_signTransaction), sent by our backend; returns the signature like the standard.
       'solana:signAndSendTransaction': {
         async signAndSendTransaction({ account, transaction }) {
           const p = await provider()

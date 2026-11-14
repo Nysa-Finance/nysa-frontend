@@ -1,18 +1,16 @@
-// Transactions this server built or relayed. Wallets reached by deeplink (Phantom/Solflare on iOS) sign but don't
-// send, so /api/tx/send relays their signed transaction; and a confirmed one of ours refreshes the market cache for
-// everyone (GET /api/tx/:sig, which anyone can call with any signature).
+// Deeplink wallets (Phantom/Solflare on iOS) sign but don't send, so /api/tx/send relays for them. GET /api/tx/:sig,
+// which anyone can call with any signature, refreshes the market cache only for our own transactions.
 import {
   address, getTransactionDecoder, getCompiledTransactionMessageDecoder, getPublicKeyFromAddress, verifySignature,
 } from '@solana/kit'
 import { isSanctioned } from './screening.js'
 
-const WINDOW_MS = 10 * 60_000 // a wallet's build stays relayable this long
+const WINDOW_MS = 10 * 60_000
 const CLOCK_SLACK_MS = 60_000 // block time vs our clock
 const MAX_ENTRIES = 10_000
 
-// Programs a relayed transaction may call at the top level: the ones our builders use (tx.js, klend-sdk, farms-sdk),
-// plus Lighthouse, whose assertion instructions wallets add when signing (Phantom's transaction guard).
-// Every reserve token is SPL Token (USDY, USDC); add Token-2022 here with a Token-2022 reserve.
+// Our builders' programs (tx.js, klend-sdk, farms-sdk), plus Lighthouse: wallets add its assertions when signing
+// (Phantom's guard). Every reserve token is SPL Token; add Token-2022 here with a Token-2022 reserve.
 export const RELAY_PROGRAMS = new Set([
   'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD', // Kamino Lend
   'FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr', // Kamino Farms (reward claims)
@@ -24,18 +22,17 @@ export const RELAY_PROGRAMS = new Set([
   'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95', // Lighthouse
 ])
 
-const built = new Map() // wallet -> when it last had a transaction built here
-const relayed = new Map() // signature -> when it was relayed here
-const counted = new Map() // signature -> true: its confirmation was already checked, so it refreshes at most once
+const built = new Map()
+const relayed = new Map()
+const counted = new Map() // its confirmation was already checked, so it refreshes at most once
 
-// Map with insertion-order eviction past MAX_ENTRIES.
 function remember(map, key, value) {
   map.delete(key)
   map.set(key, value)
   if (map.size > MAX_ENTRIES) map.delete(map.keys().next().value)
 }
 
-let lastBuild = -Infinity // when any wallet last had a transaction built here
+let lastBuild = -Infinity
 export function noteBuilt(wallet) {
   lastBuild = Date.now()
   remember(built, wallet, lastBuild)
@@ -44,9 +41,7 @@ export function noteBuilt(wallet) {
 export const noteRelayed = (signature) => remember(relayed, signature, Date.now())
 const builtAt = (wallet) => { const at = built.get(wallet); return at && Date.now() - at <= WINDOW_MS ? at : null }
 
-// Why a signed transaction (base64) can't be relayed for `wallet`, or null when it can: the wallet just had one built
-// here, it is the fee payer and its signature is valid, no signer is on the sanctions list (the fee payer is
-// screened by the route too, a co-signer only here), and every instruction calls an allowed program.
+// The fee payer is screened by the route too; a co-signer only here.
 export async function relayRefusal(tx, wallet, { approvedProgramIds = [], intentStore, intentId, requireIntent = false } = {}) {
   if (!builtAt(wallet)) return 'Unknown transaction, please try again'
   let messageBytes, signatures, message
@@ -75,9 +70,8 @@ export async function relayRefusal(tx, wallet, { approvedProgramIds = [], intent
   return null
 }
 
-// Whether a confirmed signature should refresh the market cache: at most once per signature, and only when it was
-// relayed here or landed after its fee payer had a transaction built here. lookup(signature) -> { feePayer,
-// blockTime (s) } | null, called only when some wallet built recently.
+// Only relayed here, or landed after its fee payer had a transaction built here. lookup is called only when some
+// wallet built recently.
 export async function confirmedHere(signature, lookup) {
   if (counted.has(signature)) return false
   remember(counted, signature, true)

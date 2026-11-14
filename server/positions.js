@@ -8,7 +8,7 @@ const finitePositiveDecimal = (value, label, allowZero = false) => {
   return parsed
 }
 
-/** Stable identity that keeps same-token positions separate across wallets, markets and obligations. */
+// Keeps same-token positions separate across wallets, markets and obligations.
 export function loopPositionIdentity({ wallet, marketId, obligationAddress, collateralReserve, liabilityReserve } = {}) {
   const fields = [wallet, marketId, obligationAddress, collateralReserve, liabilityReserve]
   if (fields.some((value) => typeof value !== 'string' || !value.trim())) throw new TypeError('Loop position identity requires wallet, market, obligation and reserve addresses.')
@@ -76,7 +76,6 @@ function obligationBalances(obligation, collateralReserve, liabilityReserve) {
   return { deposits, borrows, unsupportedReserves }
 }
 
-/** Record every obligation kind through the same deduplicated market index. */
 export function recordIndexedObligation(index, marketAddress, obligationAddress, owner) {
   if (!index || typeof index !== 'object' || typeof marketAddress !== 'string' || !marketAddress
     || typeof obligationAddress !== 'string' || !obligationAddress || typeof owner !== 'string' || !owner) {
@@ -89,7 +88,6 @@ export function recordIndexedObligation(index, marketAddress, obligationAddress,
   index.owners[obligationAddress] = owner
 }
 
-/** Shared analytics and Farm Points view of any indexed Kamino obligation, including Multiply. */
 export function indexedPositionSummary(obligation) {
   const stats = obligation?.refreshedStats
   if (!stats) return null
@@ -112,8 +110,8 @@ export function indexedPositionSummary(obligation) {
   }
 }
 
-// The collateral and debt tokens of a loan in market `m` (config.js): the largest deposit and the largest borrow by
-// value, so liquidating it repays its main debt and seizes its main collateral. { collateral, debt }: token ids or null.
+// The largest deposit and the largest borrow by value, so a liquidation repays the main debt and seizes the main
+// collateral.
 export function obligationPair(m, obligation) {
   const tokenOf = new Map(Object.entries(m.reserves).map(([id, reserve]) => [reserve, id]))
   const largest = (positions, ids) => [...(positions ?? new Map()).entries()]
@@ -123,7 +121,7 @@ export function obligationPair(m, obligation) {
   return { collateral: largest(obligation?.deposits, m.collateral), debt: largest(obligation?.borrows, m.loans) }
 }
 
-/** Shape one already-resolved Multiply PDA as an identified wallet position; it never reads or mutates chain state. */
+// Never reads or mutates chain state.
 export function multiplyPosition({
   wallet,
   marketId,

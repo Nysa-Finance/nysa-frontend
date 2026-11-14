@@ -26,7 +26,7 @@ const WHIRLPOOL_PROGRAM = ROUTE_PROGRAM_IDS_BY_LABEL.Whirlpool[0]
 const SIGNER_ROLES = new Set([AccountRole.READONLY_SIGNER, AccountRole.WRITABLE_SIGNER])
 const ROUTE_INSTRUCTION_MAX = 1
 const MAX_COMPUTE_UNITS = 1_400_000
-// What a provider route may cost the user beyond the swap itself. Tuning knobs: raise them only after seeing real routes.
+// What a provider route may cost the user beyond the swap itself. Raise them only after seeing real routes.
 const MAX_PRIORITY_FEE_LAMPORTS = 1_000_000n // 0.001 SOL; the captured live route pays about 650 lamports
 const MAX_ORACLE_LOSS_BPS = 300 // the minimum output may be worth at most 3% less than the input at oracle prices
 
@@ -149,8 +149,8 @@ function readV2RoutePlan(data, cursor, built, request) {
   const routeSteps = []
   for (let index = 0; index < count; index++) {
     const variant = readRouteByte(data, cursor, 'V2 DEX variant')
-    // The V2 API fixture and this adapter currently admit WhirlpoolSwapV2 only.
-    // This captured WhirlpoolSwapV2 route has no optional remaining-account metadata.
+    // only WhirlpoolSwapV2 is admitted for now
+    // the captured route has no optional remaining-account metadata
     if (variant !== 47 || built.routePlan[index]?.swapInfo?.label !== 'Whirlpool') {
       throw new SwapExecutionError('Jupiter V6 route_v2 contains an unsupported DEX variant.')
     }
@@ -174,7 +174,7 @@ function readV2RoutePlan(data, cursor, built, request) {
   return routeSteps
 }
 
-/** Decode a Jupiter V6 exact-input route_v2 instruction (the only layout Jupiter's V2 Build returns for this pair). */
+// The only layout Jupiter's V2 Build returns for this pair.
 export function decodeJupiterV6RouteInstruction(instruction, request, built) {
   if (String(instruction?.programAddress) !== JUPITER_V6_PROGRAM || !(instruction?.data instanceof Uint8Array)) {
     throw new SwapExecutionError('Swap provider returned an unsupported Jupiter router program or data format.')
@@ -225,11 +225,8 @@ function routeMeta(instruction, index, expectedAddress, expectedRole, label) {
   }
 }
 
-/**
- * Check the route's account layout without reading chain state: every account that decides where the user's tokens
- * and the fee go (signer, user ATAs, mints, fee account, programs, pool) is pinned here. The pool's vaults, tick arrays
- * and oracle are Orca's own on-chain constraints against that pool, and the amounts are proven by the simulation.
- */
+// Every account that decides where the user's tokens and the fee go is pinned here. The pool's vaults, tick arrays
+// and oracle are Orca's own on-chain constraints, and the amounts are proven by the simulation.
 async function validateJupiterV2WhirlpoolRoute(instruction, request, built, deriveAta = ataOf) {
   const decoded = decodeJupiterV6RouteInstruction(instruction, request, built)
   if (decoded.routeSteps.length !== 1
@@ -242,7 +239,7 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, deri
     throw new SwapExecutionError('Jupiter V6 WhirlpoolSwapV2 route_v2 must contain exactly 27 accounts with no trailing metadata.')
   }
   const ata = async (mint) => deriveAta(address(request.wallet), address(mint), TOKEN_PROGRAM_ADDRESS)
-  // Admit only classic SPL Token mints. Token-2022 TLV extensions and transfer hooks need their own verified CPI contract.
+  // Only classic SPL Token mints: Token-2022 extensions and transfer hooks need their own verified CPI contract.
   routeMeta(instruction, 0, request.wallet, AccountRole.READONLY_SIGNER, 'user authority')
   routeMeta(instruction, 1, await ata(request.inputMint), AccountRole.WRITABLE, 'user source token account')
   routeMeta(instruction, 2, await ata(request.outputMint), AccountRole.WRITABLE, 'user destination token account')
@@ -349,7 +346,6 @@ function validateRoutePlan(built) {
   return labels
 }
 
-/** Admit one provider router instruction, exact payer ATAs, bounded compute settings and no extra economics. */
 export async function validateProviderSwapInstructions(request, built, { deriveAta = ataOf } = {}) {
   if (!Array.isArray(built?.instructions) || built.instructions.length === 0 || built.instructions.length > 80) {
     throw new SwapExecutionError('Swap provider returned an invalid instruction set.')
@@ -439,9 +435,8 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
   await validateJupiterV2WhirlpoolRoute(swapInstruction, request, built, deriveAta)
 }
 
-// The provider picks the pool and reports its own output, so bound the result with an independent price: at the Kamino
-// oracle prices of the market snapshot, the minimum the user receives may be worth at most MAX_ORACLE_LOSS_BPS less than
-// what they pay. Floats are fine for this ratio (real amounts are far below 2^53 base units).
+// The provider picks the pool and reports its own output, so the result is bounded with an independent price: the
+// Kamino oracle prices of the market snapshot. Floats are fine for this ratio (amounts are far below 2^53).
 export function assertOracleFairOutput({ inputAmountBaseUnits, minimumOutputBaseUnits, input, output }) {
   const paid = Number(inputAmountBaseUnits) / 10 ** input.decimals * input.price
   const floor = Number(minimumOutputBaseUnits) / 10 ** output.decimals * output.price
@@ -570,7 +565,7 @@ const rawLamports = (value) => {
   return null
 }
 
-/** Cost estimates remain decimal strings so lamport values never pass through floating point. */
+// Decimal strings, so lamport values never pass through floating point.
 export function swapCostDisclosure({ totalNetworkFeeLamports, priorityFeeLamports, accountRentLamports } = {}) {
   const total = rawLamports(totalNetworkFeeLamports)
   const priority = rawLamports(priorityFeeLamports)
@@ -658,7 +653,6 @@ function tokenAccountDetails(account) {
   } catch { return null }
 }
 
-/** Compile the provider's exact instructions with its lookup-table addresses and the user's fee payer. */
 export async function compileSwapTransaction({ request, built, rpcClient = rpc, lookupTableResolver } = {}) {
   if (!rpcClient) throw new SwapExecutionError('Solana RPC is unavailable.')
   const { context, value: blockhash } = await rpcClient.getLatestBlockhash({ commitment: 'confirmed' }).send()
@@ -689,7 +683,6 @@ export async function compileSwapTransaction({ request, built, rpcClient = rpc, 
   }
 }
 
-/** Simulate exact compiled route and measure user's input/output plus the treasury fee-account token delta. */
 export async function simulateSwapTransaction({ request, built, compiled, rpcClient = rpc } = {}) {
   if (!rpcClient) throw new SwapExecutionError('Solana RPC is unavailable.')
   const owner = address(request.wallet)
@@ -754,7 +747,7 @@ export async function simulateSwapTransaction({ request, built, compiled, rpcCli
   }
 }
 
-/** Builds only an exact-intent transaction and refuses before provider work unless every release gate is open. */
+// Refuses before any provider work unless every release gate is open.
 export function createSwapExecutionService({
   readiness,
   buildRoute,

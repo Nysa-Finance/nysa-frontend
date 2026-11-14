@@ -1,6 +1,4 @@
 <script setup>
-// Earn: Nysa's Kamino vaults. Exposure = collateral of the markets a vault is allocated to; Total Deposits = everything
-// in the vault (invested in those markets or waiting in the vault), both read on-chain (server/vault.js).
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, vaultApyNote } from '../store.js'
@@ -47,7 +45,6 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
     </template>
     <div v-else class="n-tr ea-grid"><span v-for="i in 6" :key="i" class="n-skel" /></div>
   </div>
-  <!-- Mobile: one card per vault (name and APY on top, then the same data as the table). -->
   <div class="ea-cards">
     <template v-if="state.loaded">
       <div v-for="x in rows" :key="x.v.id" class="ea-card" role="link" tabindex="0" @click="go(x.v)" @keydown.enter="go(x.v)">
@@ -88,7 +85,6 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
 .ea-grid { grid-template-columns: 1.8fr 1fr 1fr 1.1fr 1fr 1.1fr; }
 .vault-id { display: flex; align-items: center; gap: 12px; }
 .name-col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-/* Mobile cards (the table on wider screens). */
 .ea-cards { display: none; flex-direction: column; gap: 14px; }
 .ea-card { border: 1px solid var(--n-line); border-radius: 16px; background: var(--n-bg-2); padding: 20px 22px 12px; cursor: pointer; transition: border-color .15s; }
 .ea-card:hover, .ea-card:focus-visible { border-color: var(--n-line-2); }

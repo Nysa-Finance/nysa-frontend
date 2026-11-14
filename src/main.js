@@ -4,7 +4,7 @@ import { startAnalytics } from './analytics.js'
 import { applySeo } from './seo.js'
 import App from './App.vue'
 import { LOOP_ENABLED, VAULTS } from './config.js'
-// Fonts served from our own origin (no Google Fonts request): only the weights and styles the UI uses, latin subset.
+// Fonts from our own origin (no Google Fonts request): only the weights the UI uses, latin subset.
 import '@fontsource/poppins/latin-300.css'
 import '@fontsource/poppins/latin-400.css'
 import '@fontsource/poppins/latin-500.css'
@@ -20,7 +20,7 @@ import './style.css'
 
 const router = createRouter({
   history: createWebHistory(),
-  // New page → top; same page with different query (e.g. switching a panel's tab) → keep position.
+  // New page → top; same page with a different query (a panel tab) → keep position.
   scrollBehavior: (to, from) => (to.path === from.path ? false : { top: 0 }),
   routes: [
     { path: '/', redirect: { name: 'earn' } },
@@ -43,7 +43,7 @@ const router = createRouter({
 
 router.afterEach(applySeo)
 
-// Phones with a comma-decimal locale (it, de, fr…) show "," on the decimal keypad: turn it into "." before v-model reads it.
+// Phones with a comma-decimal locale show "," on the decimal keypad: turned into "." before v-model reads it.
 document.addEventListener('input', ({ target: el }) => {
   if (el.inputMode !== 'decimal' || !el.value.includes(',')) return
   const caret = el.selectionStart

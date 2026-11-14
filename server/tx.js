@@ -1,7 +1,5 @@
-// Transaction builder: the browser asks for an action, the server builds it with klend-sdk against the market cache,
-// simulates it, and returns it unsigned. The wallet signs and sends it (signAndSendTransaction); the server never
-// holds keys. First-time setup (Kamino user accounts) or oversized transactions come back in two steps: the client
-// sends the setup transaction, waits for it, then asks again and gets the action itself (`final: true`).
+// The server never holds keys: it builds and simulates, the wallet signs. First-time setup (Kamino user accounts) or an
+// oversized transaction comes back in two steps: the setup first, then, asked again, the action (`final: true`).
 import Decimal from 'decimal.js'
 import { KaminoAction, KaminoVault, U64_MAX, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import {
@@ -32,7 +30,6 @@ const SPLIT_ABOVE = 1100 // leave wallet headroom (Phantom adds a guard instruct
 const safeSlotNumber = (value) => typeof value === 'bigint'
   ? value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null
   : Number.isSafeInteger(value) && value >= 0 ? value : null
-// Setup instructions that can run in their own transaction before the lending one.
 const SEPARABLE = /^(CreateUserAta(?!SOL)|CreateLiquidityUserAta|CreateCollateralUserAta|CreateAdditionalUserTokenAta|CreateAta|createAtasIxs|createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 const BOOTSTRAP = /^(createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 export const KINDS = ['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate', 'vault-deposit', 'vault-withdraw', 'loop-open', 'loop-close', 'loop-setup']
@@ -44,7 +41,7 @@ const BUILDERS = {
 }
 
 // Lookup tables only grow, so a cached copy stays valid for a while.
-const lutCache = new Map() // address -> { at, addresses }
+const lutCache = new Map()
 async function fetchLuts(luts) {
   const out = {}
   const missing = (luts ?? []).filter((l) => { const c = lutCache.get(String(l)); return !c || Date.now() - c.at > 600_000 })
@@ -56,10 +53,8 @@ async function fetchLuts(luts) {
   return out
 }
 
-// ---- compute budget: ours, sized from the simulation, so wallets don't replace it ----
-// A transaction without a priority fee gets the wallet's own budget: some set the compute limit to exactly what their
-// simulation used (e.g. 135,664 for 135,643), and a borrow that needs a little more at execution fails with
-// "exceeded CUs meter". Every transaction we build carries a limit with a margin and a priority fee instead.
+// Without a priority fee, wallets set their own compute limit, some to exactly what their simulation used, and a borrow
+// that needs a little more at execution fails ("exceeded CUs meter"). Ours always has a margin and a priority fee.
 const COMPUTE_BUDGET = 'ComputeBudget111111111111111111111111111111'
 const MAX_CU = 1_400_000 // Solana's per-transaction maximum: the first simulation never runs out
 const cuWithMargin = (used) => Math.min(MAX_CU, Math.ceil(used * 1.3) + 20_000)
@@ -67,8 +62,7 @@ const budgetIx = (data) => ({ programAddress: address(COMPUTE_BUDGET), accounts:
 function cuLimitIx(units) { const d = new Uint8Array(5); d[0] = 2; new DataView(d.buffer).setUint32(1, units, true); return budgetIx(d) }
 function cuPriceIx(microLamports) { const d = new Uint8Array(9); d[0] = 3; new DataView(d.buffer).setBigUint64(1, BigInt(microLamports), true); return budgetIx(d) }
 
-// Priority fee in micro-lamports per compute unit: the 75th percentile of what recent transactions writing our reserves
-// paid, within [PRIORITY_MIN, PRIORITY_MAX]. Cached 30 s. (300k CU at 10,000 = 3,000 lamports, 0.000003 SOL.)
+// 75th percentile of recent fees on our reserves, clamped (300k CU at 10,000 = 0.000003 SOL).
 const PRIORITY_MIN = 10_000, PRIORITY_MAX = 1_000_000
 let fee = { at: 0, value: PRIORITY_MIN }
 async function priorityFee() {
@@ -81,8 +75,7 @@ async function priorityFee() {
   return fee.value
 }
 
-// Any compute-budget instruction in `ixs` (klend-sdk adds one) is replaced by ours: `units` limit + priority fee.
-// The result can be rebuilt with another limit (`withLimit`), which simulated() does once it knows the real usage.
+// klend-sdk adds its own compute-budget instruction: ours replaces it.
 async function compile(owner, ixs, luts, units = MAX_CU) {
   const body = ixs.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET)
   const [{ context, value: blockhash }, price] = await Promise.all([rpc.getLatestBlockhash({ commitment: 'confirmed' }).send(), priorityFee()])
@@ -104,7 +97,6 @@ async function compile(owner, ixs, luts, units = MAX_CU) {
   }
 }
 
-/** Compile a caller-provided instruction group as one bounded v0 transaction with confirmed lookup-table state. */
 export async function compileAtomicTransaction({ wallet, instructions, lookupTables = [] } = {}) {
   if (typeof wallet !== 'string' || !Array.isArray(instructions) || !instructions.length || !Array.isArray(lookupTables)) {
     throw new UserError('Invalid atomic transaction inputs.')
@@ -120,7 +112,6 @@ const tokenAccountRawAmount = (data) => data instanceof Uint8Array && data.lengt
   ? new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(64, true)
   : 0n
 
-/** Simulate one already-compiled atomic instruction group and return exact requested post-state token deltas. */
 export async function simulateAtomicTransaction({ compiled, accounts = [], tokenAccounts = [] } = {}) {
   if (!rpc || typeof compiled?.tx !== 'string' || !Array.isArray(accounts) || !Array.isArray(tokenAccounts)) {
     throw new UserError('Atomic transaction simulation inputs are unavailable.')
@@ -149,11 +140,9 @@ export async function simulateAtomicTransaction({ compiled, accounts = [], token
   return { ok: true, accountData, accountOwners, tokenDeltas }
 }
 
-const LIQ_SLIPPAGE = 0.01 // the built liquidation must pay out at least 99% of the collateral its simulation received
+const LIQ_SLIPPAGE = 0.01 // minimum collateral payout, against the simulation
 
-// Simulate before handing it to the wallet, so a failing transaction surfaces as a readable error instead of a
-// wallet warning (and is never sent).
-// Then the compute limit is set from what the simulation used, with a margin.
+// Simulated first, so a failing transaction shows a readable error instead of a wallet warning, and is never sent.
 async function simulated(compiled) {
   if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
   const { value } = await rpc.simulateTransaction(compiled.tx, { encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true }).send()
@@ -162,11 +151,10 @@ async function simulated(compiled) {
   const { withLimit, ...tuned } = used > 0 ? await compiled.withLimit(cuWithMargin(used)) : compiled
   return tuned
 }
-// The wallet pays network fees and new accounts' rent in SOL, even for a USDC action: without SOL the simulation fails
-// before any program runs (no log to show), or when creating the first token account ("insufficient lamports").
+// Fees and rent are paid in SOL even for a USDC action: without SOL the simulation fails before any program runs
+// (no log to show), or when creating the first token account ("insufficient lamports").
 const NO_SOL = 'This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.'
 const NO_SOL_ERRORS = ['AccountNotFound', 'InsufficientFundsForFee', 'InsufficientFundsForRent']
-// Kamino lending errors users hit, in plain words; any other klend error shows its SDK message.
 const KLEND_ERRORS = {
   6008: 'There isn\'t enough liquidity in this market for that amount right now.',
   6011: 'That\'s more than you can withdraw right now: your loan needs this collateral. Try a smaller amount.',
@@ -188,7 +176,6 @@ function simulationError(logs, err) {
   throw new UserError(`Simulation failed${hint ? ': ' + hint.replace(/^Program log: /, '') : ''}`)
 }
 
-// Token amounts (raw u64) of some token accounts after a simulated transaction; a missing account counts as 0.
 async function simulatedBalances(compiled, accounts) {
   if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
   const { value } = await rpc.simulateTransaction(compiled.tx, {
@@ -199,7 +186,7 @@ async function simulatedBalances(compiled, accounts) {
   return value.accounts.map((a) => (a ? Buffer.from(a.data[0], 'base64').readBigUInt64LE(64) : 0n))
 }
 
-// Errors safe to show the user as-is (anything else becomes a generic message).
+// Errors safe to show the user as-is; anything else becomes a generic message.
 export class UserError extends Error {}
 
 async function lending(kind, owner, m, t, amount, all, amountBaseUnits) {
@@ -250,7 +237,6 @@ async function lending(kind, owner, m, t, amount, all, amountBaseUnits) {
   const bootstrap = axn.setupIxsLabels.some((l) => BOOTSTRAP.test(l))
   if (!bootstrap && whole.size <= SPLIT_ABOVE) return { ...(await simulated(whole)), final: true }
 
-  // First-time setup or too big: the separable setup goes first, on its own; the client then asks again.
   const setup = axn.setupIxs.filter((_, i) => SEPARABLE.test(axn.setupIxsLabels[i] ?? ''))
   if (!setup.length) return { ...(await simulated(whole)), final: true }
   return { ...(await simulated(await compile(owner, [...axn.computeBudgetIxs, ...setup], luts))), final: false }
@@ -272,17 +258,14 @@ async function claim(owner, m) {
   return { ...(await simulated(await compile(owner, ixs, {}))), final: true }
 }
 
-// ---- liquidation: repay part of an unhealthy loan's debt, receive its collateral plus a bonus ----
-// The loan's own pair: its largest debt and largest collateral in this market.
 function pairOf(m, ob) {
   const { collateral, debt } = obligationPair(m, ob)
   if (!collateral || !debt) throw new UserError('This wallet has no open loan in this market')
   return { debt: tok(debt), coll: tok(collateral) }
 }
 
-// How much of a loan can be liquidated now, following Kamino's rules (liquidation_operations.rs): up to the market's
-// close factor of the debt (all of it past the insolvency-risk LTV), capped per transaction; a loan worth less than
-// the full-liquidation threshold must be repaid in full.
+// Kamino's rules (liquidation_operations.rs): up to the close factor of the debt (all of it past the insolvency-risk
+// LTV), capped per transaction; a loan under the full-liquidation threshold must be repaid in full.
 export async function liquidationInfo(m, borrower) {
   const { market } = getLive(m)
   const ob = await market.getObligationByWallet(address(borrower), obligationType())
@@ -307,9 +290,7 @@ function liquidationLimits(market, ob, repay, debt, coll) {
   }
 }
 
-// Builds the liquidation, simulates it to read what the liquidator really pays and receives, then rebuilds it with a
-// minimum collateral payout (simulated amount − 1%) so a last-second price move can't pay out less.
-// preview: only the quote, no transaction.
+// Rebuilt with a minimum collateral payout (simulated amount − 1%), so a last-second price move can't pay out less.
 async function liquidate(liquidator, m, borrower, amount, preview) {
   const { market, now } = getLive(m)
   const ob = await market.getObligationByWallet(address(borrower), obligationType())
@@ -338,15 +319,13 @@ async function liquidate(liquidator, m, borrower, amount, preview) {
   return { ...(await simulated(await make(min))), final: true, quote }
 }
 
-// Validated request -> { tx: base64 unsigned v0 transaction, minContextSlot, final }. The wallet is noted (relay.js), so
-// /api/tx/send only relays for wallets that asked for a transaction.
+// The wallet is noted (relay.js): /api/tx/send only relays for wallets that asked for a transaction.
 export async function buildTx(req) {
   const built = await build(req)
   noteBuilt(req.wallet)
   return built
 }
 
-// ---- Earn vaults (kVaults): deposit the vault's token for shares, withdraw by redeeming shares ----
 const VAULT_SLIPPAGE = 0.005 // a deposit must mint at least 99.5% of the shares the current share value gives
 
 async function vaultAction(kind, owner, v, amount, all) {
@@ -360,12 +339,9 @@ async function vaultAction(kind, owner, v, amount, all) {
     const minShares = vaultClient.estimateSharesFromTokens(state, new Decimal(amount), now, reserves, VAULT_SLIPPAGE * 10_000).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
     const d = await vaultClient.depositIxs(signer, kv, new Decimal(amount), reserves, null, null, undefined, undefined, minShares)
     const deposit = [...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
-    // Then invest what the vault holds into its reserves, so deposits earn right away: Kamino's crank does this for
-    // vaults listed in its UI; until then this is the fallback. `invest` lets the program size each reserve's amount
-    // on-chain, after the deposit (investAllReservesIxs sizes it from the state before, and fails). The SDK only emits
-    // an invest when it sees tokens to move, so it is shown the vault as it is after the deposit: from the state
-    // before, a vault already on target would get none and the deposit would sit idle. Dropped if it doesn't fit or
-    // fails to simulate.
+    // Invest right away so the deposit earns at once (Kamino's crank only does it for vaults in its UI). `invest` sizes
+    // each reserve on-chain after the deposit (investAllReservesIxs sizes from the state before, and fails), and the SDK
+    // is shown the vault after the deposit, or a vault already on target would get no invest. Dropped if it doesn't fit.
     const after = Object.assign(Object.create(Object.getPrototypeOf(state)), state, {
       tokenAvailable: state.tokenAvailable.add(new state.tokenAvailable.constructor(new Decimal(amount).mul(10 ** Number(state.tokenMintDecimals)).floor().toFixed())), // BN, as decoded
     })
@@ -382,8 +358,7 @@ async function vaultAction(kind, owner, v, amount, all) {
     }
     return { ...(await simulated(await compile(owner, deposit, luts))), final: true, invested: false }
   }
-  // Withdraw: the shares worth `amount` (or all of them), capped at what the wallet holds, in its wallet and staked in
-  // the vault farm (deposits made on Kamino's UI); klend-sdk unstakes what the wallet lacks in the same transaction.
+  // Shares staked in the vault farm (deposits made on Kamino's UI) count too: klend-sdk unstakes what the wallet lacks.
   const { wallet, staked } = (await vaultShares(live, [String(owner)], { commitment: 'confirmed' })).get(String(owner))
   const held = new Decimal(wallet).add(staked).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
   if (held.lte(0)) throw new UserError('You have no shares in this vault')
@@ -423,8 +398,8 @@ async function build({ kind, wallet, market: marketId, token: tokenId, amount, a
   return lending(kind, owner, m, t, amount, !!all, amountBaseUnits)
 }
 
-// Wallets reached by deeplink (Phantom/Solflare on iOS) sign but don't send: relay the signed transaction, only when
-// it is that wallet's own, with screened signers and allowed programs (relay.js).
+// Deeplink wallets (Phantom/Solflare on iOS) sign but don't send: relayed only when the transaction is that wallet's
+// own, with screened signers and allowed programs (relay.js).
 export async function sendSigned({ tx, wallet, approvedProgramIds = [], intentStore, intentId, requireIntent = false }) {
   return relaySignedTransaction({
     tx,
@@ -438,7 +413,6 @@ export async function sendSigned({ tx, wallet, approvedProgramIds = [], intentSt
   })
 }
 
-/** Resolve a signature from the recent status cache, then durable transaction history after a cache miss. */
 export async function resolveTransactionStatus(signature, {
   getSignatureStatuses,
   getTransaction,
@@ -472,9 +446,8 @@ export async function resolveTransactionStatus(signature, {
   return { status: 'pending' }
 }
 
-// Confirmation status of a sent transaction. A confirmed one built or relayed here refreshes the market cache for
-// everyone (checked in the background, so the status answer doesn't wait for it). Once a signature leaves the
-// recent cache, the RPC is asked to search its transaction history before an unknown result is returned.
+// A confirmed transaction refreshes everyone's market cache in the background; past the recent status cache, the RPC
+// searches its history before answering unknown.
 export async function txStatus(signature) {
   return resolveTransactionStatus(signature, {
     getSignatureStatuses: (signatures, config) => rpc.getSignatureStatuses(signatures, config).send(),
@@ -483,7 +456,6 @@ export async function txStatus(signature) {
   })
 }
 
-// Fee payer and block time of a landed transaction; null while this RPC node doesn't have it yet.
 async function landed(signature) {
   // Version 1 is Solana's newer transaction format; asking for 0 would make the lookup fail on those.
   const tx = await rpc.getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 }).send()

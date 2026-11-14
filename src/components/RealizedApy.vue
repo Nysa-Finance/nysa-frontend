@@ -1,6 +1,4 @@
 <script setup>
-// Realized APY for one lendable asset: 30D / 7D realized (from the growth of a deposit share's value, recorded
-// daily) + the live APY, and a daily realized-APY chart (last 7 or 30 days) styled like the interest-rate chart.
 import { ref, computed, watch, onUnmounted } from 'vue'
 import { pct, ago, windowApy, dailyApySeries, niceTicks } from '../logic.js'
 
@@ -15,9 +13,8 @@ const days = (d) => `${d < 1 ? d.toFixed(1) : Math.round(d)}d`
 const sub = (w, n) => !w ? 'collecting data' : w.from === props.history?.inception ? `since launch · ${days(w.spanDays)}` : w.full ? `${n}-day window` : `based on ${days(w.spanDays)}`
 const lastTs = computed(() => recorded.value.at(-1)?.ts)
 
-// ---- chart ----
 const RANGES = [7, 30]
-const range = ref(30) // days shown on the chart
+const range = ref(30)
 const daily = computed(() => dailyApySeries(recorded.value))
 const series = computed(() => daily.value.filter((p) => p.ts > daily.value.at(-1).ts - range.value * 86400))
 const COLOR = '#EC008C'
@@ -33,12 +30,11 @@ const t1 = computed(() => series.value.at(-1)?.ts ?? 1)
 const x = (ts) => L.value + (t1.value === t0.value ? 0.5 : (ts - t0.value) / (t1.value - t0.value)) * (W.value - L.value - R)
 const yAxis = computed(() => niceTicks(Math.max(...series.value.map((p) => p.apy), props.currentApy ?? 0, 0.1)))
 const tickLabel = (t) => `${t.toLocaleString('en-US', { maximumFractionDigits: 2 })}%`
-// Left margin sized to the longest axis label (11px text), so "8,000%" isn't cut off.
+// sized to the longest axis label, so "8,000%" isn't cut off
 const L = computed(() => Math.max(48, 14 + 6.5 * Math.max(...yAxis.value.ticks.map((t) => tickLabel(t).length))))
 const y = (v) => T + (1 - v / yAxis.value.top) * (H - T - B)
 const path = computed(() => series.value.map((p, i) => `${i ? 'L' : 'M'}${x(p.ts).toFixed(1)},${y(p.apy).toFixed(1)}`).join(''))
 const date = (ts) => new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-// Date labels at least 64px apart; the latest day is always labelled.
 const xTicks = computed(() => {
   const out = []
   for (const p of [...series.value].reverse()) if (!out.length || x(out.at(-1).ts) - x(p.ts) >= 64) out.push(p)

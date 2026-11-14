@@ -21,13 +21,12 @@ const loopTotals = computed(() => loopPortfolioTotals(
   LOOP_RESERVES.value,
 ))
 
-// Earn vault deposits: shares valued in the vault's token.
 const vaultDeposits = computed(() =>
   VAULTS.map((v) => ({ v, live: state.vaults[v.id], value: state.vaultPositions[v.id]?.value ?? 0 }))
     .filter((d) => d.value > 0)
     .map((d) => ({ ...d, t: tok(d.live?.tokenId ?? 'svm-usdc'), usd: d.value * priceOf(d.live?.tokenId ?? 'svm-usdc'), apr: d.live?.apy ?? 0 })),
 )
-// Deposits held directly in a market: collateral, and loan-asset deposits made before lending moved to the vaults.
+// Loan-token deposits here predate lending through the vaults.
 const deposits = computed(() =>
   LIVE.flatMap((m) => tokensOf(m).map((t) => ({ m, t, units: rowOf(m, t.token_id)?.supplied ?? 0 })))
     .filter((d) => d.units > 0)
@@ -46,10 +45,8 @@ const loans = computed(() =>
     }),
   ).filter((l) => l.units > 0),
 )
-// The pair of the first open loan, for the swap banner: its debt token to its market's collateral.
 const loanPair = computed(() => loans.value[0] && loans.value[0].m.pairs.find((p) => p.liability === loans.value[0].t.token_id))
 const supplied = computed(() => deposits.value.reduce((s, d) => s + d.usd, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd, 0) + loopTotals.value.suppliedUsd)
-// USDC lent straight to a market (not through a vault): can be withdrawn, and moved into the vault.
 const directLending = computed(() => deposits.value.filter((d) => d.m.loans.includes(d.t.token_id)))
 const borrowed = computed(() => loans.value.reduce((s, l) => s + l.usd, 0) + loopTotals.value.borrowedUsd)
 const netApy = computed(() => {
@@ -66,7 +63,6 @@ onMounted(loadPoints)
 const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params: { id: m.id }, query: { mode, tab, asset } })
 const goVault = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query: { tab } })
 const manageLoop = (position) => router.push({ name: 'loop', query: { position: position.id } })
-// Unclaimed farm rewards from direct market deposits, per market.
 const claimable = computed(() => LIVE.map((m) => {
   const by = {}
   for (const p of state.claimable[m.id] ?? []) by[p.symbol] = (by[p.symbol] ?? 0) + p.amount

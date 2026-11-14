@@ -1,6 +1,4 @@
-// A wallet's view of the markets: token balances, Kamino positions and unclaimed farm rewards.
-// Two RPC calls per read (the obligation, then token accounts + farm user states in one getMultipleAccounts), computed
-// against the shared market cache, and cached per wallet for TTL_MS.
+// Two RPC calls per read (the obligation, then token accounts + farm user states in one getMultipleAccounts).
 import { createRequire } from 'node:module'
 import { VanillaObligation, ObligationTypeTag, PROGRAM_ID, getObligationType, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress, some } from '@solana/kit'
@@ -20,7 +18,7 @@ const ATA_PROGRAM = address('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 const enc = getAddressEncoder()
 export const obligationType = () => new VanillaObligation(PROGRAM_ID)
 
-/** Read the ordinary obligation as the account's primary result; Multiply reads are isolated and additive. */
+// Multiply reads are isolated and additive: the ordinary obligation stays the primary result.
 export async function readWalletObligations({ wallet, marketConfig, market, vanillaObligationType = obligationType() } = {}) {
   if (typeof wallet !== 'string' || !wallet || !marketConfig || !market) throw new TypeError('Wallet, market configuration and market are required.')
   const owner = address(wallet)
@@ -69,8 +67,7 @@ export async function readWalletObligations({ wallet, marketConfig, market, vani
   }
   return { obligation: reads[0].value, loopPositions, loopPositionReadStatus }
 }
-// What the obligation can borrow / withdraw of a reserve, in token units, as Kamino computes it at `now`: the panels'
-// limits, and checked before building (tx.js) to say what fits instead of failing the simulation. null if unknown.
+// Checked before building too (tx.js), to say what fits instead of failing the simulation. null if unknown.
 export function maxOf(kind, ob, market, reserve, now) {
   try {
     const f = num(reserve.getMintFactor()) || 1
@@ -83,7 +80,7 @@ export async function ataOf(owner, mint, tokenProgram) {
   return ata
 }
 
-// SPL token account amount (u64 at byte 64; same layout for Token-2022 accounts).
+// u64 at byte 64; same layout for Token-2022 accounts
 const tokenAmount = (acc) => (acc?.exists ? Number(new DataView(acc.data.buffer, acc.data.byteOffset).getBigUint64(64, true)) : 0)
 
 export function maxWithdrawBaseUnits({ maxWithdrawAmountScaled, suppliedAmountScaled, mintFactor, decimals } = {}) {
@@ -112,7 +109,6 @@ const tokenAmountBaseUnits = (acc) => (acc?.exists
   ? String(new DataView(acc.data.buffer, acc.data.byteOffset).getBigUint64(64, true))
   : '0')
 
-// Unclaimed rewards of an obligation in its markets' collateral farms: [{ farm, mint, index, amount }].
 export function pendingRewards(farmStates, userStates) {
   const out = []
   const now = new Decimal(Math.floor(Date.now() / 1000))
@@ -130,7 +126,7 @@ export function pendingRewards(farmStates, userStates) {
 
 async function readAccount(wallet) {
   const owner = address(wallet)
-  // balances: token id -> …; positions: market id -> token id -> … (a token lent in two markets is two positions)
+  // a token lent in two markets is two positions
   const balances = {}, balancesBaseUnits = {}, positions = {}, positionsBaseUnits = {}, claimable = {}, loopPositions = [], loopPositionReadStatus = {}
   let sol = 0
   for (const m of LIVE) {
@@ -141,7 +137,6 @@ async function readAccount(wallet) {
     const { obligation: ob, loopPositions: marketLoopPositions, loopPositionReadStatus: marketLoopPositionReadStatus } = await readWalletObligations({ wallet, marketConfig: m, market })
     loopPositions.push(...marketLoopPositions)
     Object.assign(loopPositionReadStatus, marketLoopPositionReadStatus)
-    // One getMultipleAccounts: the wallet's token account per token, then its farm user state per reward farm.
     const atas = await Promise.all(tokens.map((t) => ataOf(owner, address(t.mint), reserveOf(market, t).getLiquidityTokenProgram())))
     const farmAddrs = ob ? [...farmStates.keys()] : []
     const userPdas = await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress)))
@@ -183,8 +178,7 @@ async function readAccount(wallet) {
   return { balances, balancesBaseUnits, positions, positionsBaseUnits, loopPositions, loopPositionReadStatus, claimable, sol, vaults: await vaultPositions(owner) }
 }
 
-// Each owner's shares in a vault: in the wallet (shares ATA) and staked in the vault farm, where Kamino's UI puts
-// deposits (as klend-sdk counts them: the active stake). -> Map owner -> { wallet, staked } in shares.
+// Kamino's UI stakes vault deposits in the vault farm: they count as klend-sdk counts them (the active stake).
 export async function vaultShares(live, owners, config) {
   const dec = Number(live.state.sharesMintDecimals)
   const atas = await Promise.all(owners.map((o) => ataOf(address(o), live.state.sharesMint, TOKEN_PROGRAM)))
@@ -199,7 +193,6 @@ export async function vaultShares(live, owners, config) {
 // Farm stakes are WAD-scaled lamports (farms-sdk scaleDownWads).
 const stakedShares = (user, dec) => Number(BigInt(user.activeStakeScaled) / 10n ** 18n) / 10 ** dec
 
-// The wallet's shares in each vault (wallet + staked) and what they're worth in the vault's token.
 async function vaultPositions(owner) {
   const vaults = VAULTS.flatMap((v) => { try { return [{ v, live: getVault(v.id) }] } catch { return [] } })
   return Object.fromEntries(await Promise.all(vaults.map(async ({ v, live }) => {
@@ -208,7 +201,7 @@ async function vaultPositions(owner) {
   })))
 }
 
-const cache = new Map() // wallet -> { at, value: Promise }
+const cache = new Map()
 export function getAccount(wallet, fresh = false) {
   const hit = cache.get(wallet)
   if (hit && !fresh && Date.now() - hit.at < TTL_MS) return hit.value

@@ -1,9 +1,3 @@
-// Nysa backend (VPS / Docker, behind Caddy and the Cloudflare Tunnel):
-// - serves the Vite build (dist/) with SPA fallback;
-// - JSON API under /api (market, account, transactions, analytics, points, history, market updates, liquidations, health);
-// - pushes market updates to browsers over Server-Sent Events (/api/events);
-// - runs the snapshot every hour, at a random minute.
-// The browser never calls the Solana RPC: it reads from here and only uses the wallet to sign and send.
 import http from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -72,7 +66,6 @@ const TYPES = {
 }
 const EMPTY_POINTS = 'address,cumulative_points,last_supplied_usd,last_snapshot_ts\n'
 
-// ---- helpers ----
 function send(res, status, body, { type = 'application/json', maxAge = 0 } = {}) {
   res.statusCode = status
   res.setHeader('content-type', type)
@@ -80,8 +73,7 @@ function send(res, status, body, { type = 'application/json', maxAge = 0 } = {})
   res.end(typeof body === 'string' ? body : JSON.stringify(body))
 }
 
-// Per-IP fixed-window limits on the endpoints that cost RPC calls. Only Cloudflare reaches us (tunnel), so its
-// CF-Connecting-IP header is the real client.
+// Only Cloudflare reaches us (tunnel), so CF-Connecting-IP is the real client.
 const clientIp = (req) => req.headers['cf-connecting-ip'] ?? req.socket.remoteAddress
 const hits = new Map()
 function limited(req, name, perMinute) {
@@ -100,10 +92,9 @@ async function jsonBody(req) {
   try { return JSON.parse(raw) } catch { throw new UserError('Invalid JSON') }
 }
 
-// Sanctions screening (OFAC SDN list, server/screening.js): a sanctioned wallet gets 403 everywhere. Until a list is
-// loaded, viewing still works but no transaction is built or relayed (fail closed).
+// Until the sanctions list is loaded, viewing works but no transaction is built or relayed (fail closed).
 const BLOCKED = { error: 'This wallet address is on a sanctions list, so it cannot use the Nysa interface.', blocked: true }
-// A sanctioned borrower's loan isn't liquidated through the interface either (no `blocked`: the liquidator is fine).
+// A sanctioned borrower's loan isn't liquidated through the interface either (the liquidator itself is fine).
 const BLOCKED_LOAN = { error: 'This loan belongs to a wallet on a sanctions list, so the Nysa interface cannot liquidate it.' }
 function blocked(res, wallet, { failClosed }) {
   if (isSanctioned(wallet)) return send(res, 403, BLOCKED), true
@@ -111,21 +102,18 @@ function blocked(res, wallet, { failClosed }) {
   return false
 }
 
-// Geoblocking: markets flagged `geoBlocked` (config.js) can't be entered from these countries (CF-IPCountry: Cloudflare's
-// country for the visitor's IP; T1 = Tor). Supplying, borrowing and liquidating are refused there; repaying and
-// withdrawing stay open, so nobody is locked out of their own funds.
+// CF-IPCountry (T1 = Tor). Repaying and withdrawing stay open, so nobody is locked out of their own funds.
 // ponytail: country by IP only, a VPN gets through; regions (Crimea, Donetsk, Luhansk) need Cloudflare's location headers.
 const GEO_BLOCKED = new Set(['US', 'CA', 'CU', 'IR', 'KP', 'SY', 'RU', 'BY', 'T1'])
 const GEO_KINDS = new Set(['deposit', 'borrow', 'liquidate'])
 const geoBlocked = (req) => GEO_BLOCKED.has(req.headers['cf-ipcountry'])
 const GEO_REFUSED = { error: 'This market is not available in your country (United States, Canada and sanctioned countries). You can still repay and withdraw.', geoBlocked: true }
 
-// ---- Server-Sent Events: the market snapshot on connect and after every refresh ----
-// Streams are capped per client IP too, so one client can't take every slot; a browser turned away polls /api/market.
+// Streams are capped per client IP, so one client can't take every slot; a browser turned away polls /api/market.
 const clients = new Set()
 const MAX_CLIENTS = 5000
 const MAX_STREAMS_PER_IP = 5
-const streams = new Map() // client IP -> open streams
+const streams = new Map()
 const event = (data) => `event: market\ndata: ${JSON.stringify(data)}\n\n`
 function events(req, res) {
   const ip = clientIp(req)
@@ -153,10 +141,7 @@ function events(req, res) {
 onSnapshot((snapshot) => { const msg = event(snapshot); for (const c of clients) c.write(msg) })
 setInterval(() => { for (const c of clients) c.write(': ping\n\n') }, 25_000).unref() // under Cloudflare's 100s idle cut
 
-// ---- routes ----
-// Swap feature flag. Without the Jupiter key and the fee accounts in .env, swap is off. With them and SWAP_WALLETS
-// (comma-separated addresses), only those wallets can quote, build and relay a swap: a private beta on mainnet.
-// Without SWAP_WALLETS it is open to everyone.
+// Swap stays off without the Jupiter key and fee accounts; SWAP_WALLETS limits it to those wallets (mainnet beta).
 const SWAP_WALLETS = new Set((process.env.SWAP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
 const swapOpenTo = (wallet) => SWAP_WALLETS.size === 0 || SWAP_WALLETS.has(wallet)
 const SWAP_NOT_ENABLED = { error: 'Swap is not available for this wallet yet.' }
@@ -169,7 +154,7 @@ function currentSwapReadiness(request = {}) {
     market,
     vaults: snapshot?.vaults ?? {},
     snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
-    // No pair asked: the market's first one, loan token to collateral (buying collateral).
+    // no pair asked: buying the first market's collateral
     inputMint: request.inputMint ?? (pair && TOKENS[pair.liability].mint),
     outputMint: request.outputMint ?? (pair && TOKENS[pair.collateral].mint),
   })
@@ -247,7 +232,7 @@ function currentLoopActionReadiness(body, { previewAcknowledgementValid = false,
   })
 }
 
-const swapIntentStore = createSwapIntentStore({ messageMatcher: messageMatchesWithLighthouse }) // Phantom's guard
+const swapIntentStore = createSwapIntentStore({ messageMatcher: messageMatchesWithLighthouse }) // Phantom adds a Lighthouse guard instruction
 const lendingIntentStore = createLendingTransactionIntentStore({ ttlMs: 10 * 60_000 })
 const lendingTransactions = createLendingTransactionIntentService({
   intentStore: lendingIntentStore,
@@ -274,7 +259,7 @@ const swapExecution = createSwapExecutionService({
       feeBalanceDeltaVerified: false,
     })
     // Independent price bound: Jupiter chooses the pool, so the result must agree with the Kamino oracle prices.
-    const reserves = Object.values(getSnapshot()?.reserves ?? {}) // per market
+    const reserves = Object.values(getSnapshot()?.reserves ?? {})
     const side = (mint) => {
       const token = Object.values(TOKENS).find((t) => t.mint === mint)
       return { decimals: token.decimals, price: reserves.find((r) => r[token.token_id])?.[token.token_id].price }
@@ -505,7 +490,7 @@ const routes = [
       vaults: snapshot?.vaults ?? {},
       reserves: snapshot?.reserves?.['sol-usdy-usdc'] ?? {},
       snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
-      providerConfigured: true, // Keyless requests remain usable for read-only prototype quotes.
+      providerConfigured: true, // keyless requests remain usable for read-only prototype quotes
       productionProviderConfigured: !!process.env.JUPITER_API_KEY || localForkProgramEvidenceReady(),
       treasuryConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
         && !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
@@ -728,7 +713,7 @@ const routes = [
     send(res, 200, await txStatus(signature))
   }],
   ['GET', /^\/api\/analytics$/, async (req, res) => {
-    // Positions remain required by analytics and liquidation consumers; vault holders are optional.
+    // Positions are required by analytics and liquidations; vault holders are optional.
     const [positions, vaults] = await Promise.all([
       getPositions(),
       getVaultHolders().catch((e) => { console.error('[analytics] vault holders', e?.message); return null }),
@@ -748,14 +733,12 @@ const routes = [
   }],
 ]
 
-// Client-side routes of the SPA (keep in sync with src/main.js).
-// '/', '/lend' and '/market/:id' are old links the SPA redirects (to Earn, a vault or a borrow market page).
+// Client-side routes of the SPA (keep in sync with src/main.js). '/', '/lend' and '/market/:id' are old links it redirects.
 const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(LOOP_ENABLED ? ['/loop'] : []), '/analytics', '/liquidations', '/dashboard'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
   || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
   || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
 
-// Public pages for search engines; markets come from config.js, so a new live market is listed automatically.
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -770,8 +753,8 @@ async function serveStatic(pathname, res) {
   try {
     body = await readFile(file)
   } catch {
-    // A missing file (/favicon.ico, /x.png) is a plain 404. Other paths get the SPA, with a real 404 status when they
-    // aren't one of its routes (so search engines don't index "soft 404s"; the SPA shows its Not Found page).
+    // A missing file is a plain 404. Other paths get the SPA, with a real 404 status when they aren't one of its routes,
+    // so search engines don't index "soft 404s".
     if (extname(pathname)) return send(res, 404, 'Not found', { type: 'text/plain' })
     if (!isAppRoute(pathname)) res.statusCode = 404
     served = join(DIST, 'index.html')
@@ -779,8 +762,7 @@ async function serveStatic(pathname, res) {
   }
   const type = TYPES[extname(served)] ?? 'application/octet-stream'
   res.setHeader('content-type', type)
-  // Public images (favicon, app icon, logos) readable from any origin: wallets like Phantom load the app icon for their
-  // dialogs from their own origin, and fall back to a generic icon when the browser blocks the read.
+  // Images readable from any origin: wallets like Phantom load the app icon for their dialogs from their own origin.
   if (type.startsWith('image/')) res.setHeader('access-control-allow-origin', '*')
   // Hashed build assets never change; everything else is revalidated so new deploys show up.
   res.setHeader('cache-control', pathname.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache')
@@ -811,17 +793,14 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-// Deploys swap containers (docker compose up): Caddy holds requests while none answers (lb_try_duration, Caddyfile), so
-// the new one only starts listening once it has the market (first read, then every REFRESH_MS: market.js) and the saved
-// sanctions list (then a fresh download daily: screening.js), or after READY_TIMEOUT_MS if the RPC is slow: nobody gets
-// "still loading" or "screening is starting up".
+// Deploys swap containers and Caddy holds requests meanwhile (lb_try_duration): listen only once the market and the
+// sanctions list are loaded (or after READY_TIMEOUT_MS), so nobody gets "still loading".
 const READY_TIMEOUT_MS = 15_000
 await Promise.race([Promise.all([refreshMarket(), startScreening()]), new Promise((r) => setTimeout(r, READY_TIMEOUT_MS))])
 server.listen(PORT, () => console.log(`nysa listening on :${PORT}`))
 
-// Docker stops the old container with SIGTERM (node is PID 1, which ignores it unless handled: Docker would wait 10 s,
-// then kill it). Stop taking connections, end the market streams (browsers reconnect, through Caddy, to the new one),
-// let requests in flight finish, then exit; forced after 8 s, before Docker's kill.
+// Node as PID 1 ignores SIGTERM unless handled, and Docker would kill it after 10 s: stop taking connections, end the
+// streams (browsers reconnect to the new container), let requests finish, exit; forced after 8 s.
 process.once('SIGTERM', () => {
   console.log('[server] SIGTERM: draining')
   server.close(() => process.exit(0))
@@ -829,8 +808,8 @@ process.once('SIGTERM', () => {
   setTimeout(() => process.exit(0), 8_000).unref()
 })
 
-// Snapshot every hour, at a random minute of the next hour: nobody can time a deposit to be in only when it runs.
-// A missed run (e.g. a restart at that minute) is harmless: the next one accrues the whole gap.
+// A random minute each hour, so nobody can time a deposit to be in only when the snapshot runs. A missed run is
+// harmless: the next one accrues the whole gap.
 const HOUR_MS = 3_600_000
 function scheduleSnapshot() {
   const now = Date.now()

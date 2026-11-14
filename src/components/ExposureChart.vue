@@ -1,6 +1,4 @@
 <script setup>
-// A vault's exposure: a donut of where its deposits are (each allocated market, the liquidity buffer, tokens waiting for
-// the next sync) and a table of those markets with their targets. Before anything is invested it shows the targets.
 import { ref, computed } from 'vue'
 import { tok, explorer } from '../config.js'
 import { pct, usd, short, pieSlices, arcPath } from '../logic.js'
@@ -12,8 +10,8 @@ const IDLE = '#3a3a3a'
 
 const SYNC = '#5f5f5f'
 const invested = computed(() => props.vault.invested > 0)
-// Slices: allocated markets, the liquidity buffer (uninvested by design, up to its target) and any other uninvested
-// tokens, which Kamino's bot invests at its next sync (about every 15 minutes). Targets before any investment.
+// The buffer stays uninvested by design (up to its target); other uninvested tokens wait for Kamino's next sync
+// (about every 15 minutes). Targets before anything is invested.
 const parts = computed(() => {
   const v = props.vault
   const a = v.allocations.map((x, i) => ({
@@ -21,7 +19,7 @@ const parts = computed(() => {
   }))
   if (!invested.value) return [...a, { label: 'Liquidity buffer', color: IDLE, value: v.total > 0 ? (v.bufferTarget / v.total) * 100 : 0 }]
   const buffer = Math.min(v.available, v.bufferTarget)
-  // A slice only when it matters (≥ 0.01%): a few micro-USDC aren't worth a label.
+  // a few micro-USDC aren't worth a label
   return [...a, { label: 'Liquidity buffer', color: IDLE, value: buffer }, { label: 'Awaiting sync', color: SYNC, value: v.available - buffer }]
     .filter((p) => p.value / v.total >= 1e-4 || a.some((x) => x === p))
 })

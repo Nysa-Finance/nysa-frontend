@@ -1,4 +1,4 @@
-/** Cancels obsolete work and prevents its result from updating a newer form state. */
+// A late result must not overwrite a newer form state.
 export function createLatestRequestGate() {
   let generation = 0
   let active = null

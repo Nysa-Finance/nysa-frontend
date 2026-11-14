@@ -1,4 +1,3 @@
-/** Net SPL token amount changes from one confirmed transaction, grouped by owning wallet and mint. */
 export function confirmedTokenDeltas(meta) {
   if (!meta || !Array.isArray(meta.preTokenBalances) || !Array.isArray(meta.postTokenBalances)) return []
   const pre = new Map(meta.preTokenBalances.map((item) => [item.accountIndex, item]))

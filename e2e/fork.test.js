@@ -1,10 +1,5 @@
-// End-to-end test on a local fork of Solana mainnet (Surfpool): the transactions Nysa's backend builds, signed by
-// throwaway wallets and landed against the real Kamino market and vault. Checks each flow's balances and that every
-// transaction carries our compute limit (above what it used) and priority fee.
-//
-// `npm run test:e2e`. Needs surfpool (brew install txtx/taps/surfpool) and internet: the fork fetches mainnet accounts
-// on first use, from the public RPC unless E2E_UPSTREAM_RPC is set. Not part of `npm test` / CI: it depends on live
-// mainnet state and a rate-limited public RPC.
+// Not part of `npm test` / CI: it depends on live mainnet state and a rate-limited public RPC. `npm run test:e2e`
+// needs surfpool and internet (the fork fetches mainnet accounts on first use; E2E_UPSTREAM_RPC overrides the RPC).
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { mkdtempSync, openSync } from 'node:fs'
@@ -82,7 +77,6 @@ async function wallet({ sol = 10, usdy = 0, usdc = 0 }) {
 }
 const account = (w) => getAccount(w.addr, true)
 
-// Signs, sends and waits for a transaction; returns its compute budget as it landed.
 async function land(w, b64, label) {
   const tx = await signTransaction([w.kp], getTransactionDecoder().decode(Buffer.from(b64, 'base64')))
   const sig = await rpc.sendTransaction(getBase64EncodedWireTransaction(tx), { encoding: 'base64', preflightCommitment: 'confirmed' }).send()
@@ -96,7 +90,7 @@ async function land(w, b64, label) {
   return { used: t.meta.computeUnitsConsumed, limit: budget.find((b) => b[0] === 2)?.readUInt32LE(1), price: budget.find((b) => b[0] === 3)?.readBigUInt64LE(1) }
 }
 
-// A Nysa action as the app does it: build and send until the final transaction (a first one may set up accounts).
+// As the app does it: build and send until the final transaction (a first one may set up accounts).
 async function act(w, params) {
   const label = `${params.kind} ${params.all ? 'all' : params.amount} ${params.token ?? params.vault}`
   for (let step = 0; step < 3; step++) {

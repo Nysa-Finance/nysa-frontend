@@ -9,7 +9,7 @@ const board = computed(() => state.points.board)
 const error = computed(() => state.points.error)
 const fmt = (n) => (n === 0 ? '0' : n < 0.01 ? '<0.01' : n.toLocaleString('en-US', { maximumFractionDigits: 2 }))
 const me = computed(myPoints)
-const stale = computed(() => board.value && Date.now() / 1000 - board.value.updatedTs > 3 * 3600) // snapshots every hour
+const stale = computed(() => board.value && Date.now() / 1000 - board.value.updatedTs > 3 * 3600)
 
 onMounted(loadPoints)
 </script>
@@ -62,7 +62,6 @@ onMounted(loadPoints)
 </template>
 
 <style scoped>
-/* Gentle open: backdrop fades, card rises. */
 .overlay { animation: fp-fade .2s ease-out; }
 .fp-modal { animation: fp-rise .24s ease-out; }
 @keyframes fp-fade { from { opacity: 0; } }

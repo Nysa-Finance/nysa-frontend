@@ -1,4 +1,3 @@
-// Pure helpers (formatters + lending math), no Vue — covered by logic.test.js.
 
 const ok = (v) => typeof v === 'number' && Number.isFinite(v)
 
@@ -22,13 +21,12 @@ export const compact = (v, unit) => {
   return unit ? `${n} ${unit}` : n
 }
 export const short = (s, a = 4, b = 4) => (s && s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s)
-// An amount typed by the user: "," or "." as the decimal separator (phone keyboards), anything else invalid → 0.
+// "," or "." as the decimal separator (phone keyboards); anything else is invalid → 0.
 export const num = (s) => {
   const n = Number(String(s ?? '').trim().replace(',', '.'))
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
-// Piecewise-linear borrow APR (%) at utilization u (%), from Kamino curve points.
 export function borrowRateAt(points, u) {
   for (let i = 1; i < points.length; i++) {
     const [x0, y0] = points[i - 1]
@@ -39,24 +37,19 @@ export function borrowRateAt(points, u) {
 }
 export const supplyRateAt = (irm, u) => borrowRateAt(irm.points, u) * (u / 100) * (1 - irm.fee)
 
-// Borrow capacity in loan-token units.
-// collateral: [{usd, ltv}] (ltv in %), debtUsd: existing debt, price: loan token price, liquidity: vault cash.
 export function borrowCapacity(collateral, debtUsd, price, liquidity) {
   if (price <= 0) return 0
   const limit = collateral.reduce((s, c) => s + c.usd * (c.ltv / 100), 0)
   return Math.min(Math.max(limit - debtUsd, 0) / price, liquidity)
 }
 
-// Weighted max LTV (%) across collateral.
 export function weightedLtv(collateral) {
   const total = collateral.reduce((s, c) => s + c.usd, 0)
   return total <= 0 ? 0 : collateral.reduce((s, c) => s + c.usd * c.ltv, 0) / total
 }
 
-// Health factor = liquidation-weighted collateral / debt.
 export const healthFactor = (collUsd, liqLtv, debtUsd) => (debtUsd > 0 ? (collUsd * liqLtv) / 100 / debtUsd : Infinity)
 
-// Parse the Farm Points CSV (address,cumulative_points,last_supplied_usd,last_snapshot_ts).
 export function parsePoints(csv) {
   const lines = csv.split(/\r?\n/).filter((l) => l.trim())
   if (!lines.length) return { rows: [], updatedTs: 0 }
@@ -89,9 +82,8 @@ export function ago(ts, now = Date.now()) {
   return h < 48 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`
 }
 
-// One Farm Points snapshot: points accrue as supplied USD × days, on the lower of the balances seen at the previous
-// snapshot and now: only what stayed in for the whole interval counts, so depositing just before a snapshot and
-// withdrawing right after earns nothing. prev: rows from parsePoints; balances: Map(owner -> supplied USD now).
+// Points accrue on the lower of the balances at the previous snapshot and now: depositing just before a snapshot and
+// withdrawing right after earns nothing.
 export function snapshotPoints(prev, balances, nowSec) {
   const rows = new Map(prev.map((r) => {
     const days = Number.isFinite(r.ts) ? Math.max(nowSec - r.ts, 0) / 86400 : 0
@@ -105,32 +97,26 @@ export function snapshotPoints(prev, balances, nowSec) {
 export const pointsCsv = (rows) =>
   ['address,cumulative_points,last_supplied_usd,last_snapshot_ts', ...rows.map((r) => `${r.address},${r.points},${r.supplied},${r.ts}`)].join('\n') + '\n'
 
-// Health factor display (∞ when there is no debt) and its traffic-light colour.
 // Rounded down (never shown safer than it is), with 3 decimals near 1: 0.9996 reads 0.999, not a healthy-looking 1.00.
 export const hfText = (v) => { if (!Number.isFinite(v) || v > 999) return '∞'; const d = v < 1.1 ? 3 : 2; return (Math.floor(v * 10 ** d + 1e-9) / 10 ** d).toFixed(d) } // + 1e-9: 1.15 * 100 is 114.999…
 export const hfColor = (v) => (!Number.isFinite(v) || v >= 1.8 ? 'var(--n-green)' : v >= 1.3 ? 'var(--n-amber)' : 'var(--n-red)')
 
-// Compact duration: 45s, 3m, 5h, 2d.
 export function dur(sec) {
   if (!Number.isFinite(sec)) return '—'
   const s = Math.max(Math.round(sec), 0)
   return s < 90 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`
 }
 
-// Round a token amount to its decimals without ever exceeding (floor) or undershooting (ceil) the true value.
-// Kamino re-checks borrow and withdraw limits at the transaction's block (fresh prices, accrued interest): offered maxima
-// stay this fraction under the computed limit, so a max amount still fits when it lands.
+// Kamino re-checks borrow and withdraw limits at the transaction's block (fresh prices, accrued interest), so offered
+// maxima stay this fraction under the computed limit.
 export const LIMIT_MARGIN = 0.001
 export const underLimit = (max, d) => floorTo(max * (1 - LIMIT_MARGIN), d)
 export const floorTo = (v, d) => (v > 0 ? Math.floor(v * 10 ** d + 1e-9) / 10 ** d : 0)
 export const ceilTo = (v, d) => (v > 0 ? Math.ceil(v * 10 ** d - 1e-9) / 10 ** d : 0)
-// True when paying `amount` would leave less than one smallest unit of `total` behind (i.e. it means "all of it").
 export const coversAll = (amount, total, d) => total > 0 && amount >= total - 10 ** -d
 
-// Repay decision. Kamino rejects repays leaving sub-unit dust (NetValueRemainingTooSmall), so:
-// - within one unit of the debt → full repay (U64_MAX on-chain), which needs the wallet to cover the whole debt;
-// - otherwise → partial, which must leave at least 2 units behind.
-// Returns { all, maxPartial, issue: null | 'short' | 'wallet' | 'dust' }.
+// Kamino rejects repays leaving sub-unit dust (NetValueRemainingTooSmall): within one unit of the debt it's a full
+// repay (U64_MAX, the wallet must cover it all); otherwise a partial that leaves at least 2 units.
 export function repayPlan(amount, debt, wallet, decimals) {
   const all = coversAll(amount, debt, decimals)
   const maxPartial = floorTo(Math.min(wallet, debt - 2 * 10 ** -decimals), decimals)
@@ -142,17 +128,14 @@ export function repayPlan(amount, debt, wallet, decimals) {
   return { all, maxPartial, issue }
 }
 
-// Display a token amount like Aave does: tiny non-zero values show as "< 0.0001" instead of a misleading "0".
+// Like Aave: tiny non-zero values show as "< 0.0001" instead of a misleading "0".
 export const amtDust = (v, d = 4) => (v > 0 && v < 10 ** -d ? `< ${(10 ** -d).toFixed(d)}` : amt(v, d))
 
-// ---- Realized APY (from the growth of one deposit share's value, i.e. liquidity per Kamino cToken) ----
-// points: [{ ts (unix sec), rate (liquidity per cToken) }], oldest first.
-// Annualized linearly (growth × 365 / days), like the live APY's rewards part: compounding a short window of a
-// rewards-boosted vault (+9% in a day) gives absurd figures (10^15 %); for ordinary rates the two barely differ.
+// Linear (growth × 365 / days): compounding a short window of a rewards-boosted vault (+9% in a day) gives absurd
+// figures (10^15 %); for ordinary rates the two barely differ.
 export const realizedApy = (from, to, days) => (days > 0 && from > 0 ? (to / from - 1) * (365 / days) * 100 : null)
 
-// Realized APY over the last `days`, ending at the latest point. With shorter history it uses the oldest point
-// and says so (full=false), e.g. a 19-day-old reserve reports its "30D" as since-launch.
+// With shorter history it uses the oldest point and says so (full=false): a 19-day-old reserve's "30D" is since launch.
 export function windowApy(points, days) {
   if (points.length < 2) return null
   const end = points.at(-1)
@@ -162,13 +145,11 @@ export function windowApy(points, days) {
   return spanDays > 0 ? { apy: realizedApy(start.rate, end.rate, spanDays), spanDays, full: start.ts <= target, from: start.ts } : null
 }
 
-// Realized APY for each day: last point of each UTC day vs the previous day's.
 export function dailyApySeries(points) {
   const byDay = [...new Map(points.map((p) => [Math.floor(p.ts / 86400), p])).values()].sort((a, b) => a.ts - b.ts)
   return byDay.slice(1).map((p, i) => ({ ts: p.ts, apy: realizedApy(byDay[i].rate, p.rate, (p.ts - byDay[i].ts) / 86400) }))
 }
 
-// Chart.js-like "nice" axis: ~5 steps of 1/2/2.5/5 × 10^n up to at least `max`.
 export function niceTicks(max) {
   const m = Math.max(max, 1e-9)
   const mag = 10 ** Math.floor(Math.log10(m / 5))
@@ -177,18 +158,17 @@ export function niceTicks(max) {
   return { top, ticks: Array.from({ length: Math.round(top / step) + 1 }, (_, i) => i * step) }
 }
 
-// Farm reward APR in %: yearly reward value over the staked value. Shown as APR because rewards don't compound.
+// APR, not APY: rewards don't compound.
 export const rewardApr = (perSecond, rewardPrice, stakedUsd) => (stakedUsd > 0 ? (perSecond * 31_536_000 * rewardPrice) / stakedUsd * 100 : 0)
 
-// Liquidation bonus a liquidator actually gets, in %, on Kamino (liquidation_operations.rs): the loan's LTV above the
-// liquidation LTV, floored at the min bonus, capped at the max bonus and at 1 − LTV (so the loan stays solvent). It is
-// lowest just past the threshold and peaks where LTV − LT = 1 − LTV. Loans at ≥99% LTV use the bad-debt bonus instead.
+// Kamino (liquidation_operations.rs): the LTV above the liquidation LTV, floored at the min bonus, capped at the max
+// bonus and at 1 − LTV (so the loan stays solvent). Loans at ≥99% LTV use the bad-debt bonus instead.
 export function liquidationBonusRange(minPct = 0, maxPct, liqLtvPct) {
   const room = 100 - liqLtvPct
   return { low: Math.min(minPct, maxPct, room), high: Math.min(maxPct, Math.max(minPct, room / 2)) }
 }
 
-// Pie chart: each value's share (%) and its arc in radians, clockwise from 12 o'clock. Negative values count as 0.
+// Negative values count as 0.
 export function pieSlices(values) {
   const total = values.reduce((s, v) => s + Math.max(v, 0), 0)
   let at = 0
@@ -200,8 +180,8 @@ export function pieSlices(values) {
   })
 }
 
-// SVG path of a donut slice (outer radius r, inner radius ri) between two angles from pieSlices. A whole circle, or
-// one within ~0.02% of it, is drawn as two half arcs: an SVG arc whose ends round to the same point isn't drawn at all.
+// A whole circle (or within ~0.02% of one) is drawn as two half arcs: an SVG arc whose ends round to the same point
+// isn't drawn at all.
 const FULL = 2 * Math.PI - 1e-3
 export function arcPath(cx, cy, r, ri, start, end) {
   if (end - start >= FULL) return arcPath(cx, cy, r, ri, start, start + Math.PI) + arcPath(cx, cy, r, ri, start + Math.PI, start + 2 * Math.PI - 1e-2)

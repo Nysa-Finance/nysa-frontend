@@ -15,7 +15,7 @@ const KEYLESS_PROVIDER_MAX_WAIT_MS = 10_000
 const TOKEN_PROGRAMS = new Set([TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS])
 const addressDecoder = getAddressDecoder()
 
-/** Enforce Jupiter's documented 0.5-RPS keyless limit across requests from this backend process. */
+// Jupiter's documented 0.5-RPS keyless limit, across every request from this process.
 export function createKeylessRateLimiter({
   intervalMs = KEYLESS_PROVIDER_INTERVAL_MS,
   maxPending = KEYLESS_PROVIDER_MAX_PENDING,
@@ -63,7 +63,6 @@ const waitForKeylessProvider = createKeylessRateLimiter()
 
 export class SwapError extends Error {}
 
-/** Decode the SPL token-account mint and authority from on-chain account data. */
 export function inspectFeeTokenAccount(account) {
   if (!account?.exists || !account.data || account.data.length < 165 || !TOKEN_PROGRAMS.has(String(account.programAddress))) return null
   try {
@@ -86,7 +85,6 @@ async function readFeeTokenAccount(feeAccount) {
   }
 }
 
-// The env var holding a token's swap fee token account: SWAP_FEE_ACCOUNT_USDC, SWAP_FEE_ACCOUNT_USDY, …
 export const feeAccountEnv = (token) => `SWAP_FEE_ACCOUNT_${token.name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
 
 export function configuredFeeAccountForMint(mint) {
@@ -95,7 +93,6 @@ export function configuredFeeAccountForMint(mint) {
   return account ? { account, mint } : null
 }
 
-// Swap needs a fee account for every swappable token and the treasury authority that owns them.
 export const swapFeeAccountsConfigured = () =>
   swapTokens.every((t) => configuredFeeAccountForMint(t.mint)) && !!process.env.SWAP_FEE_TREASURY_AUTHORITY
 
@@ -233,11 +230,8 @@ function validateFee(body, { inputMint, outputMint, inputAmount, feeAccountMint,
   }
 }
 
-/**
- * Request an exact-input Jupiter V2 Build quote. V2's `platformFeeBps` and fee account are provider-native
- * parameters, so this adapter never inserts a separate Nysa SPL transfer. The returned object is execution-ready
- * only after fee-account ownership, simulated fee balance deltas and the approved router/DEX program list all pass.
- */
+// V2's `platformFeeBps` and fee account are provider-native, so no separate Nysa SPL transfer is inserted. The
+// result is executable only after fee-account ownership, simulated fee deltas and the approved program list pass.
 export async function buildSwap({
   inputMint,
   outputMint,

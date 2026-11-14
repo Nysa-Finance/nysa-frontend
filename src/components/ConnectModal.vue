@@ -5,12 +5,12 @@ import { MWA_NAME as MWA } from '../wallets.js'
 
 const emit = defineEmits(['close'])
 
-const busy = ref(null) // name of the wallet being connected
+const busy = ref(null)
 const error = ref(state.connectError) // e.g. WalletConnect failed after this window had closed
 state.connectError = null
 
 async function connect(w) {
-  // WalletConnect opens Reown's own modal (QR code, wallet list): this window steps aside, and comes back on an error.
+  // WalletConnect opens Reown's own modal: this window steps aside, and comes back on an error.
   if (w.walletconnect) {
     emit('close')
     try { await connectWallet(w) } catch (e) { if (!/cancelled/i.test(e.message)) { state.connectError = e.message; state.connectOpen = true } }
@@ -38,14 +38,12 @@ onUnmounted(() => removeEventListener('keydown', onKey))
       <div class="cm-tabs single"><button class="cm-tab on">Solana</button></div>
       <div class="cm-list">
         <button v-for="w in state.wallets" :key="w.name" class="cm-wallet" :disabled="!!busy" @click="connect(w)">
-          <!-- Android: Mobile Wallet Adapter opens whichever wallet app you pick (Phantom, Solflare, …) to approve -->
           <span v-if="w.name === MWA" class="cm-wallet-img cm-pair"><img src="/wallets/phantom.svg" alt="" /><img src="/wallets/solflare.svg" alt="" /></span>
           <img v-else class="cm-wallet-img" :src="w.icon" alt="" />
           <span class="cm-wallet-name">{{ w.name === MWA ? 'Phantom, Solflare & other apps' : w.name }}</span>
           <span v-if="busy === w.name" class="cm-spinner" />
           <span v-else class="cm-arrow">→</span>
         </button>
-        <!-- iOS: the wallet app opens to approve, then sends you back here -->
         <button v-for="w in deeplinkWallets()" :key="w.name" class="cm-wallet" @click="connectDeeplink(w.name)">
           <img class="cm-wallet-img" :src="w.icon" alt="" />
           <span class="cm-wallet-name">{{ w.name }}</span>
@@ -61,7 +59,7 @@ onUnmounted(() => removeEventListener('keydown', onKey))
 </template>
 
 <style scoped>
-/* The wallet modal is deliberately light, like the original. */
+/* deliberately light, like the original */
 .cm-overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; background: #0a0a0a99; backdrop-filter: blur(6px); }
 .cm-modal { width: 100%; max-width: 420px; background: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 24px; box-shadow: 0 40px 100px -20px #0a0a0a80; font-family: var(--sans); color: var(--ink); }
 .cm-head { display: flex; align-items: center; justify-content: space-between; }

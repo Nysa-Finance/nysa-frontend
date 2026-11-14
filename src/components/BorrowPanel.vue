@@ -28,7 +28,6 @@ const pairLtv = (cid) => {
   return pair ? riskOf(props.market, pair).maxLtv : 0
 }
 
-// Existing collateral + whatever the user is about to deposit.
 const collateral = computed(() =>
   props.collateralTokens
     .map((t) => {
@@ -39,8 +38,8 @@ const collateral = computed(() =>
 )
 const collUsd = computed(() => collateral.value.reduce((s, c) => s + c.usd, 0))
 const maxLtv = computed(() => weightedLtv(collateral.value))
-// Kamino's own limit for this position (server/account.js); our estimate when collateral is being added in the same
-// step. Kept LIMIT_MARGIN under it: the program re-checks at the transaction's block.
+// Kamino's own limit (server/account.js), or our estimate when collateral is added in the same step, kept LIMIT_MARGIN
+// under it: the program re-checks at the transaction's block.
 const capacity = computed(() => {
   const kamino = loanRow.value?.maxBorrow
   const max = !num(deposit.value) && kamino != null ? Math.min(kamino, liquidity.value) : borrowCapacity(collateral.value, debtUsd.value, loanPrice.value, liquidity.value)
@@ -82,16 +81,13 @@ const repayWarning = computed(() => {
 })
 const canBorrow = computed(() => on.value && num(borrowAmt.value) > 0 && !borrowWarning.value && tx.status !== 'running')
 const canRepay = computed(() => on.value && num(repayAmt.value) > 0 && !repayWarning.value && tx.status !== 'running')
-// Full vs partial repay and what (if anything) blocks it: see repayPlan in logic.js (tested).
 const repayWallet = computed(() => loanRow.value?.walletBalance ?? 0)
 const plan = computed(() => repayPlan(num(repayAmt.value), debt.value, repayWallet.value, loan.value.decimals))
 const repayAll = computed(() => plan.value.all)
 const canCloseAll = computed(() => repayWallet.value >= ceilTo(debt.value, loan.value.decimals))
 const shortfall = computed(() => Math.max(ceilTo(debt.value, loan.value.decimals) - repayWallet.value, 0))
 const atMaxPartial = computed(() => !canCloseAll.value && debt.value > 0 && num(repayAmt.value) > 0 && num(repayAmt.value) === plan.value.maxPartial)
-// Collateral to preselect when jumping to Withdraw: the first one actually deposited, else the first listed.
 const withdrawAsset = computed(() => (props.collateralTokens.find((t) => (rowOf(props.market, t.token_id)?.supplied ?? 0) > 0) ?? props.collateralTokens[0])?.token_id)
-// MAX closes the loan when the wallet covers it, otherwise repays as much as Kamino allows.
 const quickRepay = (p) => {
   const d = loan.value.decimals
   const v = p < 100 ? floorTo((debt.value * p) / 100, d) : canCloseAll.value ? ceilTo(debt.value, d) : repayPlan(0, debt.value, repayWallet.value, d).maxPartial
@@ -127,7 +123,7 @@ async function submitRepay() {
       </select>
       <input v-model="deposit" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 8px" />
       <div class="n-kv" style="margin-bottom: 22px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(collRow?.walletBalance ?? 0)} ${coll.name}` : '—' }}</span></div>
-      <!-- Nothing to deposit (balance read and exactly 0): send them to buy the collateral with the loan token. -->
+      <!-- Balance read and exactly 0: send them to buy the collateral with the loan token. -->
       <RouterLink v-if="state.swapVisible && state.balances[coll.token_id] === 0" class="n-btn-block buy" :to="{ name: 'swap', query: { input: loan.token_id, output: coll.token_id } }">Buy {{ coll.name }}</RouterLink>
 
       <div class="n-rule" style="padding-top: 20px">

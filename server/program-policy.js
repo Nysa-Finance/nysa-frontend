@@ -1,9 +1,9 @@
-// Programs a swap route may invoke, at the top level or through the router. A route that calls anything else is not
-// executable. Add a program here only after reviewing it (and its route label below, for a DEX).
+// A route that calls anything else is not executable. Add a program only after reviewing it (and its route label
+// below, for a DEX).
 export const APPROVED_PROGRAMS = new Set([
   'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4', // Jupiter V6 router
   'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc', // Orca Whirlpool
-  'ComputeBudget111111111111111111111111111111', // Compute Budget (Solana native)
+  'ComputeBudget111111111111111111111111111111', // Compute Budget
   'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', // Associated Token Account
 ])
 

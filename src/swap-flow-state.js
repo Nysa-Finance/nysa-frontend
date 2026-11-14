@@ -36,7 +36,6 @@ export function recoverConfirmedWithdrawal(outcome, { wallet, flow, market, requ
   return { status: 'confirmed', amountBaseUnits: amount }
 }
 
-/** Apply a persisted or asynchronous outcome only to the matching connected wallet and flow. */
 export function applySwapFlowOutcome(current, outcome, wallet, flow) {
   if (!outcome || outcome.wallet !== wallet || outcome.flow !== flow
     || outcome.market != null && outcome.market !== 'sol-usdy-usdc') return current

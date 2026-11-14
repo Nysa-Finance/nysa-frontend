@@ -1,5 +1,4 @@
 <script setup>
-// Interest-rate curve (borrow + supply vs utilization) with hover tooltip, matching the original Chart.js chart.
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { borrowRateAt, supplyRateAt, pct, niceTicks } from '../logic.js'
 
@@ -28,7 +27,7 @@ const path = (f) => us.value.map((u, i) => `${i ? 'L' : 'M'}${x(u).toFixed(1)},$
 const cur = computed(() => (Number.isFinite(props.utilization) ? Math.min(Math.max(props.utilization, 0), 100) : null))
 const tickLabel = (v) => `${v.toFixed(v < 10 ? 1 : 0)}%`
 
-const hover = ref(null) // utilization (integer %) under the pointer
+const hover = ref(null)
 function onMove(e) {
   const px = e.clientX - box.value.getBoundingClientRect().left
   hover.value = px < L - 8 || px > W.value - R + 8 ? null : Math.round(Math.min(Math.max((px - L) / (W.value - L - R), 0), 1) * 100)

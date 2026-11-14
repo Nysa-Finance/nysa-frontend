@@ -1,6 +1,4 @@
 <script setup>
-// An Earn vault (/earn/:id): exposure (allocation pie and markets), realized APY from the vault's share value, and
-// admin changes to the vault and to every market it is exposed to. Deposit / withdraw on the right.
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -26,7 +24,7 @@ const pointsOpen = ref(false)
 
 const apyHistory = ref(null)
 onMounted(() => loadApyHistory().then((h) => (apyHistory.value = h)).catch((e) => console.error('[apy-history]', e)))
-// Admin changes to this vault and to the markets it is allocated to (the index tags each with its source).
+// the index tags each update with its source
 const allUpdates = ref(null)
 const updatesError = ref(null)
 onMounted(() => loadMarketUpdates().then((d) => (allUpdates.value = d.updates)).catch((e) => (updatesError.value = e.message)))
@@ -35,7 +33,6 @@ const updates = computed(() => {
   const sources = new Set([v.value.address, ...live.value.allocations.map((a) => a.market)])
   return allUpdates.value.filter((u) => sources.has(u.source))
 })
-// Vault, its admins and the oracle(s) pricing its token in the reserves it is allocated to.
 const addresses = computed(() => [
   { label: 'Vault', address: v.value.address },
   ...(live.value ? [

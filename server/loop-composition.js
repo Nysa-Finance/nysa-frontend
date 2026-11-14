@@ -27,7 +27,7 @@ export function isAssociatedTokenCreate(instruction) {
     && typeof instruction.accounts?.[1]?.address === 'string'
 }
 
-/** Deduplicate idempotent setup and rebase the installed SDK flash-repay instruction index after composition. */
+// Rebase the installed SDK flash-repay instruction index after composition (setup deduplicated first).
 export function composeAtomicOpenInstructions(acquisitionInstructions, sdkOpenInstructions, existingTokenAccounts = new Set()) {
   if (!Array.isArray(acquisitionInstructions) || !Array.isArray(sdkOpenInstructions) || !(existingTokenAccounts instanceof Set)) {
     throw new TypeError('Atomic open instructions must be arrays and existing token accounts must be a Set.')

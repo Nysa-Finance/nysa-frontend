@@ -1,6 +1,4 @@
 <script setup>
-// Deposit into / withdraw from an Earn vault (kVault). Amounts are in the vault's token; the backend turns a withdrawal
-// into shares and invests new deposits in the vault's markets (server/tx.js).
 import { ref, computed, watch } from 'vue'
 import { state, sendVaultAction, useTx, vaultApyNote as apyNote } from '../store.js'
 import { tok } from '../config.js'
@@ -30,7 +28,7 @@ const warning = computed(() => {
   return null
 })
 const canSubmit = computed(() => on.value && num(amount.value) > 0 && !warning.value && tx.status !== 'running')
-// Withdrawing (within one unit) everything redeems every share, so no dust is left in the vault.
+// Everything (within one unit) redeems every share, so no dust is left in the vault.
 const all = computed(() => tab.value === 'withdraw' && coversAll(num(amount.value), position.value, token.value.decimals))
 const quick = (p) => {
   const v = floorTo((available.value * p) / 100, token.value.decimals)
