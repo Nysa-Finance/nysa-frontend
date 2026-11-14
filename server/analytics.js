@@ -3,7 +3,7 @@
 import { address, fetchEncodedAccounts, getAddressDecoder, isAddress } from '@solana/kit'
 import { LIVE, VAULTS, swapTokens } from '../src/config.js'
 import { localForkExecutionEnabled } from './local-fork-execution.js'
-import { RPC_URL, rpc } from './rpc.js'
+import { RPC_URL, rpc, isLoopbackRpc } from './rpc.js'
 import { getLive, getVault, num } from './market.js'
 import { freshIndex } from './updates.js'
 import { vaultShares } from './account.js'
@@ -13,11 +13,6 @@ import { feeAccountEnv } from './swap.js'
 const addrDecoder = getAddressDecoder()
 
 const publicAddress = (value) => typeof value === 'string' && isAddress(value) ? value : null
-const isLoopbackRpc = (value) => {
-  if (typeof value !== 'string') return false
-  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value).hostname.toLowerCase()) }
-  catch { return false }
-}
 
 // Fee receivers are public configuration; this metadata performs no chain reads and never returns RPC settings.
 export function getFeeReceiverMetadata({ env = process.env, rpcUrl = RPC_URL } = {}) {

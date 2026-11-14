@@ -77,4 +77,14 @@ assert.equal(requests[1].body.wallet, walletAddress)
 assert.equal(requests[1].body.intentId, 'borrower-flow-intent')
 assert.equal(store.state.lendingPending, null)
 
+// On a local fork (the backend says so in its market snapshot), a plain action is signed by the wallet and sent by
+// the backend too: signAndSendTransaction above throws, so reaching the relay proves the path.
+store.state.localFork = true
+requests.length = 0
+assert.equal(await store.sendKaminoAction('deposit', { market: { id: 'sol-usdy-usdc' }, token: { token_id: 'svm-usdy' }, amount: '25' }), signatureText)
+assert.equal(signedCount, 2)
+assert.deepEqual(requests.map((r) => r.path), ['/api/tx', '/api/tx/send'])
+assert.equal(store.state.lendingPending, null)
+store.state.localFork = false
+
 console.log('desktop borrower flow relays with its exact build intent')
