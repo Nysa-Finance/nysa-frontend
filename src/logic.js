@@ -106,7 +106,8 @@ export const pointsCsv = (rows) =>
   ['address,cumulative_points,last_supplied_usd,last_snapshot_ts', ...rows.map((r) => `${r.address},${r.points},${r.supplied},${r.ts}`)].join('\n') + '\n'
 
 // Health factor display (∞ when there is no debt) and its traffic-light colour.
-export const hfText = (v) => (!Number.isFinite(v) || v > 999 ? '∞' : v.toFixed(2))
+// Rounded down (never shown safer than it is), with 3 decimals near 1: 0.9996 reads 0.999, not a healthy-looking 1.00.
+export const hfText = (v) => { if (!Number.isFinite(v) || v > 999) return '∞'; const d = v < 1.1 ? 3 : 2; return (Math.floor(v * 10 ** d + 1e-9) / 10 ** d).toFixed(d) } // + 1e-9: 1.15 * 100 is 114.999…
 export const hfColor = (v) => (!Number.isFinite(v) || v >= 1.8 ? 'var(--n-green)' : v >= 1.3 ? 'var(--n-amber)' : 'var(--n-red)')
 
 // Compact duration: 45s, 3m, 5h, 2d.
