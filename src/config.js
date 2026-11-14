@@ -1,24 +1,19 @@
-// Static market configuration, shared by the frontend and the backend (server/).
-// Live numbers, risk parameters, rate curves and oracle feeds come from chain via the backend (server/market.js); the
-// risk values here are only shown until the first market update arrives (riskOf in store.js).
+// Live numbers, risk parameters, rate curves and oracle feeds come from chain; the risk values here only show until
+// the first market update arrives.
 //
-// Adding a market: one entry in LIVE (and a TOKENS entry for each token not listed yet, with its icon file in
-// public/tokens/). Everything else follows from it: pages, URLs, live data, positions, transactions, Market Updates,
-// Farm Points. `reserves` is the market's own Kamino reserve of each token: two markets lending the same token (USDC)
-// each have their own. `npm test` checks the entry (src/config.test.js).
-// Swaps between a pair's tokens need a fee token account per token: SWAP_FEE_ACCOUNT_<NAME> (e.g. SWAP_FEE_ACCOUNT_USDC)
-// in .env and in docker-compose.yml; until every swap token has one, swap stays off. A route through a DEX not in
-// server/program-policy.js is refused: review and add it there first.
+// Adding a market: one entry in LIVE, plus a TOKENS entry (and its icon in public/tokens/) for each new token.
+// `reserves` is the market's own Kamino reserve of each token: two markets lending USDC each have their own.
+// Swaps need a fee token account per token, SWAP_FEE_ACCOUNT_<NAME>, in .env and docker-compose.yml (swap stays off
+// until every swap token has one); a route through a DEX not in server/program-policy.js is refused.
 export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-of-service'
-// WalletConnect project id (Reown dashboard, cloud.reown.com). Public by design, it ships in the page; the project's
-// allowed domains on Reown are what stop others from using it. Empty = WalletConnect is not offered.
+// Public by design (it ships in the page): the project's allowed domains on Reown stop others from using it.
 export const WALLETCONNECT_PROJECT_ID = 'fe76c05c2791f7d71839bb257f55afb5'
-// Multiply loop (Loop page, /api/loop-*, loop actions in /api/tx): off for everyone until it is released.
+// off for everyone until it is released
 export const LOOP_ENABLED = false
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 
-// A token, wherever it is used. `price` is only shown until the first market update arrives. `icon`: a file in public/.
+// `price` only shows until the first market update arrives.
 export const TOKENS = {
   'svm-usdy': { token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.png', decimals: 6, price: 1.09, rwa: true, mint: 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6' },
   'svm-otfy': { token_id: 'svm-otfy', name: 'oTFY', icon: '/tokens/otfy.png', decimals: 9, price: 1.03, rwa: true, mint: 'BwB3tNH92jKw6naNGDYDbDwRo8bvYxZVvZjRZRcoWR2h' },
@@ -53,14 +48,12 @@ export const LIVE = [
   },
 ]
 
-// Kamino markets a vault may allocate to that have no page here (not curated by Nysa): their name and collateral, shown
-// in the vault's exposure. Which markets a vault actually uses is read on-chain; one missing here shows as its address.
+// Kamino markets a vault may allocate to that Nysa doesn't curate (no page here), for the vault's exposure.
 export const OTHER_MARKETS = [
   { kaminoMarket: '3hd61ZpG35tBwrmDvdmYVJoazC2mjJxHb6rEYEWs4QhH', name: 'Obligate Market', collateral: ['svm-otfy'] },
 ]
 
-// Kamino Earn vaults curated by Nysa (Earn page). Name, token, allocations and exposure are read on-chain
-// (server/vault.js); only the address, the URL id and the description live here.
+// Name, token, allocations and exposure are read on-chain (server/vault.js).
 export const VAULTS = [
   {
     id: 'rwa-prime', name: 'RWA Prime', address: '2Qxsj1hi95avkp7sANDmbVT5TwqRPGsutuvJasJK9xL7', farmPoints: true,
@@ -71,5 +64,5 @@ export const vaultById = (id) => VAULTS.find((v) => v.id === id)
 export const tok = (id) => TOKENS[id]
 export const marketById = (id) => LIVE.find((m) => m.id === id)
 export const tokensOf = (m) => [...new Set([...m.collateral, ...m.loans])].map(tok)
-// Tokens the Swap page trades: both sides of every market pair, loan tokens first (it opens on "sell USDC").
+// loan tokens first: the Swap page opens on "sell USDC"
 export const swapTokens = [...new Set(LIVE.flatMap((m) => m.pairs.map((p) => p.liability)).concat(LIVE.flatMap((m) => m.pairs.map((p) => p.collateral))))].map(tok)

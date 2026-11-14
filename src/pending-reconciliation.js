@@ -59,7 +59,6 @@ export function canCancelSetupRecovery(recovery, activePending) {
     && (!activePending || !BLOCKING_STATUSES.has(activePending.status))
 }
 
-/** Clear confirmed account setup and settle its matching optional flow as a retryable refusal. */
 export function cancelConfirmedSetupRecovery(recovery, activePending) {
   if (!canCancelSetupRecovery(recovery, activePending)) return null
   const params = recovery.params
@@ -80,7 +79,6 @@ export function cancelConfirmedSetupRecovery(recovery, activePending) {
   }
 }
 
-/** Resume a confirmed setup transaction using the connected wallet's actual signing path. */
 export async function resumeConfirmedSetupContinuation({
   pending, chain, wallet, accountAddress, continueDesktop, continueDeeplink, userInitiated = false,
 } = {}) {
@@ -103,7 +101,6 @@ export async function resumeConfirmedSetupContinuation({
   return { status: 'continued', mode, result }
 }
 
-/** Poll while the page is active, skip hidden tabs, prevent overlapping work, and stop cleanly on teardown. */
 export function startVisibleReconciliationLoop({
   reconcile,
   isVisible = () => true,

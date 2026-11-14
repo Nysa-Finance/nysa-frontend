@@ -37,7 +37,7 @@ function signedTransactionSignature(tx, wallet) {
   return base58.decode(signature)
 }
 
-/** Only failures before invoking the RPC are definite refusals; any send exception preserves the derived signature. */
+// Only failures before invoking the RPC are definite refusals; any send exception preserves the derived signature.
 export async function relaySignedTransaction({ tx, wallet, refuse, send, onSuccess = () => {} } = {}) {
   if (typeof tx !== 'string' || typeof wallet !== 'string' || typeof refuse !== 'function' || typeof send !== 'function') {
     throw new DefiniteSendRefusal('Invalid signed transaction request.')

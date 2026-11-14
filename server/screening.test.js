@@ -1,4 +1,3 @@
-// OFAC sanctions screening against a stubbed SDN XML download. Run by `npm test`.
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

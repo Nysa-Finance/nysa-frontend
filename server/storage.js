@@ -1,4 +1,3 @@
-// Server state on disk (DATA_DIR, a Docker volume on the VPS): Farm Points CSV, APY history, market index.
 // Writes are atomic (temp file + rename), so readers never see a half-written file.
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -9,7 +8,6 @@ export const HISTORY = 'market-history/history.json'
 export const INDEX = 'market-history/index-v4.json' // v4: + vault updates and depositors, update `source` (full re-index)
 export const SANCTIONS = 'sanctions/ofac-addresses.json'
 
-// Text content, or null if the file does not exist yet.
 export async function read(path) {
   try { return await readFile(join(DIR, path), 'utf8') } catch (e) { if (e.code === 'ENOENT') return null; throw e }
 }

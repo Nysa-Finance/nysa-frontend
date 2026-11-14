@@ -1,5 +1,4 @@
 <script setup>
-// Latest admin changes to the market / its reserves: action + new value, target, and a link to the transaction.
 import { ref, computed } from 'vue'
 import { txUrl } from '../config.js'
 

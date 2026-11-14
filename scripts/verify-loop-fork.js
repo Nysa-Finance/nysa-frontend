@@ -400,7 +400,7 @@ async function waitForLocalLookupTableActivation(rpcClient, tableAddress, requir
   throw new Error('Local address lookup table did not warm up before open composition.')
 }
 
-/** Prepare a temporary lookup table with non-economic setup transactions on the loopback fork only. */
+// Loopback fork only.
 async function prepareLocalAddressLookupTable(rpcClient, signer, instructions) {
   const addresses = collectLookupTableAddresses(instructions, [String(signer.address)])
   if (!addresses.length) return null
@@ -462,9 +462,8 @@ export async function compileSignedLocalTransaction(rpcClient, signer, instructi
   let message = createTransactionMessage({ version: 0 })
   message = setTransactionMessageFeePayerSigner(signer, message)
   message = setTransactionMessageLifetimeUsingBlockhash(blockhash, message)
-  // Kamino builds owner accounts with createNoopSigner because the production wallet signs later.
-  // In this local verifier the same keypair signs immediately, so reuse it for matching instruction
-  // accounts to avoid @solana/kit rejecting two signer objects for the same public key.
+  // Kamino builds owner accounts with createNoopSigner because the production wallet signs later. Here the same
+  // keypair signs at once, so reuse it: @solana/kit rejects two signer objects for the same public key.
   const signerAddress = String(signer.address)
   const normalizedInstructions = instructions.map((instruction) => {
     if (!Array.isArray(instruction?.accounts)) return instruction
@@ -1103,7 +1102,6 @@ async function runConfiguredLocalFork(env, endpoint, log) {
     if (!await localRouteProgramVerifier(built)) {
       throw new Error('The route does not invoke only the allowed DEX program deployed on this local validator.')
     }
-    // The fork verifier checks exact instruction structure and executable local programs.
     return validateProviderSwapInstructions(request, {
       ...built,
       programPolicy: { ...built.programPolicy, approved: true },
@@ -1367,7 +1365,7 @@ async function runConfiguredLocalFork(env, endpoint, log) {
   return result
 }
 
-/** Local-only fee-aware Multiply proof. Every transaction endpoint must pass the loopback guard before execution. */
+// Local only: every transaction endpoint must pass the loopback guard before execution.
 export async function verifyLoopFork({ env = process.env, fetcher = fetch, log = console.log } = {}) {
   let endpoint
   try { endpoint = assertLoopbackForkEndpoint(env.LOCAL_FORK_RPC) } catch (error) {

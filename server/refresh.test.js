@@ -1,4 +1,3 @@
-// Market cache refresh timer (server/refresh.js), on mocked timers. Run by `npm test`.
 import assert from 'node:assert/strict'
 import { mock } from 'node:test'
 import { createLatestReadPublisher, createRefresher } from './refresh.js'
@@ -6,11 +5,9 @@ import { createLatestReadPublisher, createRefresher } from './refresh.js'
 mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 })
 const EVERY = 60_000, SOON = 2_000, GAP = 10_000
 const flush = () => new Promise((r) => setImmediate(r))
-// Advance mocked time in 100 ms steps, calling each(t) (t = ms since start) before every step.
 async function advance(ms, each = () => {}) {
   for (let t = 0; t < ms; t += 100) { each(t); mock.timers.tick(100); await flush() }
 }
-// A refresher whose reads take readMs and are logged as start times relative to t0.
 function make(readMs = 500) {
   const t0 = Date.now(), reads = []
   const r = createRefresher(() => { reads.push(Date.now() - t0); return new Promise((ok) => setTimeout(ok, readMs)) }, { every: EVERY, soon: SOON, minGap: GAP })

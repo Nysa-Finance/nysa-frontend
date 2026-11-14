@@ -4,7 +4,7 @@ import { state, rowOf, priceOf, rewardAprOf, sendKaminoAction, useTx } from '../
 import { pct, amt, usdFull, num, floorTo, coversAll, underLimit } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
-// withdrawOnly: only the Withdraw tab (the market page, for collateral and deposits made before the Earn vaults).
+// withdrawOnly: the market page, for collateral and deposits made before the Earn vaults.
 const props = defineProps({ market: Object, tokens: Array, allTokens: Array, initialTab: String, initialAsset: String, withdrawOnly: Boolean })
 const { tx, run, reset } = useTx()
 
@@ -17,14 +17,13 @@ const row = computed(() => rowOf(props.market, token.value.token_id))
 const on = computed(() => !!state.address)
 
 const supplied = computed(() => row.value?.supplied ?? 0)
-// Withdraw: all of it when nothing borrowed holds it back; when the loan does, Kamino's limit less LIMIT_MARGIN.
+// All of it when no loan holds it back; otherwise Kamino's limit less LIMIT_MARGIN.
 const maxWithdraw = computed(() => {
   const max = row.value?.maxWithdraw ?? 0
   return coversAll(max, supplied.value, token.value.decimals) ? max : underLimit(max, token.value.decimals)
 })
 const available = computed(() => (tab.value === 'lend' ? row.value?.walletBalance ?? 0 : maxWithdraw.value))
 const value = computed(() => num(amount.value) * priceOf(token.value.token_id))
-// Room left under the reserve's deposit limit (live from chain).
 const capRoom = computed(() => Math.max((row.value?.reserve.supplyCap ?? Infinity) - (row.value?.reserve.totalSupplied ?? 0), 0))
 
 const warning = computed(() => {
@@ -43,7 +42,7 @@ const quick = (p) => {
   const v = floorTo((available.value * p) / 100, token.value.decimals)
   amount.value = v > 0 ? String(v) : ''
 }
-// Withdrawing (within one unit) everything supplied, with nothing holding it back, closes the deposit exactly on-chain.
+// Everything supplied (within one unit), nothing holding it back: closes the deposit exactly on-chain.
 const withdrawAll = computed(() =>
   tab.value === 'withdraw' && coversAll(num(amount.value), supplied.value, token.value.decimals) && coversAll(available.value, supplied.value, token.value.decimals))
 watch([tab, assetId], () => { amount.value = ''; reset() })

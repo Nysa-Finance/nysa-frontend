@@ -1,7 +1,3 @@
-// Snapshot every hour, at a random minute (scheduled by server/main.js), from one fresh read of the Nysa Kamino market(s) and vaults:
-// 1. Farm Points: accrue supplied USD × days per wallet ("supplied" = USDC lent + USDY collateral + Earn vault shares).
-// 2. History for Realized APY, at the first snapshot of each 12-hour UTC block (00:00–12:00, 12:00–24:00): value of one
-//    deposit share, per reserve (liquidity per cToken) and per vault (tokens per share), with APYs and utilization.
 // Run once by hand: `docker compose exec app node server/snapshot.js`.
 import { pathToFileURL } from 'node:url'
 import { getCurrentLedgerInstant } from '@kamino-finance/klend-sdk'
@@ -18,7 +14,7 @@ import { read, write, POINTS, HISTORY } from './storage.js'
 
 const HALF_DAY = 12 * 3600
 
-// Unix time of an account's first transaction (a reserve's creation). Only needed once per reserve.
+// Only needed once per reserve.
 async function firstTxTime(addr) {
   let before, oldest
   for (;;) {
@@ -50,7 +46,7 @@ export async function readMarkets(history, {
   for (const m of configuredMarkets) {
     const market = await marketLoader(m)
     markets.set(m.kaminoMarket, market)
-    // Every position, from the transaction index (no getProgramAccounts, which Alchemy free refuses).
+    // From the transaction index: no getProgramAccounts, which Alchemy free refuses.
     const addrs = index.obligations[m.kaminoMarket] ?? []
     for (const ob of addrs.length ? await market.getMultipleObligationsByAddress(addrs.map(address), now) : []) {
       if (!ob) continue
@@ -82,9 +78,6 @@ export async function readMarkets(history, {
   return balances
 }
 
-// A vault's share value for Realized APY (exactly 1 when the vault was created), and its depositors' shares in USD
-// (in the wallet and staked in the vault farm) added to their Farm Points balance. Depositors come from the
-// transaction index.
 async function readVaultDay(v, markets, now, ts, index, history, balances, due) {
   const { live, view } = await readVault(v, markets, now)
   const h = ((history.vaults ??= {})[v.id] ??= { inception: Number(live.state.creationTimestamp), points: [] })

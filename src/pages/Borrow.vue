@@ -7,7 +7,7 @@ import { usd, pct } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 
 const router = useRouter()
-// LTV: the highest max LTV among the market's collaterals (what you can borrow per $ of collateral), read on-chain.
+// the highest max LTV among the market's collaterals
 const rows = computed(() => LIVE.flatMap((m) => m.loans.map((id) => ({
   m, t: tok(id), r: reserveOf(m, id),
   ltv: Math.max(...m.collateral.map((c) => reserveOf(m, c)?.maxLtv ?? NaN)),

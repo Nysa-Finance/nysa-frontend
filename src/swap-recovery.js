@@ -2,7 +2,6 @@ import { address, getBase58Decoder, getCompiledTransactionMessageDecoder, getTra
 
 const base58 = getBase58Decoder()
 
-/** Derive the first signature from the wallet-returned bytes before attempting backend relay. */
 export function signatureFromSignedTransaction(signedBytes, wallet) {
   if (!(signedBytes instanceof Uint8Array)) throw new TypeError('Signed transaction bytes are required.')
   let decoded
@@ -19,7 +18,7 @@ export function signatureFromSignedTransaction(signedBytes, wallet) {
   return base58.decode(signature)
 }
 
-/** Save the signed transaction and derived signature before relay; ambiguous transport remains a blocking pending state. */
+// Saved before relay: an ambiguous transport outcome stays a blocking pending state.
 export async function persistSignedSwapBeforeRelay({ pending, signedTransaction, persist, relay } = {}) {
   if (typeof persist !== 'function' || typeof relay !== 'function') throw new TypeError('Swap persistence and relay functions are required.')
   const signature = signatureFromSignedTransaction(signedTransaction, pending?.wallet)
@@ -54,7 +53,6 @@ export async function persistSignedSwapBeforeRelay({ pending, signedTransaction,
   }
 }
 
-/** Sum token balance changes reported in this confirmed transaction for one wallet and mint only. */
 export function confirmedSwapAmountFromDeltas(tokenDeltas, wallet, mint) {
   if (!Array.isArray(tokenDeltas) || typeof wallet !== 'string' || typeof mint !== 'string') {
     throw new Error('Confirmed transaction token deltas are unavailable.')
@@ -79,7 +77,7 @@ export function confirmedSwapAmountFromTransaction(transaction, wallet, mint) {
   return confirmedSwapAmountFromDeltas(transaction.tokenDeltas, wallet, mint)
 }
 
-/** Keep a confirmed swap pending until its transaction-specific output amount can be attributed. */
+// A confirmed swap stays pending until its own output amount can be attributed.
 export function pendingSwapChainOutcome(pending, chain) {
   if (chain?.status === 'failed') return { status: 'failed', signature: pending.signature, error: chain.error ?? 'Transaction failed on-chain.' }
   if (chain?.status !== 'confirmed') return { status: 'pending', signature: pending.signature }

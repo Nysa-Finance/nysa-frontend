@@ -1,10 +1,8 @@
-// Deeplink protocol round trip (iOS Phantom/Solflare), with the wallet side simulated as in Phantom's reference app:
-// connect → encrypted session back → sign request → signed transaction back. Run by `npm test`.
+// The wallet side is simulated as in Phantom's reference app.
 import assert from 'node:assert/strict'
 import nacl from 'tweetnacl'
 import { getBase58Decoder, getBase58Encoder } from '@solana/kit'
 
-// Minimal browser globals for src/wallets.js.
 const store = new Map()
 globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) }
 let href = 'https://app.nysa.finance/market/sol-usdy-usdc?mode=lend'

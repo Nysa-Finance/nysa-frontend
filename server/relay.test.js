@@ -1,5 +1,3 @@
-// What /api/tx/send relays and which confirmations refresh the market (server/relay.js), with real signed transactions
-// and a stubbed sanctions list. Run by `npm test`.
 import assert from 'node:assert/strict'
 import { mkdtempSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -41,7 +39,6 @@ const ix = (program, signers = []) => ({
   programAddress: address(program), data: new Uint8Array([1]),
   accounts: signers.map((s) => ({ address: s.address, role: AccountRole.WRITABLE_SIGNER, signer: s })),
 })
-// Fee payer `payer`, signed by every signer in `signWith`.
 async function signed(payer, ixs, signWith = [payer]) {
   const msg = pipe(
     createTransactionMessage({ version: 0 }),

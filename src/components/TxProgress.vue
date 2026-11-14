@@ -1,6 +1,4 @@
 <script setup>
-// The one transaction sheet of the app: wallet prompt, progress, then the outcome. `tx` comes from useTx(), or from
-// WalletHandoff for the iOS wallet apps (status 'ready' with the wallet link to open).
 import { computed } from 'vue'
 import { state } from '../store.js'
 import { txUrl } from '../config.js'

@@ -47,7 +47,7 @@ function messageDigest(messageBytes) {
   return createHash('sha256').update(messageBytes).digest()
 }
 
-/** Permit a wallet to refresh only the recent blockhash on the non-economic Kamino metadata setup message. */
+// A wallet may refresh only the recent blockhash of the non-economic Kamino metadata setup message.
 export function loopSetupMessageMatchesIgnoringBlockhash(expectedBytes, candidateBytes, metadata) {
   if (metadata?.kind !== 'loop-setup') return false
   if (messageMatchesWithLighthouse(expectedBytes, candidateBytes, { ignoreLifetimeToken: true })) return true
@@ -148,8 +148,7 @@ function isReadOnlyLighthouseAssertion(instruction, accountKeys) {
     && accountIndices.every((index) => Number.isSafeInteger(index) && !!accountKeys[index])
 }
 
-/** Compare a wallet-modified message (Phantom appends Lighthouse guard instructions when signing) while allowing only
- * appended read-only Lighthouse assertions. */
+// Phantom appends Lighthouse guard instructions when signing: only appended read-only assertions are allowed.
 export function messageMatchesWithLighthouse(originalBytes, candidateBytes, { ignoreLifetimeToken = false } = {}) {
   let original, candidate
   try {
@@ -225,7 +224,7 @@ function validateLendingBuildMetadata(metadata) {
   }
 }
 
-// What a wallet changed when it signed, for the log: only public message structure (accounts, programs, data).
+// For the log: only public message structure (accounts, programs, data).
 function messageSummary(bytes) {
   try {
     const message = getCompiledTransactionMessageDecoder().decode(bytes)
@@ -238,7 +237,6 @@ function messageSummary(bytes) {
   } catch { return 'undecodable' }
 }
 
-/** Keep short-lived authorization for an exact server-built transaction message. */
 export function createSwapIntentStore({ ttlMs = 15_000, maxEntries = MAX_ENTRIES, now = Date.now, idFactory = randomUUID, messageMatcher = null } = {}) {
   if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0 || !Number.isSafeInteger(maxEntries) || maxEntries <= 0
     || typeof now !== 'function' || typeof idFactory !== 'function'
@@ -304,7 +302,6 @@ export function createSwapIntentStore({ ttlMs = 15_000, maxEntries = MAX_ENTRIES
   }
 }
 
-/** Short-lived exact-message authorization for server-built ordinary and borrower-flow lending transactions. */
 export function createLendingTransactionIntentStore(options = {}) {
   const store = createSwapIntentStore({ ...options, messageMatcher: messageMatchesWithLighthouse })
   return {
@@ -321,7 +318,6 @@ export function createLendingTransactionIntentStore(options = {}) {
   }
 }
 
-/** Exact-message intents for the optional acquire/supply and withdraw/sell Kamino steps. */
 export function createBorrowerFlowIntentStore(options = {}) {
   const store = createSwapIntentStore(options)
   return {

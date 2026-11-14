@@ -50,7 +50,7 @@ function decodeMessageBytes(tx) {
   }
 }
 
-/** Server-side application transaction path. It compiles and authorizes one exact atomic message only. */
+// Compiles and authorizes one exact atomic message only.
 export function createLoopExecutionService({
   readiness,
   getPreview,

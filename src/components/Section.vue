@@ -1,5 +1,5 @@
 <script setup>
-// Collapsible card section (native <details>, so keyboard + screen readers work out of the box).
+// native <details>: keyboard and screen readers work out of the box
 defineProps({ title: String, open: Boolean })
 </script>
 

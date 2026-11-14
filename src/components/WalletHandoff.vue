@@ -1,5 +1,4 @@
 <script setup>
-// Deeplink wallets (Phantom / Solflare on iOS): the transaction to approve in the wallet app, then its outcome.
 import { computed, ref } from 'vue'
 import { state, cancelHandoff, cancelLendingBuildReservation, cancelLendingSetupRecovery, dismissHandoff, reconcileLocalPendingAction, resumeLendingSetupRecovery } from '../store.js'
 import { txUrl } from '../config.js'
@@ -29,7 +28,6 @@ const pendingAction = computed(() => {
     walletMismatch: state.address !== pending.wallet,
   }
 })
-// The handoff as the app's transaction sheet (TxProgress): 'sending' is its running state.
 const handoffTx = computed(() => state.handoff && {
   ...state.handoff, steps: [state.handoff.label], i: 0,
   status: state.handoff.status === 'sending' ? 'running' : state.handoff.status,

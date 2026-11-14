@@ -7,13 +7,13 @@ import TokenIcon from '../components/TokenIcon.vue'
 import Section from '../components/Section.vue'
 import LiquidateModal from '../components/LiquidateModal.vue'
 
-const multi = LIVE.length > 1 // name each loan's market only when there is more than one
+const multi = LIVE.length > 1 // market names only when there is more than one
 const pairs = LIVE.flatMap((m) => m.pairs.map((pair) => ({ m, pair, coll: tok(pair.collateral), debt: tok(pair.liability), risk: computed(() => riskOf(m, pair)) })))
-const AT_RISK = 1.1 // health factor under which a loan is flagged
+const AT_RISK = 1.1
 
-const loans = ref(undefined) // undefined = loading, null = unavailable
+const loans = ref(undefined)
 const history = ref(undefined)
-const target = ref(null) // the loan being liquidated (modal): a position from /api/analytics
+const target = ref(null)
 async function load() {
   const [p, l] = await Promise.allSettled([loadAnalytics().then((a) => a.positions), loadLiquidations()])
   loans.value = p.status === 'fulfilled' ? p.value.filter((x) => x.debt > 0) : null
@@ -33,7 +33,7 @@ const status = (hf) => (hf < 1 ? ['Liquidatable', 'bad'] : hf < AT_RISK ? ['At r
 
 const atRisk = computed(() => loans.value?.filter((p) => p.hf < AT_RISK).length)
 const lowest = computed(() => (loans.value?.length ? Math.min(...loans.value.map((p) => p.hf)) : null))
-// In USD: liquidations in different markets can repay different tokens.
+// in USD: liquidations in different markets can repay different tokens
 const priceByName = (name) => { const t = Object.values(TOKENS).find((x) => x.name === name); return t ? priceOf(t.token_id) : 0 }
 const repaid = computed(() => history.value?.reduce((s, l) => s + (l.repaid ?? 0) * priceByName(l.repaidToken), 0))
 const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })

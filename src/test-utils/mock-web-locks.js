@@ -1,4 +1,3 @@
-/** Install a shared, deterministic Web Locks mock for store integration tests. */
 export function installMockWebLocks() {
   let queue = Promise.resolve()
   const locks = {

@@ -12,7 +12,7 @@ const finite = (value) => typeof value === 'number' && Number.isFinite(value)
 const reason = (code, message) => ({ code, message })
 const marketIsActive = (market) => !!market && market.visible !== false && LIVE.some((candidate) => candidate.id === market.id)
 
-/** Shared fail-closed action policy. Full close does not inherit entry-only allocation, carry or risk-approval gates. */
+// Fail closed. Full close does not inherit entry-only allocation, carry or risk-approval gates.
 export function evaluateLoopActionReadiness({
   action,
   strategy = null,
@@ -57,8 +57,8 @@ export function evaluateLoopActionReadiness({
 function allocationExists(vaults, market, collateral, liability) {
   return Object.values(vaults ?? {}).some((vault) => (vault?.allocations ?? []).some((allocation) =>
     allocation.market === market.kaminoMarket
-      // Nysa's vault is USDC-denominated, so its actual allocation points at the market's USDC reserve.
-      // The allocation's collateral list establishes that this loan reserve serves the USDY collateral pair.
+      // Nysa's vault is USDC-denominated, so its allocation points at the market's USDC reserve; the allocation's
+      // collateral list establishes that this loan reserve serves the USDY collateral pair.
       && allocation.reserve === market.reserves?.[liability.token_id]
       && (allocation.collateral ?? []).includes(collateral.token_id)
       && finite(allocation.invested)

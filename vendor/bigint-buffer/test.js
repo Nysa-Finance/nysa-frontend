@@ -1,4 +1,4 @@
-// Run by `npm test`: the drop-in must convert exactly like the original package.
+// The drop-in must convert exactly like the original package.
 const assert = require('node:assert')
 const bb = require('./index.js')
 const n = 0x0102030405060708090an

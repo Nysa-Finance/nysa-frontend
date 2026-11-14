@@ -4,7 +4,7 @@ let enabled = false
 let skipPageview = false
 const early = [] // events sent before startAnalytics() (e.g. while reading a wallet app's answer on load)
 
-// Cookie-less analytics, self-hosted on the VPS (Plausible, see docker-compose.yml). Production builds only; ignores localhost.
+// Cookie-less, self-hosted (Plausible). Production builds only.
 // Never send wallet addresses, signatures or amounts: outbound links (Solscan URLs contain both) are reduced to their host.
 export function startAnalytics() {
   if (!import.meta.env.PROD) return

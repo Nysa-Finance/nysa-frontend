@@ -30,7 +30,7 @@ export function parseSwapQuoteRequest(body) {
   }
 }
 
-// The market whose collateral/loan pair is these two mints (either direction); the first market when none is given.
+// either direction; the first market when no pair is given
 export function marketForPair(inputMint, outputMint) {
   if (!inputMint && !outputMint) return LIVE[0]
   return LIVE.find((m) => m.pairs.some(({ collateral, liability }) => {
@@ -78,7 +78,7 @@ function publicRoutePlan(routePlan) {
   }))
 }
 
-/** Return quote facts only. Provider instructions, lookup tables and unsigned transactions stay server-side. */
+// Quote facts only: provider instructions, lookup tables and unsigned transactions stay server-side.
 export function publicSwapQuote(built, { now = Date.now } = {}) {
   if (!built || typeof built !== 'object' || !Number.isFinite(built.quoteAt)) throw new SwapRouteError('Swap provider returned an invalid quote.')
   const currentTime = now()

@@ -1,8 +1,5 @@
-// Sanctions screening of connected wallets against the US Treasury's OFAC SDN list, which names sanctioned crypto
-// addresses ("Digital Currency Address - SOL", "- USDC", "- ETH", …). Free and keyless; enforced here, server-side, so
-// it can't be bypassed in the browser: a sanctioned wallet gets no account data and no transactions built or relayed.
-// The list is downloaded once a day and kept in DATA_DIR, so a restart doesn't depend on the download.
-// The XML export is used because the CSV truncates the remarks field and drops about half of the addresses.
+// Enforced server-side so it can't be bypassed in the browser. Kept in DATA_DIR, so a restart doesn't depend on the
+// download. The XML export is used because the CSV truncates the remarks field and drops about half of the addresses.
 import { read, write, SANCTIONS } from './storage.js'
 
 const SDN_XML = 'https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.XML'
@@ -18,7 +15,6 @@ export const isSanctioned = (wallet) => addresses.has(wallet)
 export const screeningReady = () => addresses.size > 0
 export const screeningStatus = () => ({ source: 'OFAC SDN', addresses: addresses.size, updatedAt })
 
-// Every "Digital Currency Address - <coin>" id in the SDN XML.
 export function parseSdn(xml) {
   const out = new Set()
   for (const m of xml.matchAll(/<idType>Digital Currency Address - [A-Z0-9]+<\/idType>\s*<idNumber>([^<]+)<\/idNumber>/g)) out.add(m[1].trim())
@@ -36,7 +32,6 @@ export async function refreshSanctions() {
   console.log(`[screening] OFAC list updated: ${next.size} sanctioned addresses`)
 }
 
-// On boot: the saved list right away, then a fresh download now and every day (hourly retries on failure).
 export async function startScreening() {
   try {
     const saved = JSON.parse((await read(SANCTIONS)) ?? 'null')

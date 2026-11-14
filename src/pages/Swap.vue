@@ -9,10 +9,9 @@ import TokenIcon from '../components/TokenIcon.vue'
 import TxProgress from '../components/TxProgress.vue'
 import { formatBaseUnits } from '../swap-fees.js'
 
-const SLIPPAGES = [10, 30, 50] // bps; the server refuses more than 50
+const SLIPPAGES = [10, 30, 50] // the server refuses more than 50
 const route = useRoute()
-// Every collateral/loan pair of a live market can be swapped both ways; a new market adds its tokens here.
-// Loan token first, so the page opens on "sell USDC, buy USDY" (buying collateral).
+// Loan token first, so the page opens on buying collateral.
 const PAIRS = LIVE.flatMap((market) => market.pairs ?? []).flatMap(({ collateral, liability }) => [[liability, collateral], [collateral, liability]])
 const tokens = [...new Set(PAIRS.map(([id]) => id))].map((id) => TOKENS[id])
 const inputId = ref(tokens.some((token) => token.token_id === route.query.input) ? route.query.input : tokens[0].token_id)
@@ -90,7 +89,7 @@ async function fetchQuote() {
   } finally { if (current()) quoting.value = false }
 }
 
-// One click: build a fresh route (the server simulates it and authorizes that exact message), then sign it.
+// The server simulates the fresh route and authorizes that exact message.
 async function swap() {
   const body = request()
   const outputToken = output.value
@@ -125,7 +124,7 @@ watch([inputId, outputId, amount, slippageBps, () => state.address], () => {
   quoting.value = !!amountBaseUnits.value
   debounce = setTimeout(fetchQuote, 400)
 })
-// Keep the buy token paired with the sell token (picking the same token on both sides flips them).
+// picking the same token on both sides flips them
 watch(inputId, (id, previous) => {
   if (outputs.value.some((token) => token.token_id === outputId.value)) return
   outputId.value = outputs.value.some((token) => token.token_id === previous) ? previous : outputs.value[0].token_id

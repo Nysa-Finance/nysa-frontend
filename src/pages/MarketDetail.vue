@@ -1,6 +1,5 @@
 <script setup>
-// A market's borrow page (/borrow/:id): supply collateral and borrow, with the market's risk data. Lending goes through
-// the Earn vaults; `?mode=withdraw` opens the withdraw panel (collateral, or USDC lent here directly before Earn).
+// Lending goes through the Earn vaults: ?mode=withdraw is for collateral, or USDC lent here directly before Earn.
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -27,11 +26,11 @@ const loans = computed(() => m.value.loans.map(tok))
 const r = (id) => reserveOf(m.value, id)
 const sum = (ids, k) => ids.reduce((s, id) => s + (r(id)?.[k] ?? 0), 0)
 const pointsOpen = ref(false)
-// Admin changes to this market (the index also holds the vaults' own, tagged with another source).
+// the index also holds the vaults' updates, tagged with another source
 const updates = ref(null)
 const updatesError = ref(null)
 onMounted(() => loadMarketUpdates().then((d) => (updates.value = d.updates.filter((u) => u.source === m.value?.kaminoMarket))).catch((e) => (updatesError.value = e.message)))
-// Geoblocked here (server/main.js): only repaying and withdrawing. The server enforces it; this only says so up front.
+// The server enforces it; this only says so up front.
 const geoBlocked = ref(false)
 onMounted(() => m.value?.geoBlocked && fetch('/api/geo').then((r) => r.json()).then((g) => (geoBlocked.value = g.blocked)).catch(() => {}))
 const back = () => (history.state?.back ? router.back() : router.push({ name: 'borrow' }))
@@ -142,7 +141,7 @@ function openDd() {
                 <span class="addr-k">{{ t.name }} Address</span>
                 <a class="addr-link" :href="explorer(t.mint)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ t.mint }}</span><span class="addr-short">{{ short(t.mint, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
               </div>
-              <div v-if="r(t.token_id)" class="addr-row"><!-- the oracle feed is read from the reserve, on-chain -->
+              <div v-if="r(t.token_id)" class="addr-row">
                 <span class="addr-k">{{ t.name }} Price Feed<span class="addr-note">{{ r(t.token_id).feedNote }}</span></span>
                 <a class="addr-link" :href="explorer(r(t.token_id).priceFeed)" target="_blank" rel="noopener noreferrer"><span class="addr-full">{{ r(t.token_id).priceFeed }}</span><span class="addr-short">{{ short(r(t.token_id).priceFeed, 6, 6) }}</span><span class="ext">↗&#xFE0E;</span></a>
               </div>

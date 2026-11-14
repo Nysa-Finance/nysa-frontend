@@ -1,8 +1,4 @@
-// Global app state. The browser never calls the Solana RPC:
-// - market data is pushed by the backend over Server-Sent Events (/api/events), on load and whenever it changes
-//   (polled from /api/market while the stream is unavailable);
-// - the connected wallet's balances, positions and rewards come from /api/account;
-// - transactions are built and simulated by /api/tx; the wallet only signs and sends them.
+// The browser never calls the Solana RPC (its key stays on the server): market data, account data and transactions all come from the backend.
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
@@ -22,7 +18,7 @@ const WALLET_KEY = 'connectedWallet'
 const PENDING_KEY = 'nysaPendingTx'
 const SETUP_RECOVERY_KEY = 'nysaSetupRecovery'
 const CHAIN = 'solana:mainnet'
-const ACCOUNT_REFRESH_MS = 60_000 // while the tab is visible; right after a transaction it refreshes immediately
+const ACCOUNT_REFRESH_MS = 60_000 // right after a transaction it refreshes at once
 const CONFIRM_TIMEOUT_MS = 90_000
 const ACTION_BUILD_LEASE_MS = 60_000
 const ACTION_BUILD_HEARTBEAT_MS = 10_000
@@ -83,28 +79,26 @@ export const state = reactive({
   tosAccepted: safe(() => localStorage.getItem(TOS_KEY) === '1', false),
   loaded: false,
   loading: true,
-  error: null, // market data
-  walletError: null, // balances/positions
-  reserves: {}, // market id -> token_id -> reserve metrics, risk parameters, rate curve and oracle feed (live from chain)
-  rewards: {}, // market id -> token_id -> { apr, rewards: [{ symbol, apr, perDay, runwayDays }] } supply rewards
+  error: null,
+  walletError: null,
+  reserves: {},
+  rewards: {},
   address: null,
-  balances: {}, // token_id -> units in wallet
-  balancesBaseUnits: {}, // token_id -> exact confirmed SPL balance
-  sol: null, // wallet SOL balance used to explain network fee requirements before building
-  positions: {}, // market id -> token_id -> { supplied, borrowed, maxWithdraw } units
-  positionsBaseUnits: {}, // market id -> token_id -> exact protocol-computed max withdraw amount
-  loopPositions: [], // separately identified Multiply positions; never merged into vanilla token-keyed fields
-  loopPositionReadStatus: {}, // owner-scoped Multiply read coverage; absence is authoritative only when every configured read succeeded
-  claimable: {}, // market id -> [{ symbol, amount }] unclaimed rewards of the connected wallet
-  vaults: {}, // vault id -> Earn vault metrics, allocations and exposure (live from chain, server/vault.js)
-  vaultPositions: {}, // vault id -> { shares, value } of the connected wallet
+  balances: {},
+  balancesBaseUnits: {},
+  sol: null,
+  positions: {},
+  positionsBaseUnits: {},
+  loopPositions: [], // never merged into the vanilla token-keyed fields
+  loopPositionReadStatus: {}, // absent positions are authoritative only when every configured read succeeded
+  claimable: {},
+  vaults: {},
+  vaultPositions: {},
   walletName: null,
-  wallets: [], // detected Wallet Standard wallets
+  wallets: [],
   connectOpen: false,
   connectError: null, // shown when the connect window reopens (WalletConnect failed while Reown's modal was up)
-  points: { board: null, error: null }, // Farm Points leaderboard
-  // Phone wallets reached by deeplink (iOS): a transaction waiting for the user to approve it in the wallet app, or its
-  // outcome after they come back. { status: 'ready'|'sending'|'success'|'error', label, wallet, url?, signature?, error? }
+  points: { board: null, error: null },
   handoff: null,
   lendingPending: safe(() => JSON.parse(localStorage.getItem(PENDING_KEY))),
   lendingActionBusy: false,
@@ -113,16 +107,15 @@ export const state = reactive({
   setupRecoveryBusy: false,
   swapPending: safe(() => JSON.parse(localStorage.getItem('nysaPendingSwap'))),
   swapOutcome: safe(() => JSON.parse(localStorage.getItem('nysaSwapFlowOutcome'))),
-  blockedWallet: null, // address refused by the backend's sanctions screening (shown in a notice, then disconnected)
-  localFork: false, // the backend runs on a local fork (surfpool): wallets only sign, the backend sends (server/rpc.js)
-  swapVisible: false, // show the swap entry points: the server executes swaps for this wallet (SWAP_WALLETS beta, README)
+  blockedWallet: null,
+  localFork: false, // on a local fork wallets only sign and the backend sends: a wallet would send to mainnet
+  swapVisible: false, // SWAP_WALLETS beta: the server decides who can swap
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
 let wallet = null
 let account = null
 const usable = (w) => w.chains.includes(CHAIN) && 'standard:connect' in w.features && 'solana:signAndSendTransaction' in w.features
-// WalletConnect: wallet apps on another device (QR code) or on the phone; signed there, sent by our backend.
 const sendSigned = async (tx) => (await api('/api/tx/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tx, wallet: account.address }) })).signature
 const walletConnect = WALLETCONNECT_PROJECT_ID ? markRaw(createWalletConnectWallet(sendSigned)) : null
 function scanWallets() {
@@ -130,7 +123,7 @@ function scanWallets() {
   state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom'), ...(walletConnect ? [walletConnect] : [])].map(markRaw)
 }
 
-// iOS Safari has no wallet extensions: offer Phantom / Solflare through their deeplink protocol instead.
+// iOS Safari has no wallet extensions: Phantom and Solflare are reached through their deeplink protocol.
 export const deeplinkWallets = () => (isIOS && !state.wallets.some((w) => !w.walletconnect) ? DEEPLINK_WALLETS : [])
 const deeplinkWallet = (name) => ({ name, deeplink: true })
 
@@ -139,22 +132,16 @@ export function acceptTos() {
   state.tosAccepted = true
 }
 
-// Reserve data is per market: `m` is a market from config.js, `id` a token id. A token lent in two markets has a
-// reserve (rates, liquidity, limits) and a position in each; only its price and the wallet balance are shared.
+// A token lent in two markets has a reserve and a position in each; only its price and wallet balance are shared.
 export const reserveOf = (m, id) => state.reserves[m.id]?.[id]
-// A token's oracle price, from any market that lists it.
 export const priceOf = (id) => Object.values(state.reserves).find((r) => r[id])?.[id].price ?? tok(id).price
-// Supply reward APR (Kamino farm incentives) on top of the supply APY; 0 when the reserve has no active rewards.
 export const rewardAprOf = (m, id) => state.rewards[m.id]?.[id]?.apr ?? 0
-// Tooltip for a boosted APY, e.g. "3.10% supply APY + 12.00% USDC rewards APR".
 export const boostNote = (m, id, supplyApy) =>
   `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(m, id))} ${state.rewards[m.id]?.[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
 
-// Tooltip for a vault's boosted APY: "1.47% supply APY + 11,212.83% USDC rewards APY, auto-compounded".
 export const vaultApyNote = (v) => `${pct(v.supplyApy)} supply APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
 
-// Risk parameters of a collateral/liability pair. Governance changes them (Market Updates), so the live on-chain
-// values win; config.js only fills in until the first market update arrives.
+// Governance changes risk parameters (Market Updates), so the live on-chain values win over config.js.
 export function riskOf(m, pair) {
   const c = reserveOf(m, pair.collateral), l = reserveOf(m, pair.liability)
   return {
@@ -166,28 +153,24 @@ export function riskOf(m, pair) {
   }
 }
 
-// The liquidation bonus a liquidator really gets on a pair, as text ("2%–2.5%"): the configured max is often unreachable.
+// What a liquidator really gets: the configured max bonus is often unreachable.
 export function bonusText(m, pair) {
   const r = riskOf(m, pair)
   const { low, high } = liquidationBonusRange(r.minDiscount, r.maxDiscount, r.liqLtv)
   const p = (v) => `${+v.toFixed(2)}%`
   return low === high ? p(high) : `${p(low)}–${p(high)}`
 }
-// Interest rate model of a market's borrowable token (live curve and fee); null for collateral-only tokens, and until
-// the market data arrives.
 export const irmOf = (m, id) => (m.loans.includes(id) ? reserveOf(m, id)?.irm ?? null : null)
 
-// Everything a view needs for one token in one market, merged.
 export function rowOf(m, id) {
   const r = reserveOf(m, id)
   if (!r) return null
   return { reserve: r, walletBalance: state.balances[id] ?? 0, ...(state.positions[m.id]?.[id] ?? { supplied: 0, borrowed: 0, maxWithdraw: 0 }) }
 }
 
-// ---- market: pushed by the backend; polled from /api/market while the stream is down or refused ----
 const MARKET_POLL_MS = 30_000
-const STREAM_RETRY_MS = 60_000 // after the server refused the stream (too many connections), try it again this often
-let marketAt = 0 // updatedAt of the snapshot shown (a slow poll mustn't overwrite a newer push)
+const STREAM_RETRY_MS = 60_000 // after the server refused the stream (too many connections)
+let marketAt = 0 // a slow poll mustn't overwrite a newer push
 function showMarket(s) {
   if (s.updatedAt < marketAt) return
   marketAt = s.updatedAt
@@ -232,9 +215,7 @@ function listenMarket() {
   }
 }
 
-// ---- connected wallet ----
-// 502/503/504: the backend is not answering, e.g. restarting during a deploy (a few seconds). Asked once more, except
-// for sending a signed transaction, which is never sent twice.
+// 502/503/504: the backend is restarting (a deploy). Asked once more, except a signed transaction, never sent twice.
 const UNREACHABLE = [502, 503, 504]
 async function api(path, init) {
   let res = await fetch(path, init)
@@ -252,13 +233,12 @@ async function api(path, init) {
   return body
 }
 
-// The backend's sanctions screening refused this wallet: disconnect it and say why.
 function refuseWallet() {
   state.blockedWallet = state.address
   disconnect()
 }
 
-// fresh: skip the server's short per-wallet cache (after a transaction).
+// fresh: skip the server's per-wallet cache (after a transaction).
 export async function loadAccount(fresh = false) {
   const addr = state.address
   if (!addr) return
@@ -320,12 +300,11 @@ async function connectWith(w, silent) {
 
 export async function connectWallet(w) {
   await connectWith(w, false)
-  // via: how the wallet was reached — browser extension, Android app (Mobile Wallet Adapter) or iOS app (deeplink)
   event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : w.walletconnect ? { wallet: 'WalletConnect', via: 'walletconnect' } : { wallet: w.name, via: 'extension' })
   state.connectOpen = false
 }
 
-// Leaves for the wallet app; it sends the user back here connected (see start()). Call it straight from a tap.
+// Call it straight from a tap: browsers block navigation not started by the user.
 export const connectDeeplink = (name) => location.assign(connectUrl(name))
 
 export async function disconnect() {
@@ -335,7 +314,6 @@ export async function disconnect() {
   safe(() => localStorage.removeItem(WALLET_KEY))
 }
 
-// Silent reconnect to the wallet used last time.
 async function eagerConnect() {
   if (state.address) return
   const dl = deeplinkSession()
@@ -346,7 +324,6 @@ async function eagerConnect() {
   try { await connectWith(w, true) } catch { /* no longer authorised */ }
 }
 
-// ---- transactions: built by the backend, signed and sent by the wallet ----
 
 async function confirmed(signature) {
   const until = Date.now() + CONFIRM_TIMEOUT_MS
@@ -370,7 +347,7 @@ function trackSuccess(p) {
   else if (p.token) event(p.kind[0].toUpperCase() + p.kind.slice(1), { token: tok(p.token).name })
 }
 
-// ---- deeplink wallets (iOS): every signature is a round trip to the wallet app, and the page reloads on return ----
+// Deeplink wallets (iOS): every signature is a round trip to the wallet app, and the page reloads on return.
 const SWAP_PENDING_KEY = 'nysaPendingSwap'
 let cancelPending = null
 let reconcilingSwap = false
@@ -697,7 +674,6 @@ export async function cancelLendingBuildReservation() {
 // 4100: the wallet refused before signing because the site's permission lapsed (Phantom after a lock or account switch).
 const walletUnauthorized = (error) => error?.code === 4100 || /not been authorized/i.test(error?.message ?? '')
 
-/** Run a wallet request; on 4100 ask the wallet to authorize Nysa again, then retry once. */
 async function reauthorized(request) {
   try { return await request() } catch (error) {
     if (!walletUnauthorized(error) || wallet?.deeplink) throw error
@@ -728,7 +704,7 @@ function saveSwapOutcome(outcome) {
   safe(() => localStorage.setItem('nysaSwapFlowOutcome', JSON.stringify(safeOutcome)))
 }
 
-// Age of a swap reservation: its id starts with the creation time in base 36.
+// A swap reservation's id starts with its creation time in base 36.
 const swapAge = (pending) => Date.now() - Number.parseInt(String(pending?.reservationId).split('-')[0], 36)
 
 async function settleSwapChainOutcome(signature, pending) {
@@ -773,7 +749,6 @@ async function confirmedSwapOutcome(signature, pending) {
   return outcome
 }
 
-/** Sign only a server-built route, then relay it against its one-time exact-message intent. */
 export async function signAndSendSwap({ built, request, outputTokenId, flow, flowAmountBaseUnits } = {}) {
   if (!hasActionReservationLock()) throw actionReservationLockUnavailable()
   if (!wallet || !account || !state.address) throw new Error('Connect a Solana wallet to continue.')
@@ -999,7 +974,6 @@ async function saveLendingFlowOutcome(params, status, signature = null) {
   return true
 }
 
-// Back from the wallet app with a signed transaction (or a refusal): send it, confirm it, then the next step if any.
 async function resumeDeeplink(ret) {
   const swapPending = safe(() => JSON.parse(localStorage.getItem(SWAP_PENDING_KEY)))
   if (swapPending?.status === 'awaiting-signature') {
@@ -1183,7 +1157,7 @@ async function reconcilePendingLendingFlow() {
   finally { reconcilingLending = false }
 }
 
-/** Resolve an ambiguous local-wallet relay only after Surfpool proves the signature absent and its blockhash expired. */
+// Only once Surfpool proves the signature absent and its blockhash expired.
 export async function reconcileLocalPendingAction() {
   const pending = persistedLendingPending()
   if (!pending || !['signed-pending', 'submitted', 'relay-unknown'].includes(pending.status)
@@ -1240,7 +1214,6 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
   let owner
   try {
     if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
-    // No SOL at all: every transaction would fail (fees are paid in SOL).
     if (state.sol === 0) throw new Error('This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.')
     if (state.setupRecoveryBusy && !resumeFromSetupSignature) {
       throw pendingActionError('An account setup action is being resumed. Finish or cancel that action first.')
@@ -1290,8 +1263,7 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
         throw pendingActionError('Confirmed account setup changed while the action was being prepared.')
       }
       assertCanStartLendingAction(persistedLendingPending(), params, resumeSignature, id)
-      // Sign here, send through the backend: flows (exact build intent) and, on a local fork, every action, since the
-      // wallet would send it to mainnet instead of the fork.
+      // Flows (exact build intent) and, on a local fork, every action: the wallet would send it to mainnet, not the fork.
       if (params.loopAction || (params.swapFlow && params.swapFlowStage) || state.localFork) {
         const sign = wallet.features['solana:signTransaction']?.signTransaction
         if (typeof sign !== 'function') throw new Error('This wallet cannot safely sign a recoverable Nysa flow transaction.')
@@ -1437,13 +1409,12 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
   }
 }
 
-// kind: deposit | withdraw | borrow | repay. Returns the confirmed signature.
 export async function sendKaminoAction(kind, { market, token, amount, amountBaseUnits, all, swapFlow, swapFlowStage, flowAmountBaseUnits, beforeBalanceBaseUnits }) {
   const walletAddress = account?.address
   const params = { wallet: walletAddress, kind, market: market.id, token: token.token_id, amount, amountBaseUnits, all, swapFlow, swapFlowStage, flowAmountBaseUnits, beforeBalanceBaseUnits }
   try {
     const sig = await runAction(params)
-    trackSuccess(params) // Deposit | Withdraw | Borrow | Repay
+    trackSuccess(params)
     if (params.swapFlow) await saveLendingFlowOutcome(params, 'confirmed', sig)
     return sig
   } catch (e) {
@@ -1461,7 +1432,6 @@ export async function sendKaminoAction(kind, { market, token, amount, amountBase
   }
 }
 
-/** Open or fully close an identified Multiply position through the exact-message loop intent relay. */
 export async function sendLoopAction(kind, { market, amount, leverage, previewId, acknowledgementKey, positionId } = {}) {
   if (!['loop-open', 'loop-close'].includes(kind)) throw new Error('Unsupported loop action.')
   const walletAddress = account?.address
@@ -1483,7 +1453,6 @@ export async function sendLoopAction(kind, { market, amount, leverage, previewId
   }
 }
 
-/** Run the one-time non-economic Kamino UserMetadata setup through the same sign-only intent relay. */
 export async function sendLoopSetup({ market = 'sol-usdy-usdc' } = {}) {
   const walletAddress = account?.address
   if (!walletAddress) throw new Error('Connect a Solana wallet before initializing Kamino metadata.')
@@ -1499,7 +1468,6 @@ export async function sendLoopSetup({ market = 'sol-usdy-usdc' } = {}) {
   }
 }
 
-// Runs an action and records the outcome (analytics). Returns the confirmed signature.
 async function act(params) {
   try {
     const sig = await runAction(params)
@@ -1510,11 +1478,9 @@ async function act(params) {
     throw e
   }
 }
-// Earn vault: deposit the vault's token for shares, or withdraw `amount` of it (all: every share).
 export const sendVaultAction = (kind, vault, { amount, all }) => act({ kind, vault: vault.id, amount, all })
 export const claimRewards = (market) => act({ kind: 'claim', market: market.id })
 
-// Liquidation of someone else's unhealthy loan: how much can be repaid, a quote (simulated on-chain), then the action.
 export const loadLiquidationInfo = (market, borrower) => api(`/api/liquidation/${market.id}/${borrower}`)
 export async function previewLiquidation(market, borrower, amount) {
   if (!account) throw new Error('Connect a Solana wallet to continue.')
@@ -1522,8 +1488,6 @@ export async function previewLiquidation(market, borrower, amount) {
 }
 export const liquidate = (market, borrower, amount) => act({ kind: 'liquidate', market: market.id, borrower, amount })
 
-// ---- read-only data from the backend ----
-// Farm Points leaderboard (shared by the modal, Portfolio and Analytics). Loaded once per page view.
 let pointsReq = null
 export function loadPoints() {
   pointsReq ??= fetch('/api/points', { headers: { accept: 'text/csv' } })
@@ -1534,17 +1498,11 @@ export function loadPoints() {
 }
 export const myPoints = () => state.points.board?.rows.find((r) => r.address === state.address) ?? null
 
-// One request per page view, shared by every caller; asked again after a failure.
 const once = (path) => { let req = null; return () => (req ??= api(path).catch((e) => { req = null; throw e })) }
-// Reserve history for Realized APY (recorded by the snapshot twice a day).
 export const loadApyHistory = once('/api/apy-history')
-// Admin changes to the market and its reserves (decoded on-chain by the backend).
 export const loadMarketUpdates = once('/api/market-updates')
 
-// Every open position, riskiest first (hf null = no debt).
-// Market positions (obligations) and each vault's holders ({ [vaultId]: [{ owner, wallet, staked }] } or null).
 export const loadAnalytics = () => api('/api/analytics')
-// Every liquidation in the live markets, newest first (decoded on-chain by the backend).
 export const loadLiquidations = () => api('/api/liquidations').then((a) => a.liquidations)
 
 let started = false
@@ -1556,7 +1514,7 @@ export function start() {
   getWallets().on('register', scanWallets)
   listenMarket()
   loadSwapVisibility()
-  const ret = readDeeplinkReturn() // back from Phantom/Solflare on iOS?
+  const ret = readDeeplinkReturn()
   if (ret) skipNextPageview()
   if (ret?.action === 'connect' && ret.error) state.handoff = { status: 'error', label: 'Connect wallet', error: ret.error }
   else if (ret?.action === 'connect') {
@@ -1580,7 +1538,6 @@ export function start() {
   })
 }
 
-// Sequential multi-step transaction runner shared by the Lend/Borrow panels.
 export function useTx() {
   const tx = reactive({ status: 'idle', steps: [], i: 0, error: null, signature: null, note: null })
   return {

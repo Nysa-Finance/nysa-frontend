@@ -1,5 +1,3 @@
-// Positions for the Analytics page: every obligation in each LIVE market (addresses from the market index, read in one
-// batch against the market cache), riskiest first; and every holder of each vault's shares. Cached for a minute.
 import { address, fetchEncodedAccounts, getAddressDecoder, isAddress } from '@solana/kit'
 import { LIVE, VAULTS, swapTokens } from '../src/config.js'
 import { localForkExecutionEnabled } from './local-fork-execution.js'
@@ -47,10 +45,8 @@ export async function readPositions({ indexReader = freshIndex, markets = LIVE, 
   return out.sort((a, b) => (a.hf ?? Infinity) - (b.hf ?? Infinity) || b.deposits - a.deposits)
 }
 
-// A vault's depositors: every wallet that ever deposited (vault transactions in the market index, Kamino's UI
-// included) plus its 20 largest share holders (catches shares moved to another wallet), each with its shares in the
-// wallet and staked in the vault farm. Alchemy refuses a getProgramAccounts scan of the Token program, so no full scan.
-// -> [{ owner, wallet, staked }] in shares, largest first.
+// Every wallet that ever deposited (from the market index, Kamino's UI included) plus the 20 largest share holders,
+// which catches shares moved to another wallet. Alchemy refuses a getProgramAccounts scan of the Token program.
 async function readHolders(v, index) {
   const live = getVault(v.id)
   const largest = (await rpc.getTokenLargestAccounts(live.state.sharesMint).send()).value
@@ -64,7 +60,6 @@ async function readHolders(v, index) {
     .sort((a, b) => b.wallet + b.staked - (a.wallet + a.staked))
 }
 
-// Cached for a minute and shared between visitors; a failed read is retried on the next request.
 function cachedFor(ms, read) {
   let cached = null, cachedAt = 0
   const get = () => {

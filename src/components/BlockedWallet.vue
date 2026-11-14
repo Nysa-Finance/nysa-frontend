@@ -1,5 +1,4 @@
 <script setup>
-// Shown when the connected wallet is refused by sanctions screening (OFAC SDN list, enforced by the backend).
 import { state } from '../store.js'
 import { short } from '../logic.js'
 </script>

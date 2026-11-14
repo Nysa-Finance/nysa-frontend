@@ -7,12 +7,12 @@ import TokenIcon from '../components/TokenIcon.vue'
 import Section from '../components/Section.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 
-const multi = LIVE.length > 1 // name each row's market only when there is more than one
-const positions = ref(undefined) // undefined = loading, null = unavailable
-const holders = ref(undefined) // { [vaultId]: [{ owner, wallet, staked }] }; undefined = loading, null = unavailable
-const feeReceivers = ref(undefined) // undefined = loading, null = unavailable
+const multi = LIVE.length > 1 // market names only when there is more than one
+const positions = ref(undefined)
+const holders = ref(undefined)
+const feeReceivers = ref(undefined)
 const feeCopyStatus = ref('')
-const copied = ref(null) // the address whose button shows ✓ Copied
+const copied = ref(null)
 let copiedTimer
 const pointsOpen = ref(false)
 const nowSec = ref(Date.now() / 1000)
@@ -71,16 +71,13 @@ const feeReceiverAccounts = computed(() => (feeReceivers.value?.accounts ?? []).
   name: TOKENS[account.tokenId]?.name ?? account.tokenId,
 })))
 
-// Every reserve of every market, live from the backend's market stream (store.js); only positions are fetched here.
 const reserves = computed(() => LIVE.flatMap((m) => tokensOf(m).filter((t) => reserveOf(m, t.token_id))
   .map((t) => ({ m, key: m.id + t.token_id, token: t, ...reserveOf(m, t.token_id) }))))
 const collateral = computed(() => reserves.value.filter((r) => r.m.collateral.includes(r.token.token_id)))
 const borrowable = computed(() => reserves.value.filter((r) => r.m.loans.includes(r.token.token_id)))
-// TVL as risk curators count it (Gauntlet, Sentora… on DefiLlama; Nysa's adapter, DefiLlama-Adapters projects/nysa,
-// once updated to match): everything deposited in what Nysa curates, lent-out tokens included. Our markets' reserves count all their deposits
-// (collateral, and loan tokens lent or not); the vaults add their idle tokens and everything they invested in markets
-// that aren't ours (their deposits into our markets are already in those reserves). Moving vault deposits to a busier
-// market doesn't lower it. Prices are Kamino's oracle prices; DefiLlama uses its own, so the two differ by a few dollars.
+// TVL as risk curators count it (Gauntlet, Sentora on DefiLlama): every deposit, lent-out tokens included. Vault
+// deposits into our markets are already in our reserves; those in other markets are added. Kamino's oracle prices,
+// so a few dollars off DefiLlama's.
 const outside = (x) => x.allocations.filter((a) => !a.marketId).reduce((s, a) => s + a.liquid + a.lent, 0)
 const vaultsUsd = (pick) => VAULTS.reduce((s, v) => { const x = state.vaults[v.id]; return s + (x ? pick(x) * x.price : 0) }, 0)
 const vaultCashUsd = computed(() => vaultsUsd((x) => x.available + outside(x)))
@@ -96,7 +93,6 @@ const age = (r) => nowSec.value - r.oracleTs
 const fresh = (r) => r.oracleTs > 0 && age(r) <= r.maxAge
 const stale = computed(() => [...new Set(reserves.value.filter((r) => !fresh(r)).map((r) => r.token.name))])
 
-// Each vault and its depositors (shares in the wallet + staked in the vault farm), valued at the live share price.
 const vaults = computed(() => VAULTS.map((v) => {
   const live = state.vaults[v.id]
   const price = live && live.total > 0 ? live.totalUsd / live.total : 1

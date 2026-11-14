@@ -73,7 +73,7 @@ function loopRoutesMatchWithinRounding(expected, built) {
   })
 }
 
-/** Kamino SDK `slippagePct` uses percentage points (0.5 means 50 bps), unlike the router's basis-point field. */
+// Kamino's `slippagePct` is in percentage points (0.5 means 50 bps), unlike the router's basis-point field.
 export function sdkSlippagePctFromBps(slippageBps) {
   if (!Number.isSafeInteger(slippageBps) || slippageBps < 0 || slippageBps > 10_000) throw new LoopPreviewError('Invalid Kamino slippage basis points.')
   return new Decimal(slippageBps).div(100)
@@ -103,7 +103,7 @@ function decimalText(value) {
   return value.toDecimalPlaces(38, Decimal.ROUND_HALF_UP).toFixed()
 }
 
-/** Kamino getDepositByReserve/getBorrowByReserve amounts are raw mint base units. */
+// Kamino's getDepositByReserve/getBorrowByReserve amounts are raw mint base units.
 export function obligationRawAmountBaseUnits(value) {
   let amount
   try { amount = new PreciseDecimal(String(value)) } catch { throw new LoopPreviewError('Invalid raw obligation amount.') }
@@ -111,7 +111,7 @@ export function obligationRawAmountBaseUnits(value) {
   return BigInt(amount.ceil().toFixed(0)).toString()
 }
 
-/** Mirror Kamino's posted obligation amounts: deposit is floored and debt borrow is ceiled to mint base units. */
+// As Kamino posts them: deposits floored, debt ceiled to mint base units.
 export function sdkAmountBaseUnitsWithProtocolRounding(value, decimals, direction) {
   if (!Number.isSafeInteger(decimals) || decimals < 0 || decimals > 18 || !['floor', 'ceil'].includes(direction)) {
     throw new LoopPreviewError('Invalid protocol amount rounding inputs.')
@@ -127,7 +127,7 @@ export function sdkAmountWithProtocolRounding(value, decimals, direction) {
     .div(new PreciseDecimal(10).pow(decimals)))
 }
 
-/** Mirror the installed SDK's raw borrow, exclusive protocol fee, and half-up origination-fee rounding. */
+// Same rounding as the installed SDK: raw borrow, exclusive protocol fee, half-up origination fee.
 export function sdkBorrowDebtBaseUnitsWithProtocolFee(value, decimals, market, reserve, hasReferrer = false) {
   if (!market?.state || typeof reserve?.calculateFees !== 'function' || typeof reserve?.getBorrowFee !== 'function') {
     throw new LoopPreviewError('Kamino borrow-fee inputs are unavailable for loop simulation.')
@@ -139,7 +139,7 @@ export function sdkBorrowDebtBaseUnitsWithProtocolFee(value, decimals, market, r
   return obligationRawAmountBaseUnits(debtWithFees)
 }
 
-/** Mirror Kamino on-chain liquidity_to_collateral + try_to_floor, then hydrate the cToken amount through exchange rate. */
+// As Kamino on-chain: liquidity_to_collateral + try_to_floor, then the cToken amount through the exchange rate.
 export function sdkDepositPositionBaseUnitsWithExchangeRate(value, decimals, exchangeRate) {
   const rate = positiveDecimal(exchangeRate, 'collateral exchange rate')
   const liquidityBaseUnits = sdkAmountBaseUnitsWithProtocolRounding(value, decimals, 'floor')
@@ -320,7 +320,7 @@ async function resolveLookupTables(built, resolver) {
   return accounts
 }
 
-/** The same callbacks are used by Kamino's quote-only preview and its instruction builder. */
+// Kamino's quote-only preview and its instruction builder share these callbacks.
 export function createKaminoSwapCallbacks({
   wallet,
   buildSwapFn = buildSwap,
@@ -566,12 +566,10 @@ export function buildLoopPreview({
   return preview
 }
 
-/** Use the installed Kamino SDK quote path while preserving the provider-native fee in the quoter callback. */
 export function quoteMultiplyOpen(inputs, callbacks) {
   return getDepositWithLeverageSwapInputs({ ...inputs, quoter: callbacks.quoter })
 }
 
-/** Pin an exact route for the SDK's final integer-base-unit swap amount, including its price-based recalculation. */
 export async function quoteMultiplyOpenAtFinalAmount(inputs, callbacks, quoteSdk = quoteMultiplyOpen, { maxIterations = 6 } = {}) {
   if (typeof quoteSdk !== 'function' || typeof callbacks?.quoter !== 'function' || typeof callbacks?.setPricingQuote !== 'function'
     || !Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > 12) {
@@ -608,11 +606,9 @@ export async function quoteMultiplyOpenAtFinalAmount(inputs, callbacks, quoteSdk
     }
     callbacks.setPricingQuote(exactRoute)
   }
-  // Jupiter's integer output rounding can make the SDK's derived input alternate between adjacent base units.
-  // Resolve that narrow case with a fresh quote for the SDK's final input. The economic builder still re-quotes
-  // that exact amount and its transaction simulation remains the execution authority.
-  // Ignore the initial estimate: it may be far from the eventual integer quote. Only
-  // accept oscillation after three consecutive re-quotes settle within one base unit.
+  // Jupiter's integer output rounding can make the SDK's derived input alternate between adjacent base units: re-quote
+  // the final input, ignoring the first estimate, and accept it once three re-quotes settle within one base unit.
+  // The economic builder still re-quotes that amount, and its simulation stays the authority.
   const finalAttempts = attempts.slice(-3)
   const adjacentRoundingOnly = attempts.length === maxIterations && finalAttempts.length === 3 && finalAttempts.every(({ quotedAmountBaseUnits, sdkAmountBaseUnits }) =>
     quotedAmountBaseUnits != null && /^\d+$/.test(quotedAmountBaseUnits) && /^\d+$/.test(sdkAmountBaseUnits)
@@ -643,7 +639,6 @@ export function quoteMultiplyFullClose(inputs, callbacks) {
   return getWithdrawWithLeverageSwapInputs({ ...inputs, quoter: callbacks.quoter })
 }
 
-/** Compose Kamino's real leveraged-deposit instructions with the fee-aware Jupiter quote and swap callbacks. */
 export function buildMultiplyOpenIxs(inputs, callbacks, builder = getDepositWithLeverageIxs) {
   if (typeof callbacks?.quoter !== 'function' || typeof callbacks?.swapper !== 'function') throw new LoopPreviewError('Open requires fee-aware quote and swap callbacks.')
   if (inputs?.obligation) {
@@ -660,7 +655,6 @@ export function buildMultiplyOpenIxs(inputs, callbacks, builder = getDepositWith
   return builder({ ...inputs, obligationTypeTagOverride: ObligationTypeTag.Multiply, quoter: callbacks.quoter, swapper: callbacks.swapper })
 }
 
-/** Force the installed Kamino SDK close-position branch to withdraw the full collateral amount. */
 export function buildMultiplyFullCloseIxs(inputs, callbacks, builder = getWithdrawWithLeverageIxs) {
   if (inputs?.isClosingPosition !== true) throw new LoopPreviewError('Full close requires the SDK full close branch.')
   if (!inputs.obligation || typeof callbacks?.quoter !== 'function' || typeof callbacks?.swapper !== 'function') {
@@ -741,7 +735,6 @@ function mergeApplicationParts({ routes, instructionGroups, lookupTables = [], s
   }
 }
 
-/** Compose the fee-aware borrowed-USDC-to-USDY route and SDK Multiply-open instructions atomically. */
 export async function buildAtomicMultiplyOpenApplication({
   wallet,
   sdkInputs,
@@ -789,7 +782,6 @@ export async function buildAtomicMultiplyOpenApplication({
   }
 }
 
-/** Compose the SDK's protocol full-close branch and its fee-aware collateral sale as one transaction. */
 export async function buildAtomicMultiplyFullCloseApplication({
   sdkInputs,
   callbacks,
@@ -834,7 +826,6 @@ export async function buildAtomicMultiplyFullCloseApplication({
   }
 }
 
-/** Compare simulated token-account deltas with composed router fees, allowing bounded raw-unit rounding. */
 export function verifyAtomicLoopFeeDeltas(feeEvents, tokenDeltas) {
   if (!Array.isArray(feeEvents) || !feeEvents.length || !Array.isArray(tokenDeltas)) {
     throw new LoopPreviewError('Atomic loop fee balance deltas are unavailable.')
@@ -884,7 +875,7 @@ function currentUsdYUsdcContext(wallet) {
   return { owner, marketConfig, market, currentLedgerInstant, collateral, liability, collateralReserve, liabilityReserve }
 }
 
-/** Use Kamino's own SDK builder for the documented metadata-only setup; do not mix it with economic actions. */
+// Metadata-only setup through Kamino's own builder, never mixed with economic actions.
 export async function buildLoopMetadataSetupBundle({ kaminoMarket, owner, payer = owner, referrer = none(), sdkBuilder } = {}) {
   if (!kaminoMarket || !owner?.address || typeof kaminoMarket.getUserMetadata !== 'function') {
     throw new LoopPreviewError('Kamino metadata setup dependencies are incomplete.')
@@ -904,7 +895,6 @@ export async function buildLoopMetadataSetupBundle({ kaminoMarket, owner, payer 
   return { required: true, metadataAddress: String(metadataAddress), ixs: setupBundle.ixs }
 }
 
-/** Read the wallet-specific one-time setup state without building or exposing transaction instructions. */
 export async function loopMetadataStatus({ wallet } = {}) {
   if (typeof wallet !== 'string' || !wallet) throw new LoopPreviewError('Wallet address is required for Kamino metadata status.')
   await refreshMarketForExecution()
@@ -914,7 +904,6 @@ export async function loopMetadataStatus({ wallet } = {}) {
   return { required: !metadata, metadataAddress: String(metadataAddress) }
 }
 
-/** Build the SDK's documented one-time metadata initialization as an isolated, non-economic setup transaction. */
 export async function buildLoopMetadataSetupApplication({ wallet } = {}) {
   if (typeof wallet !== 'string' || !wallet) throw new LoopPreviewError('Wallet address is required for Kamino metadata setup.')
   await refreshMarketForExecution()
@@ -939,7 +928,7 @@ export async function buildLoopMetadataSetupApplication({ wallet } = {}) {
   }
 }
 
-/** Setup must create the exact owner-bound Kamino UserMetadata PDA before it is offered to the wallet. */
+// Setup must create the exact owner-bound Kamino UserMetadata PDA before it is offered to the wallet.
 export function verifyLoopMetadataSetupSimulation({ built, simulation } = {}) {
   const context = built?.simulationContext
   if (!context || context.kind !== 'loop-setup' || simulation?.ok !== true) return false
@@ -951,7 +940,6 @@ export function verifyLoopMetadataSetupSimulation({ built, simulation } = {}) {
   } catch { return false }
 }
 
-/** Build a fresh atomic USDY Multiply open from the exact wallet-bound read-only preview context. */
 export async function buildLoopOpenApplication({
   wallet, amount, leverage, preview, now = Date.now(),
   flashBorrowType = 'coll',
@@ -1097,7 +1085,7 @@ export async function buildLoopOpenApplication({
   }
 }
 
-/** Build a fresh protocol full-close transaction only for the exact wallet-owned Nysa Multiply PDA. */
+// Only for the exact wallet-owned Nysa Multiply PDA.
 export async function buildLoopCloseApplication({
   wallet, position,
   flashBorrowType = 'coll',
@@ -1183,7 +1171,6 @@ export async function buildLoopCloseApplication({
   }
 }
 
-/** Simulate the composed instruction set and read the Multiply obligation from the simulated account image. */
 export async function simulateLoopApplication({ built, compiled, simulate = simulateAtomicTransaction } = {}) {
   if (!built?.simulationContext) throw new LoopPreviewError('Loop simulation context is unavailable.')
   const tokenAccounts = [...new Map([...built.feeEvents, ...built.ownerTokenAccounts]
@@ -1195,8 +1182,8 @@ export async function simulateLoopApplication({ built, compiled, simulate = simu
   const accountOwner = simulated.accountOwners?.get(context.positionObligationAddress)
   if (context.kind === 'loop-close' && accountData instanceof Uint8Array && accountData.length === 0
     && accountOwner === DEFAULT_RESERVE_ADDRESS) {
-    // Kamino may close the Multiply PDA on a full close. Its system-owned empty post-state is
-    // the protocol's zero-position representation; the pre-build path already verified PDA ownership.
+    // Kamino may close the Multiply PDA on a full close: its system-owned empty post-state is the protocol's zero
+    // position (the pre-build path already verified PDA ownership).
     simulated.remainingDebtBaseUnits = '0'
     simulated.positionOwner = context.wallet
     simulated.positionCollateralBaseUnits = '0'
@@ -1238,7 +1225,6 @@ export async function simulateLoopApplication({ built, compiled, simulate = simu
   return simulated
 }
 
-/** Verify the fee events and post-state before an exact-message intent may be issued. */
 export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}) {
   const context = built?.simulationContext
   if (!context || context.kind !== kind || simulation?.ok !== true || simulation.positionOwner !== context.wallet) return false
@@ -1258,9 +1244,8 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
     try {
       const fundingBaseUnits = BigInt(context.fundingBaseUnits)
       const fundingChange = BigInt(fundingDelta)
-      // Collateral-flash Multiply swaps can return a small USDY surplus to the wallet.
-      // Permit that surplus, but never permit the transaction to debit more USDY than
-      // the amount explicitly approved in the preview.
+      // Collateral-flash Multiply swaps can return a small USDY surplus to the wallet: allowed, but never a debit of more
+      // USDY than the preview approved.
       if (fundingBaseUnits <= 0n || fundingChange > 0n || -fundingChange > fundingBaseUnits || BigInt(debtDelta) < 0n) return false
     } catch { return false }
     try {
@@ -1310,10 +1295,7 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
   return false
 }
 
-/**
- * Build a quote-only USDY Multiply preview with the installed Kamino SDK and shared fee-aware Jupiter adapter.
- * It never returns instructions, simulates an economic transaction, or offers a signer path.
- */
+// Quote only: never returns instructions, never simulates an economic transaction, never offers a signer path.
 export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage, snapshot, strategy, now = Date.now(), signal, onApplicationContext,
   localForkSimulation = false, localForkRpcUrl, localRouteProgramVerifier } = {}) {
   const collateral = TOKENS['svm-usdy']

@@ -1,6 +1,3 @@
-// Live market cache: every LIVE Kamino market (reserves, oracle prices, reward farms) is read once per REFRESH_MS,
-// and right after a transaction confirms, then shared by every visitor (pushed over /api/events).
-// Accounts, transactions and analytics are computed against this cache instead of re-reading the market each time.
 import { createRequire } from 'node:module'
 import {
   KaminoMarket, LendingMarket, getSingleReserve, getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS,
@@ -15,14 +12,14 @@ import { readVaults } from './vault.js'
 const require = createRequire(import.meta.url)
 const { Farms, fetchFarmState } = require('@kamino-finance/farms-sdk')
 
-export const REFRESH_MS = 60_000 // how stale market data may get without activity; confirmed txs refresh sooner
-const SOON_MS = 2_000 // after a confirmed transaction
-const SOON_GAP_MS = 10_000 // post-transaction reads at most this often, however many confirmations come in
+export const REFRESH_MS = 60_000
+const SOON_MS = 2_000
+const SOON_GAP_MS = 10_000
 export const num = (v) => (v == null ? 0 : typeof v === 'number' ? v : v.toNumber())
 export const farms = new Farms(rpc)
 
-// Load a market with only the reserves listed in config.js, fetched by address. KaminoMarket.load() discovers
-// reserves with getProgramAccounts over the whole Kamino program, which many RPC plans refuse (Alchemy free: 429).
+// Only the reserves in config.js, by address: KaminoMarket.load() uses getProgramAccounts over the whole program,
+// which many RPC plans refuse (Alchemy free: 429).
 export async function loadMarket(rpcClient, m) {
   const marketAddress = address(m.kaminoMarket)
   const [state, ...reserves] = await Promise.all([
@@ -33,7 +30,6 @@ export async function loadMarket(rpcClient, m) {
   return KaminoMarket.loadWithReserves(rpcClient, state, new Map(reserves.map((r) => [r.address, r])), marketAddress, DEFAULT_RECENT_SLOT_DURATION_MS)
 }
 
-// A loaded market's reserve of a token: the address comes from the market's entry in config.js.
 export function reserveOf(market, t) {
   const m = LIVE.find((x) => x.kaminoMarket === String(market.getAddress()))
   const r = m?.reserves[t.token_id] && market.getReserveByAddress(address(m.reserves[t.token_id]))
@@ -41,8 +37,7 @@ export function reserveOf(market, t) {
   return r
 }
 
-// Everything the UI shows about a reserve, at the current block. Risk parameters and the rate curve come from chain
-// too, so governance changes (Market Updates) show up without touching config.js.
+// Risk parameters and the rate curve come from chain too, so governance changes show up without touching config.js.
 function reserveMetrics(m, t, r, now) {
   const f = num(r.getMintFactor()) || 1
   const price = num(r.getOracleMarketPrice())
@@ -74,8 +69,7 @@ function reserveMetrics(m, t, r, now) {
   }
 }
 
-// Supply rewards from the reserve's collateral farm, as APR (rewards don't compound): yearly emission value over the
-// staked value. The farm stakes each obligation's collateral (cTokens), converted here to liquidity and USD.
+// APR, not APY: rewards don't compound. The farm stakes cTokens, converted here to liquidity and USD.
 function farmRewards(tokens, t, r, farm, market) {
   const stakedUsd = Number(farm.totalStakedAmount) / 10 ** t.decimals / num(r.getCollateralExchangeRate()) * num(r.getOracleMarketPrice())
   const rewards = []
@@ -97,12 +91,12 @@ function farmRewards(tokens, t, r, farm, market) {
 
 async function readAll() {
   const now = await getCurrentLedgerInstant(rpc)
-  const live = new Map(), reserves = {}, rewards = {} // reserves, rewards: market id -> token id -> …
+  const live = new Map(), reserves = {}, rewards = {}
   for (const m of LIVE) {
     reserves[m.id] = {}
     rewards[m.id] = {}
     const market = await loadMarket(rpc, m)
-    const farmStates = new Map() // farm address -> FarmState
+    const farmStates = new Map()
     const tokens = tokensOf(m)
     for (const t of tokens) {
       const r = reserveOf(market, t)
@@ -120,8 +114,8 @@ async function readAll() {
 }
 
 let live = new Map()
-let liveVaults = new Map() // vault id -> { kv, state, reserves, perShare } (vault.js)
-let snapshot = null // the JSON the browser gets (/api/market, /api/events)
+let liveVaults = new Map()
+let snapshot = null
 const listeners = new Set()
 
 export const getSnapshot = () => snapshot
@@ -134,30 +128,26 @@ function publishRead(r) {
   for (const fn of listeners) fn(snapshot)
 }
 
-// KaminoMarket + ledger instant + farm states of a market, as of the last refresh.
 export function getLive(m) {
   const l = live.get(m.id)
   if (!l) throw new Error('Market data is still loading, try again in a few seconds')
   return l
 }
-// A vault's state, its reserves and value per share, as of the last refresh.
 export function getVault(id) {
   const v = liveVaults.get(id)
   if (!v) throw new Error('Vault data is still loading, try again in a few seconds')
   return v
 }
 
-// Concurrent callers share one read (refresh.js). On failure the previous data stays served and the next tick retries.
+// On failure the previous data stays served and the next tick retries.
 const publishLatestRead = createLatestReadPublisher(publishRead)
 const readAndPublish = () => publishLatestRead(readAll)
 const refresher = createRefresher(() => readAndPublish()
   .catch((e) => console.error('[market] refresh failed', e)), { every: REFRESH_MS, soon: SOON_MS, minGap: SOON_GAP_MS })
 
 export const refreshMarket = refresher.run
-/** Force execution-critical reserve state to be read successfully before an allowance-bound withdrawal build. */
 export async function refreshMarketForExecution() {
   const refreshed = await readAndPublish()
   return refreshed.snapshot
 }
-// After a transaction built or relayed here confirms (tx.js): refresh shortly, so balances and APYs update for everyone.
 export const refreshSoon = refresher.soon

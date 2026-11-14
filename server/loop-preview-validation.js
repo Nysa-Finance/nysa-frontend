@@ -22,7 +22,7 @@ function carryTimestamp(value) {
   return Date.parse(value)
 }
 
-/** Carry survives snapshot refreshes only while its economics/source identity stay equal and both reads stay fresh. */
+// Carry survives snapshot refreshes only while its economics/source identity stay equal and both reads stay fresh.
 export function loopCarryStillCurrent(previewCarry, currentCarry, now = Date.now()) {
   if (!previewCarry || !currentCarry || !Number.isFinite(now)) return false
   if (JSON.stringify(canonical(previewCarry.assumptions ?? null)) !== JSON.stringify(canonical(currentCarry.assumptions ?? null))
@@ -37,7 +37,6 @@ export function loopCarryStillCurrent(previewCarry, currentCarry, now = Date.now
     && now - currentAt <= LOOP_PREVIEW_MAX_AGE_MS
 }
 
-/** Read the two loop reserves' current oracle and governance assumptions from the published market snapshot. */
 export function loopMarketRiskFromSnapshot(snapshot) {
   const collateral = snapshot?.reserves?.['sol-usdy-usdc']?.[TOKENS['svm-usdy'].token_id]
   const liability = snapshot?.reserves?.['sol-usdy-usdc']?.[TOKENS['svm-usdc'].token_id]
@@ -61,7 +60,7 @@ function validOracle(timestamp, heartbeat, nowSeconds) {
     && ts.lte(nowSeconds) && new Decimal(nowSeconds).minus(ts).lte(age)
 }
 
-/** Compare route-price/risk assumptions and require both live reserve oracles to be inside their heartbeats. */
+// Both live reserve oracles must be inside their heartbeats.
 export function loopMarketRiskStillCurrent(previewRisk, currentRisk, nowSeconds) {
   if (!previewRisk || !currentRisk || !Number.isFinite(nowSeconds)) return false
   const identityFields = [

@@ -1,5 +1,3 @@
-# VPS stack: Cloudflare Tunnel -> Caddy (security headers) -> app (site + backend API + daily snapshot),
-# plus self-hosted Plausible Analytics (Tunnel -> plausible, on its own network). Settings come from .env.
 # No port is published: the tunnel connects out to Cloudflare, which does HTTPS, geoblocking and WAF in front.
 services:
   app:
