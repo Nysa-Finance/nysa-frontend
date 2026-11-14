@@ -76,8 +76,14 @@ const reserves = computed(() => LIVE.flatMap((m) => tokensOf(m).filter((t) => re
   .map((t) => ({ m, key: m.id + t.token_id, token: t, ...reserveOf(m, t.token_id) }))))
 const collateral = computed(() => reserves.value.filter((r) => r.m.collateral.includes(r.token.token_id)))
 const borrowable = computed(() => reserves.value.filter((r) => r.m.loans.includes(r.token.token_id)))
-// TVL: everything supplied in the market (vault deposits it has invested included) + what vaults hold uninvested.
-const vaultCashUsd = computed(() => VAULTS.reduce((s, v) => { const x = state.vaults[v.id]; return s + (x && x.total > 0 ? x.available * (x.totalUsd / x.total) : 0) }, 0))
+// TVL as risk curators count it (Gauntlet, Sentora… on DefiLlama; Nysa's adapter, DefiLlama-Adapters projects/nysa,
+// once updated to match): everything deposited in what Nysa curates, lent-out tokens included. Our markets' reserves count all their deposits
+// (collateral, and loan tokens lent or not); the vaults add their idle tokens and everything they invested in markets
+// that aren't ours (their deposits into our markets are already in those reserves). Moving vault deposits to a busier
+// market doesn't lower it. Prices are Kamino's oracle prices; DefiLlama uses its own, so the two differ by a few dollars.
+const outside = (x) => x.allocations.filter((a) => !a.marketId).reduce((s, a) => s + a.liquid + a.lent, 0)
+const vaultsUsd = (pick) => VAULTS.reduce((s, v) => { const x = state.vaults[v.id]; return s + (x ? pick(x) * x.price : 0) }, 0)
+const vaultCashUsd = computed(() => vaultsUsd((x) => x.available + outside(x)))
 const tvl = computed(() => reserves.value.reduce((s, r) => s + r.supplyUsd, 0) + vaultCashUsd.value)
 const borrowed = computed(() => reserves.value.reduce((s, r) => s + r.borrowUsd, 0))
 const lendable = computed(() => borrowable.value.reduce((s, r) => s + r.supplyUsd, 0))
@@ -120,7 +126,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <div class="n-stat">
       <div class="k">Total value locked</div>
       <div class="v"><span v-if="state.loaded">{{ usd(tvl) }}</span><span v-else class="n-skel" /></div>
-      <div class="s">{{ reserves.length }} reserves{{ vaultCashUsd >= 0.005 ? ` + ${usd(vaultCashUsd)} in vaults` : '' }}</div>
+      <div class="s">{{ reserves.length }} reserves{{ vaultCashUsd >= 0.005 ? ` + ${usd(vaultCashUsd)} in vaults` : '' }} · borrowed included</div>
     </div>
     <div class="n-stat">
       <div class="k">Total borrowed</div>
