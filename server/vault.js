@@ -49,6 +49,7 @@ export async function readVault(v, markets, now) {
   const perShareNow = shares > 0 ? new Decimal(total).div(shares) : perShare
   const weights = new Map(vaultClient.getVaultAllocations(state))
   const caps = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), String(x.tokenAllocationCap)]))
+  const ctokens = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), BigInt(String(x.ctokenAllocation))]))
 
   // Exposure: each allocated reserve, its market (one of ours, with a page, or one of OTHER_MARKETS) and its collateral.
   const allocations = reserveAddrs.map((a) => {
@@ -56,6 +57,9 @@ export async function readVault(v, markets, now) {
     const m = LIVE.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
     const known = m ?? OTHER_MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
     const invested = n(holdings.investedInReserves.get(a))
+    // The vault's share (its cTokens over the reserve's cToken supply) of a raw reserve amount, in tokens.
+    const supply = BigInt(String(r.state.collateral.mintTotalSupply)), mine = ctokens.get(String(a)) ?? 0n
+    const part = (raw) => (supply > 0n ? Number((raw * mine) / supply) / 10 ** dec : 0)
     return {
       reserve: String(a),
       market: String(r.state.lendingMarket),
@@ -68,6 +72,9 @@ export async function readVault(v, markets, now) {
       share: total > 0 ? (invested / total) * 100 : 0,
       targetShare: total > 0 ? (n(target.targetReservesAllocation.get(a)) / total) * 100 : 0,
       supplyApy: r.totalSupplyAPY(now) * 100,
+      // Its share of the reserve's unborrowed liquidity and of its debt (Q60 fixed point), as DefiLlama's adapter reads it.
+      liquid: part(BigInt(String(r.state.liquidity.totalAvailableAmount))),
+      lent: part(BigInt(String(r.state.liquidity.borrowedAmountSf)) >> 60n),
     }
   })
   // Utilization as Kamino shows it: the part of the vault's tokens that borrowers hold (uninvested tokens count as idle).
