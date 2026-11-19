@@ -8,6 +8,7 @@ import { LIVE, TOKENS } from '../config.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import TxProgress from '../components/TxProgress.vue'
 import { formatBaseUnits } from '../swap-fees.js'
+import { cleanAmount } from '../logic.js'
 
 const SLIPPAGES = [10, 30, 50] // the server refuses more than 50
 const route = useRoute()
@@ -18,6 +19,7 @@ const inputId = ref(tokens.some((token) => token.token_id === route.query.input)
 const outputId = ref(route.query.output)
 const outputs = computed(() => [...new Set(PAIRS.filter(([id]) => id === inputId.value).map(([, id]) => id))].map((id) => TOKENS[id]))
 const amount = ref('')
+watch(amount, (v) => { amount.value = cleanAmount(v, TOKENS[inputId.value].decimals) })
 const slippageBps = ref(50)
 const readiness = ref(null)
 const quote = ref(null)
