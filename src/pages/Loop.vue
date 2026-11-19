@@ -3,13 +3,14 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sendLoopAction, sendLoopSetup, state } from '../store.js'
 import { TOKENS } from '../config.js'
-import { amt, pct, usd } from '../logic.js'
+import { amt, pct, usd, cleanAmount } from '../logic.js'
 import { formatBaseUnits } from '../swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
 import { selectedLoopCloseReadiness } from '../loop-positions.js'
 import TokenIcon from '../components/TokenIcon.vue'
 
 const fundingAmount = ref('100')
+watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, TOKENS['svm-usdy'].decimals) })
 const leverage = ref(1.5)
 const strategy = ref(null)
 const preview = ref(null)

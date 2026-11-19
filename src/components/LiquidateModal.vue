@@ -3,7 +3,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { state, priceOf, loadLiquidationInfo, previewLiquidation, liquidate, useTx } from '../store.js'
 import { tok } from '../config.js'
-import { amt, usdFull, num, floorTo, short, hfText, hfColor } from '../logic.js'
+import { amt, usdFull, num, cleanAmount, floorTo, short, hfText, hfColor } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 // collateral, debt: the token ids of the loan's largest deposit and largest borrow (from /api/analytics).
@@ -14,6 +14,7 @@ const { tx, run, reset } = useTx()
 const debt = tok(props.debt), coll = tok(props.collateral)
 const info = ref(null), infoError = ref(null)
 const amount = ref('')
+watch(amount, (v) => { amount.value = cleanAmount(v, debt.decimals) })
 const quote = ref(null), quoting = ref(false), quoteError = ref(null)
 const on = computed(() => !!state.address)
 const balance = computed(() => state.balances[debt.token_id] ?? 0)
