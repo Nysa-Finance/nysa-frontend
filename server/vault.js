@@ -24,7 +24,7 @@ export async function readVault(v, markets, now) {
     vaultClient.getVaultHoldings(state, now, reserves, now),
     vaultClient.getTokensPerShareSingleVault(state, now, reserves, now),
     vaultClient.getVaultActualAPY(state, now, reserves), // like Kamino's
-    // As the on-chain invest computes it; Kamino's bot syncs the vault to it about every 15 minutes.
+    // As the on-chain invest computes it: deposits from Nysa and the curator's reallocations move the vault toward it.
     vaultClient.getVaultComputedReservesAllocation(state, now, reserves, now),
   ])
   const token = Object.values(TOKENS).find((t) => t.mint === String(state.tokenMint))

@@ -10,8 +10,8 @@ const IDLE = '#3a3a3a'
 
 const SYNC = '#5f5f5f'
 const invested = computed(() => props.vault.invested > 0)
-// The buffer stays uninvested by design (up to its target); other uninvested tokens wait for Kamino's next sync
-// (about every 15 minutes). Targets before anything is invested.
+// The buffer stays uninvested by design (up to its target); other uninvested tokens wait for the next invest.
+// Targets before anything is invested.
 const parts = computed(() => {
   const v = props.vault
   const a = v.allocations.map((x, i) => ({
@@ -20,7 +20,7 @@ const parts = computed(() => {
   if (!invested.value) return [...a, { label: 'Liquidity buffer', color: IDLE, value: v.total > 0 ? (v.bufferTarget / v.total) * 100 : 0 }]
   const buffer = Math.min(v.available, v.bufferTarget)
   // a few micro-USDC aren't worth a label
-  return [...a, { label: 'Liquidity buffer', color: IDLE, value: buffer }, { label: 'Awaiting sync', color: SYNC, value: v.available - buffer }]
+  return [...a, { label: 'Liquidity buffer', color: IDLE, value: buffer }, { label: 'Awaiting investment', color: SYNC, value: v.available - buffer }]
     .filter((p) => p.value / v.total >= 1e-4 || a.some((x) => x === p))
 })
 const slices = computed(() => pieSlices(parts.value.map((p) => p.value)).map((s, i) => ({ ...s, ...parts.value[i] })))
@@ -69,7 +69,7 @@ const C = 90, R = 84, RI = 56
   <p class="hint">
     Targets come from the curator's on-chain weights and caps, read live from Kamino.
     <template v-if="vault.bufferTarget > 0">A liquidity buffer ({{ pct((vault.bufferTarget / vault.total) * 100, 1) }} today) stays uninvested so withdrawals are paid at once.</template>
-    Kamino's bot syncs the vault to its targets about every 15 minutes; deposits made on Nysa are usually invested in the same transaction.
+    Deposits made on Nysa are invested in the same transaction.
     <template v-if="!invested">Nothing is invested yet: the chart shows the targets.</template>
   </p>
 </template>
