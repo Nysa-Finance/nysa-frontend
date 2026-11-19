@@ -328,6 +328,25 @@ export async function buildTx(req) {
 
 const VAULT_SLIPPAGE = 0.005 // a deposit must mint at least 99.5% of the shares the current share value gives
 
+// Reserves away from their target allocation (more than 0.1% of the vault), most over-allocated first.
+async function offTarget(state, reserves, now) {
+  const [holdings, target] = await Promise.all([
+    vaultClient.getVaultHoldings(state, now, reserves, now),
+    vaultClient.getVaultComputedReservesAllocation(state, now, reserves, now),
+  ])
+  // The program refuses an invest into a reserve within minInvestDelaySlots of its last one (InvestTooSoon).
+  const lastInvest = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), Number(x.lastInvestSlot)]))
+  const readyIn = (a) => Math.max(0, lastInvest.get(String(a)) + Number(state.minInvestDelaySlots) - Number(now.slot)) // slots
+  return gapsOffTarget([...reserves.keys()], target.targetReservesAllocation, holdings.investedInReserves, Number(holdings.totalAUMIncludingFees))
+    .map((x) => ({ ...x, readyIn: readyIn(x.a) }))
+}
+export function gapsOffTarget(addresses, target, invested, total) {
+  return addresses
+    .map((a) => ({ a, gap: Number(target.get(a) ?? 0) - Number(invested.get(a) ?? 0) }))
+    .filter((x) => Math.abs(x.gap) > total * 0.001)
+    .sort((x, y) => x.gap - y.gap)
+}
+
 async function vaultAction(kind, owner, v, amount, all) {
   const live = getVault(v.id)
   const { kv, state, reserves, perShare, now, farm } = live
@@ -339,16 +358,17 @@ async function vaultAction(kind, owner, v, amount, all) {
     const minShares = vaultClient.estimateSharesFromTokens(state, new Decimal(amount), now, reserves, VAULT_SLIPPAGE * 10_000).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
     const d = await vaultClient.depositIxs(signer, kv, new Decimal(amount), reserves, null, null, undefined, undefined, minShares)
     const deposit = [...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
-    // Invest right away so the deposit earns at once (Kamino's crank only does it for vaults in its UI). `invest` sizes
-    // each reserve on-chain after the deposit (investAllReservesIxs sizes from the state before, and fails), and the SDK
-    // is shown the vault after the deposit, or a vault already on target would get no invest. Dropped if it doesn't fit.
+    // Invest right away so the deposit earns at once, into the reserve furthest under its target only: every reserve
+    // doesn't fit in one transaction. `invest` sizes it on-chain after the deposit (investAllReservesIxs sizes from the
+    // state before, and fails), and the SDK is shown the vault after the deposit, or one on target would get no invest.
     const after = Object.assign(Object.create(Object.getPrototypeOf(state)), state, {
       tokenAvailable: state.tokenAvailable.add(new state.tokenAvailable.constructor(new Decimal(amount).mul(10 ** Number(state.tokenMintDecimals)).floor().toFixed())), // BN, as decoded
     })
     const kvAfter = KaminoVault.loadWithClientAndState(vaultClient, kv.address, after)
     const invest = []
     try {
-      for (const [a, r] of reserves) invest.push(...await vaultClient.investSingleReserveIxs(signer, kvAfter, { address: a, state: r.state }, reserves))
+      const under = (await offTarget(after, reserves, now)).filter((x) => x.gap > 0 && !x.readyIn).at(-1)
+      if (under) invest.push(...await vaultClient.investSingleReserveIxs(signer, kvAfter, { address: under.a, state: reserves.get(under.a).state }, reserves))
     } catch (e) { console.warn('[vault] invest ixs', e?.message); invest.length = 0 }
     if (invest.length) {
       const both = await compile(owner, [...deposit, ...invest], luts)

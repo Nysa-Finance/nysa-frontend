@@ -118,3 +118,10 @@ assert.deepEqual(obligationPair(twoCollateral, {
 }), { collateral: 'b', debt: 'usdc' })
 assert.deepEqual(obligationPair(twoCollateral, { deposits: new Map([['RA', pos(0, 0)]]), borrows: new Map() }), { collateral: null, debt: null })
 console.log('obligation pair ok')
+
+// Rebalance order: over-allocated reserves first (they free tokens), gaps under 0.1% of the vault ignored.
+const { gapsOffTarget } = await import('./tx.js')
+const target = new Map([['usdy', 86_000], ['obligate', 9_500], ['tiny', 100]]), invested = new Map([['usdy', 95_000], ['obligate', 0], ['tiny', 99.95]])
+assert.deepEqual(gapsOffTarget(['obligate', 'usdy', 'tiny'], target, invested, 100_000).map((x) => [x.a, x.gap]), [['usdy', -9_000], ['obligate', 9_500]])
+assert.deepEqual(gapsOffTarget(['usdy'], new Map([['usdy', 100]]), new Map([['usdy', 100]]), 100), [])
+console.log('rebalance order ok')
