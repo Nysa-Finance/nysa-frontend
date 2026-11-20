@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amt, cleanAmount, rewardApr, liquidationBonusRange, pieSlices, arcPath, num, underLimit } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amt, cleanAmount, priceApy, rewardApr, liquidationBonusRange, pieSlices, arcPath, num, underLimit } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -128,3 +128,7 @@ assert.equal(underLimit(0.836779, 6), 0.835942)
 assert.equal(underLimit(1000, 6), 999)
 assert.equal(underLimit(0, 6), 0)
 console.log('logic ok')
+
+// USDY's own yield from recorded prices: 1.00 → 1.003 in 30 days ≈ 3.65%; under a week of prices, none.
+assert.ok(Math.abs(priceApy([{ ts: 0, price: 1 }, { ts: 15 * day }, { ts: 30 * day, price: 1.003 }]) - 3.65) < 0.01)
+assert.equal(priceApy([{ ts: 0, price: 1 }, { ts: 6 * day, price: 1.001 }]), null)

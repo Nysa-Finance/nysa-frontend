@@ -154,6 +154,12 @@ export function windowApy(points, days) {
   return spanDays > 0 ? { apy: realizedApy(start.rate, end.rate, spanDays), spanDays, full: start.ts <= target, from: start.ts } : null
 }
 
+// A token's own yield from its recorded prices (USDY: Ondo's rate), over the last 30 days; null under a week of them.
+export function priceApy(points) {
+  const w = windowApy(points.filter((p) => p.price > 0).map((p) => ({ ts: p.ts, rate: p.price })), 30)
+  return w && w.spanDays >= 7 ? w.apy : null
+}
+
 export function dailyApySeries(points) {
   const byDay = [...new Map(points.map((p) => [Math.floor(p.ts / 86400), p])).values()].sort((a, b) => a.ts - b.ts)
   return byDay.slice(1).map((p, i) => ({ ts: p.ts, apy: realizedApy(byDay[i].rate, p.rate, (p.ts - byDay[i].ts) / 86400) }))

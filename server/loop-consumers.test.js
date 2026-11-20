@@ -208,7 +208,7 @@ const liveMarket = {
     return {
       address: String(reserveAddress),
       getEstimatedCollateralExchangeRate: () => ({ toNumber: () => 1 }),
-      totalSupplyAPY: () => 0, totalBorrowAPY: () => 0, calculateUtilizationRatio: () => 0,
+      totalSupplyAPY: () => 0, totalBorrowAPY: () => 0, calculateUtilizationRatio: () => 0, getOracleMarketPrice: () => ({ toNumber: () => 1 }),
     }
   },
 }

@@ -43,6 +43,7 @@ assert.deepEqual(selectedLeverage.carry.assumptions, {
   collateralYieldSource: 'Kamino reserve supply APR',
   liabilityBorrowSource: 'Kamino reserve borrow APR',
   collateralSupplyAprPct: 4.5,
+  collateralNativeApyPct: null,
   liabilityBorrowAprPct: 3,
   leverage: 1.2,
 })
@@ -53,6 +54,14 @@ const negativeCarry = evaluateLoopStrategy({
   reserves: { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], supplyAPR: 0.5 } },
 })
 assert.equal(negativeCarry.carry.estimatedCarryPct, '-0.75')
+// USDY's own yield (its price) counts: 0.5% Kamino + 3.6% Ondo at 1.5x minus 3% borrow on half.
+const withNativeYield = evaluateLoopStrategy({
+  ...ready,
+  reserves: { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], supplyAPR: 0.5, nativeApy: 3.6 } },
+})
+assert.equal(withNativeYield.carry.estimatedCarryPct, '4.65')
+assert.equal(withNativeYield.carry.requiresAcknowledgement, false)
+assert.equal(withNativeYield.carry.assumptions.collateralNativeApyPct, 3.6)
 assert.equal(negativeCarry.carry.requiresAcknowledgement, true)
 assert.equal(negativeCarry.carry.acknowledgementKey, null) // no key until this carry estimate is bound to final routes and costs.
 assert.ok(negativeCarry.unavailableReasons.some((x) => x.code === 'carry-acknowledgement-required'))

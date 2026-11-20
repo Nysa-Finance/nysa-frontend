@@ -517,10 +517,11 @@ export function buildLoopPreview({
     : { costs: fees, knownCostsTotalUsd: fees.every((fee) => fee.usd != null) ? fees.reduce((sum, fee) => sum + fee.usd, 0) : null }
   const projectedLtv = new PreciseDecimal(exposure.projectedLtvPct)
   const liquidationLimit = positiveDecimal(liquidationLtvPct, 'liquidation LTV')
-  const collateralAmount = sdkPosition ? positiveDecimal(sdkPosition.collateralAmount, 'SDK collateral amount') : null
-  const collateralPrice = sdkPosition ? positiveDecimal(sdkPosition.collateralPriceUsd, 'collateral USD price') : null
+  // Without an SDK quote, from the target exposure at the oracle price (it read $0 before).
+  const collateralPrice = sdkPosition ? positiveDecimal(sdkPosition.collateralPriceUsd, 'collateral USD price') : positiveDecimal(String(fundingPriceUsd), 'collateral USD price')
+  const collateralAmount = sdkPosition ? positiveDecimal(sdkPosition.collateralAmount, 'SDK collateral amount') : new Decimal(exposure.grossCollateral).div(collateralPrice)
   const debtAmountUsd = new Decimal(exposure.debt)
-  const liquidationPriceUsd = sdkPosition && collateralAmount && collateralPrice
+  const liquidationPriceUsd = collateralAmount && collateralPrice
     ? debtAmountUsd.div(collateralAmount.mul(liquidationLimit.div(100)))
     : null
   const liquidationPriceDeclinePct = liquidationPriceUsd && collateralPrice

@@ -93,9 +93,8 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
       <div><div class="loop-label">Collateral</div><div class="n-num">{{ amt(Number(position.collateral.amount), 4) }} {{ tok(position.collateral.tokenId)?.name ?? position.collateral.tokenId }}</div><div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div></div>
       <div><div class="loop-label">Debt</div><div class="n-num">{{ amt(Number(position.liability.amount), 4) }} {{ tok(position.liability.tokenId)?.name ?? position.liability.tokenId }}</div><div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div></div>
       <div><div class="loop-label">Health factor</div><div class="n-num">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div></div>
-      <div><button v-if="LOOP_ENABLED" class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
+      <div><button v-if="LOOP_ENABLED || state.loopVisible" class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
     </div>
-    <p v-if="LOOP_ENABLED" class="loop-unavailable">Atomic full close remains unavailable until the swap route and local fork checks pass.</p>
   </section>
 
   <div v-if="on" class="n-banner fp-banner">
