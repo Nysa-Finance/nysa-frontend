@@ -1233,6 +1233,13 @@ export async function simulateLoopApplication({ built, compiled, simulate = simu
   return simulated
 }
 
+// The debt accrues interest between the preview and the simulation (it read 1 base unit more seconds later): it may differ by
+// 0.01% plus 2 base units. Collateral stays exact; LTV and leverage are still checked on the simulated debt.
+export function debtWithinAccrual(simulated, authorized) {
+  const delta = BigInt(simulated) - BigInt(authorized)
+  return (delta < 0n ? -delta : delta) <= 2n + BigInt(authorized) / 10_000n
+}
+
 export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}) {
   const context = built?.simulationContext
   if (!context || context.kind !== kind || simulation?.ok !== true || simulation.positionOwner !== context.wallet) return false
@@ -1265,7 +1272,7 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
         || !/^\d+$/.test(String(authorized.debtBaseUnits))
         || simulation.positionCollateralBaseUnits !== authorized.collateralBaseUnits
         || simulation.positionCollateralCTokenBaseUnits !== authorized.collateralCTokenBaseUnits
-        || simulation.positionDebtBaseUnits !== authorized.debtBaseUnits) return false
+        || !debtWithinAccrual(simulation.positionDebtBaseUnits, authorized.debtBaseUnits)) return false
       const collateralAmount = positiveDecimal(simulation.positionCollateralAmount, 'simulated collateral amount')
       const debtAmount = positiveDecimal(new PreciseDecimal(simulation.positionDebtBaseUnits)
         .div(positiveDecimal(context.liabilityMintFactor, 'liability mint factor')), 'simulated debt amount')
@@ -1279,7 +1286,7 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
       const ltvPct = debtUsd.div(collateralUsd).mul(100)
       const leverage = collateralUsd.div(collateralUsd.minus(debtUsd))
       return collateralAmount.eq(expectedCollateral)
-        && debtAmount.eq(expectedDebt)
+        && debtAmount.minus(expectedDebt).abs().lte(expectedDebt.mul('0.0001').plus('0.000002'))
         && debtUsd.lt(collateralUsd)
         && ltvPct.lte(positiveDecimal(authorized.maxProjectedLtvPct, 'approved projected LTV'))
         && leverage.lte(positiveDecimal(authorized.maxLeverage, 'approved leverage'))

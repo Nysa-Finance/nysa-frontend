@@ -160,7 +160,7 @@ await nextTick()
 stackedCards = nodes(root).filter((node) => node.type === 'div' && node.props.class?.includes('ho '))
 stack = nodes(root).find((node) => node.props.class === 'ho-stack')
 assert.ok(stack, 'wallet recovery cards share a single stack container')
-assert.ok(stackedCards.includes(nodes(root).find((node) => node.props.class === 'ho error' && textOf(node).includes('Full close pending'))),
+assert.ok(stackedCards.includes(nodes(root).find((node) => node.props.class === 'ho warn' && textOf(node).includes('Full close pending'))),
   'the unresolved economic signature remains visible beside setup recovery')
 assert.ok(stackedCards.some((node) => textOf(node).includes('Account setup confirmed')),
   'the separate setup recovery card remains visible')
@@ -168,6 +168,17 @@ assert.ok(stackedCards.every((node) => node.parent === stack),
   'setup recovery and pending signatures use normal-flow stacked cards')
 assert.equal(nodes(root).find((node) => node.type === 'button' && textOf(node) === 'Resume action').props.disabled, true,
   'setup continuation stays disabled while an economic signature is unresolved')
+
+// A normal send is not an error: hidden while the page's own sheet runs it, a neutral card after a reload.
+store.state.lendingSetupRecovery = null
+store.state.lendingPending = { wallet, signature: 'sending-loop-signature', status: 'signed-pending', kind: 'loop-open', params: { wallet, kind: 'loop-open', loopAction: true } }
+store.state.lendingActionBusy = true
+await nextTick()
+assert.equal(nodes(root).some((node) => node.props?.['data-testid'] === 'durable-pending-action'), false, 'no card while the page runs the send')
+store.state.lendingActionBusy = false
+await nextTick()
+const sending = nodes(root).find((node) => node.props?.['data-testid'] === 'durable-pending-action')
+assert.ok(sending && sending.props.class === 'ho busy' && textOf(sending).includes('Sending your signed transaction'), 'a reloaded send shows as busy, not as an error')
 app.unmount()
 
 console.log('wallet handoff cancel restores retryable withdrawal state')
