@@ -12,7 +12,7 @@ import NotFound from './NotFound.vue'
 
 const fundingAmount = ref('')
 watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, TOKENS['svm-usdy'].decimals) })
-const leverage = ref(1.5)
+const leverage = ref(1.49)
 const strategy = ref(null)
 const preview = ref(null)
 const loading = ref(false)
@@ -179,7 +179,7 @@ const lev = (value) => `${Number(value).toFixed(2).replace(/0$/, '')}×`
 const rates = computed(() => {
   const a = strategies.value[0]?.carry?.assumptions ?? {}
   const supply = Number(a.collateralSupplyAprPct ?? 0), native = a.collateralNativeApyPct, borrow = a.liabilityBorrowAprPct
-  return { hold: supply + Number(native ?? 0), native: native ?? null, borrow: borrow ?? null }
+  return { hold: supply + Number(native ?? 0), native: native ?? null, nativeSource: a.collateralNativeApySource, borrow: borrow ?? null }
 })
 const liqLtv = computed(() => state.reserves['sol-usdy-usdc']?.['svm-usdy']?.liqLtv ?? 95)
 const usdyPrice = computed(() => priceOf('svm-usdy'))
@@ -205,6 +205,7 @@ const status = computed(() => {
   if (!state.address) return 'Connect a wallet to open a loop.'
   if (!(amount.value > 0)) return 'Enter an amount.'
   if (amount.value > (state.balances['svm-usdy'] ?? 0)) return `You only hold ${amt(state.balances['svm-usdy'] ?? 0)} USDY.`
+  if (strategy.value?.maxFunding && amount.value > strategy.value.maxFunding) return `Loops are capped at ${strategy.value.maxFunding} USDY during the beta.`
   if (!quoted.value) return null
   if (setupLoading.value) return 'Checking Kamino setup…'
   if (setupRequired.value) return 'Complete the one-time Kamino setup to open it.'
@@ -257,8 +258,9 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
       <div class="lev">
         <div class="n-label row"><span>Leverage</span><b>{{ lev(leverage) }}</b></div>
-        <input v-model.number="leverage" class="slider" type="range" min="1.1" max="1.5" step="0.05" aria-label="Leverage" />
-        <div class="ticks"><span>1.1×</span><span>1.25×</span><span>1.5× max</span></div>
+        <!-- 1.49: with Kamino's borrow fee a 1.5x target lands just above 1.5x, which the risk check refuses -->
+        <input v-model.number="leverage" class="slider" type="range" min="1.1" max="1.49" step="0.01" aria-label="Leverage" />
+        <div class="ticks"><span>1.1×</span><span>1.3×</span><span>1.49× max</span></div>
       </div>
 
       <div class="ba" aria-label="Position after the loop">
@@ -312,7 +314,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         <div class="n-kv"><span class="k">Health factor</span><span class="v">{{ hfText(est.hf) }}</span></div>
         <div class="n-kv"><span class="k">Max slippage</span><span class="v">0.5%</span></div>
         <div v-for="fee in quoted ? fees : []" :key="fee.action" class="n-kv"><span class="k">Nysa fee</span><span class="v">{{ feeLabel(fee) }}</span></div>
-        <div class="n-kv"><span class="k">USDY yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (30-day price)` }}</span></div>
+        <div class="n-kv"><span class="k">USDY yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (${rates.nativeSource === 'env' ? 'Ondo rate' : '30-day price'})` }}</span></div>
         <div class="n-kv"><span class="k">Rates as of</span><span class="v">{{ strategies[0]?.carry?.asOf ? new Date(strategies[0].carry.asOf).toLocaleString() : '—' }}</span></div>
       </details>
     </section>
@@ -326,7 +328,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
     <div class="n-stats pos-stats">
       <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(positionView(position).net) }}</div><div class="s">{{ amt(positionView(position).coll, 2) }} USDY collateral</div></div>
       <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ pct(positionView(position).netApy) }}</div><div class="s">vs {{ pct(rates.hold) }} holding USDY</div></div>
-      <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ positionView(position).leverage ? lev(positionView(position).leverage) : '—' }}</div><div class="s">max 1.5×</div></div>
+      <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ positionView(position).leverage ? lev(positionView(position).leverage) : '—' }}</div><div class="s">max 1.49×</div></div>
       <div class="n-stat"><div class="k">Liquidation price</div><div class="v">{{ positionView(position).liqPrice ? `$${positionView(position).liqPrice.toFixed(4)}` : '—' }}</div><div class="s">USDY at ${{ usdyPrice.toFixed(4) }}</div></div>
       <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(positionView(position).hf) }}</div><div class="s">LTV {{ pct(positionView(position).ltv, 1) }}</div></div>
     </div>
