@@ -15,7 +15,7 @@ import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
 import { priceApy } from '../src/logic.js'
-import { LIVE, LOOP_ENABLED, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
+import { LIVE, LOOP_ENABLED, LOOP_LOOKUP_TABLE, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
 import { buildSwap, configuredFeeAccountForMint, swapFeeAccountsConfigured, SwapError } from './swap.js'
@@ -369,7 +369,7 @@ const loopExecution = createLoopExecutionService({
     localRouteProgramVerifier: verifyLocalForkRoute,
   }),
   buildSetup: ({ wallet }) => buildLoopMetadataSetupApplication({ wallet }),
-  compile: compileAtomicTransaction,
+  compile: ({ lookupTables = [], ...rest }) => compileAtomicTransaction({ ...rest, lookupTables: LOOP_LOOKUP_TABLE ? [...lookupTables, LOOP_LOOKUP_TABLE] : lookupTables }),
   simulate: simulateLoopApplication,
   verifySimulation: async ({ kind, ...context }) => kind === 'loop-setup'
     ? verifyLoopMetadataSetupSimulation(context)
