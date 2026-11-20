@@ -69,12 +69,14 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
   const collateral = reserves?.[pair.collateral]
   const liability = reserves?.[pair.liability]
   const supplyAprPct = collateral?.supplyAPR
+  const nativeApyPct = finite(collateral?.nativeApy) ? collateral.nativeApy : null // the token's own yield (USDY's price)
   const borrowAprPct = liability?.borrowAPR
   const asOf = finite(snapshotUpdatedAt) && snapshotUpdatedAt > 0 ? new Date(snapshotUpdatedAt).toISOString() : null
   const assumptions = {
     collateralYieldSource: 'Kamino reserve supply APR',
     liabilityBorrowSource: 'Kamino reserve borrow APR',
     collateralSupplyAprPct: finite(supplyAprPct) ? supplyAprPct : null,
+    collateralNativeApyPct: nativeApyPct,
     liabilityBorrowAprPct: finite(borrowAprPct) ? borrowAprPct : null,
     leverage,
   }
@@ -95,7 +97,7 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
   if (!finite(supplyAprPct) || !finite(borrowAprPct)) {
     return finish(null)
   }
-  return finish(calculateCarryPct({ equity: '1', leverage: String(leverage), collateralYieldPct: String(supplyAprPct), borrowCostPct: String(borrowAprPct) }))
+  return finish(calculateCarryPct({ equity: '1', leverage: String(leverage), collateralYieldPct: String(supplyAprPct + (nativeApyPct ?? 0)), borrowCostPct: String(borrowAprPct) }))
 }
 
 export function evaluateLoopStrategy({

@@ -4,7 +4,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, rowOf, priceOf, loadPoints, myPoints, riskOf, claimRewards, useTx } from '../store.js'
 import { LIVE, LOOP_ENABLED, VAULTS, tok, tokensOf } from '../config.js'
-import { usd, pct, amt, amtDust, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
+import { usd, pct, amt, healthFactor, hfText as hfFmt, hfColor as hfTone } from '../logic.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'
 import TxProgress from '../components/TxProgress.vue'
@@ -93,9 +93,8 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
       <div><div class="loop-label">Collateral</div><div class="n-num">{{ amt(Number(position.collateral.amount), 4) }} {{ tok(position.collateral.tokenId)?.name ?? position.collateral.tokenId }}</div><div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div></div>
       <div><div class="loop-label">Debt</div><div class="n-num">{{ amt(Number(position.liability.amount), 4) }} {{ tok(position.liability.tokenId)?.name ?? position.liability.tokenId }}</div><div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div></div>
       <div><div class="loop-label">Health factor</div><div class="n-num">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div></div>
-      <div><button v-if="LOOP_ENABLED" class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
+      <div><button v-if="LOOP_ENABLED || state.loopVisible" class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
     </div>
-    <p v-if="LOOP_ENABLED" class="loop-unavailable">Atomic full close remains unavailable until the swap route and local fork checks pass.</p>
   </section>
 
   <div v-if="on" class="n-banner fp-banner">
@@ -110,7 +109,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   </div>
   <TxProgress :tx="claimTx" @dismiss="resetClaim" />
   <div v-if="directLending.length && VAULTS[0]" class="n-banner">
-    You have {{ directLending.map((d) => `${amtDust(d.units)} ${d.t.name}`).join(' + ') }} lent directly to a market. Lending now goes through
+    You have {{ directLending.map((d) => `${amt(d.units)} ${d.t.name}`).join(' + ') }} lent directly to a market. Lending now goes through
     <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
   </div>
   <div v-if="state.swapVisible && loanPair" class="n-banner swap-portfolio-cta">
@@ -129,7 +128,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     <div v-else-if="!deposits.length && !vaultDeposits.length" class="n-empty">No active deposits.</div>
     <template v-else><div v-for="d in vaultDeposits" :key="d.v.id" class="n-tr dp-grid">
       <div class="n-cell" data-label="Market"><span class="mk">{{ d.live?.name ?? d.v.name }}</span> <span class="n-chip">Vault</span></div>
-      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amtDust(d.value) }} {{ d.t.name }}</span></div>
+      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.value) }} {{ d.t.name }}</span></div>
       <div class="n-cell n-muted n-num" data-label="$ Value">{{ usd(d.usd) }}</div>
       <div class="n-cell n-actions">
         <button class="n-btn-sm" @click="goVault(d.v, 'deposit')">Deposit</button>
@@ -137,7 +136,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
       </div>
     </div><div v-for="d in deposits" :key="d.m.id + d.t.token_id" class="n-tr dp-grid">
       <div class="n-cell" data-label="Market"><span class="mk">{{ d.m.name }}</span> <span class="n-chip mainnet">Solana</span></div>
-      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amtDust(d.units) }} {{ d.t.name }}</span></div>
+      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.units) }} {{ d.t.name }}</span></div>
       <div class="n-cell n-muted n-num" data-label="$ Value">{{ usd(d.usd) }}</div>
       <div class="n-cell n-actions">
         <button class="n-btn-sm ghost" @click="go(d.m, 'withdraw', undefined, d.t.token_id)">Withdraw</button>
@@ -150,7 +149,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     <div v-if="!on" class="n-empty">Connect a wallet to see your loans.</div>
     <div v-else-if="!loans.length" class="n-empty">No active loans.</div>
     <template v-else><div v-for="l in loans" :key="l.m.id + l.t.token_id" class="n-tr pl-grid">
-      <div class="n-cell n-asset" data-label="Loan"><TokenIcon :token="l.t" size="sm" /><span class="n-num">{{ amtDust(l.units) }} {{ l.t.name }}</span></div>
+      <div class="n-cell n-asset" data-label="Loan"><TokenIcon :token="l.t" size="sm" /><span class="n-num">{{ amt(l.units) }} {{ l.t.name }}</span></div>
       <div class="n-cell n-muted n-num" data-label="Loan $ Value">{{ usd(l.usd) }}</div>
       <div class="n-cell" data-label="Collateral"><div class="n-tok-group"><TokenIcon v-for="c in l.coll" :key="c.t.token_id" :token="c.t" size="sm" /></div></div>
       <div class="n-cell n-muted n-num" data-label="Collateral $ Value">{{ usd(l.collUsd) }}</div>

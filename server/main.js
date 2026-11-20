@@ -14,6 +14,7 @@ import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
+import { priceApy } from '../src/logic.js'
 import { LIVE, LOOP_ENABLED, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
@@ -174,6 +175,26 @@ function currentSwapReadiness(request = {}) {
   return { readiness, availability, visible: providerConfigured && feeAccountsConfigured && walletEnabled }
 }
 
+// LOOP_WALLETS shows the loop to those wallets only while LOOP_ENABLED is off (preview, setup, and whatever the
+// gates below allow); the gates still decide whether a loop can be opened.
+const LOOP_WALLETS = new Set((process.env.LOOP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
+const loopOn = LOOP_ENABLED || LOOP_WALLETS.size > 0
+const loopOpenTo = (wallet) => LOOP_ENABLED || LOOP_WALLETS.has(wallet)
+const LOOP_NOT_ENABLED = { error: 'Loop is not available for this wallet yet.' }
+
+// USDY earns through its price (Ondo's rate), not Kamino's supply APR, so the loop's carry adds it: the annualized rise
+// of the oracle price the daily snapshot records. Null (left out of the carry) until a week of prices exists.
+let usdyApy = null
+async function loadUsdyApy() {
+  try { usdyApy = priceApy(JSON.parse((await read(HISTORY)) ?? '{}').tokens?.[marketById('sol-usdy-usdc').reserves['svm-usdy']]?.points ?? []) }
+  catch (error) { console.warn('[loop] USDY yield unavailable', error?.message) }
+}
+if (loopOn) { loadUsdyApy(); setInterval(loadUsdyApy, 3_600_000).unref() }
+const loopReserves = (snapshot) => {
+  const reserves = snapshot?.reserves?.['sol-usdy-usdc'] ?? {}
+  return reserves['svm-usdy'] ? { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], nativeApy: usdyApy } } : reserves
+}
+
 // Loop exits use the same route/program/fee/fork gates as swaps, but do not depend on new-entry allocation policy.
 function currentLoopRouteReadiness() {
   const snapshot = getSnapshot()
@@ -201,7 +222,7 @@ function loopStrategyForAction(snapshot, leverage = 1.5) {
     market: marketById('sol-usdy-usdc'),
     allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
     vaults: snapshot?.vaults ?? {},
-    reserves: snapshot?.reserves?.['sol-usdy-usdc'] ?? {},
+    reserves: loopReserves(snapshot),
     snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
     providerConfigured: true, // keyless access remains quote-only; route execution is separately denied below.
     productionProviderConfigured: !!process.env.JUPITER_API_KEY || localExecution,
@@ -363,7 +384,7 @@ const routes = [
     const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
     if (wallet && !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
     const { readiness, availability, visible } = currentSwapReadiness({ wallet: wallet ?? undefined })
-    return send(res, 200, { ...readiness, visible, marketAvailability: availability,
+    return send(res, 200, { ...readiness, visible, loopVisible: loopOpenTo(wallet), marketAvailability: availability,
       executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
   }],
   ['POST', /^\/api\/swap-quote$/, async (req, res) => {
@@ -439,24 +460,7 @@ const routes = [
     }
   }],
   ['GET', /^\/api\/loop-strategies$/, (req, res) => {
-    const snapshot = getSnapshot()
-    const market = marketById('sol-usdy-usdc')
-    const strategy = evaluateLoopStrategy({
-      market,
-      allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
-      vaults: snapshot?.vaults ?? {},
-      reserves: snapshot?.reserves?.['sol-usdy-usdc'] ?? {},
-      snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
-      providerConfigured: true, // Jupiter permits keyless prototype requests, rate-limited to 0.5 RPS.
-      productionProviderConfigured: !!process.env.JUPITER_API_KEY || localForkProgramEvidenceReady(),
-      treasuryConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
-        && !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
-        && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
-      riskApproval: localForkProgramEvidenceReady()
-        ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
-        : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-      feasibilityPassed: localForkProgramEvidenceReady(),
-    })
+    const strategy = loopStrategyForAction(getSnapshot())
     const routeReadiness = currentLoopRouteReadiness()
     const actions = {
       open: evaluateLoopActionReadiness({ action: 'loop-open', strategy, routeReadiness, builderAvailable: true }),
@@ -469,6 +473,7 @@ const routes = [
     if (limited(req, 'loop-setup-status', 10)) return send(res, 429, { error: 'Too many requests' })
     const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
     if (!wallet || !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
+    if (!loopOpenTo(wallet)) return send(res, 403, LOOP_NOT_ENABLED)
     if (blocked(res, wallet, { failClosed: true })) return
     try { return send(res, 200, { ...(await loopMetadataStatus({ wallet })), readOnly: true }) }
     catch (error) {
@@ -481,26 +486,11 @@ const routes = [
     const body = await jsonBody(req)
     if ((body.marketId ?? 'sol-usdy-usdc') !== 'sol-usdy-usdc') throw new UserError('Unknown loop strategy')
     if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
+    if (!loopOpenTo(body.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
     if (typeof body.fundingAmount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(body.fundingAmount)) throw new UserError('Invalid funding amount')
     if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > 1.5) throw new UserError('Funding amount or leverage is outside the preview range')
     const snapshot = getSnapshot()
-    const strategy = evaluateLoopStrategy({
-      market: marketById('sol-usdy-usdc'),
-      allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
-      vaults: snapshot?.vaults ?? {},
-      reserves: snapshot?.reserves?.['sol-usdy-usdc'] ?? {},
-      snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
-      providerConfigured: true, // keyless requests remain usable for read-only prototype quotes
-      productionProviderConfigured: !!process.env.JUPITER_API_KEY || localForkProgramEvidenceReady(),
-      treasuryConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
-        && !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
-        && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
-      riskApproval: localForkProgramEvidenceReady()
-        ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
-        : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-      feasibilityPassed: localForkProgramEvidenceReady(),
-      leverage: Number(body.leverage),
-    })
+    const strategy = loopStrategyForAction(snapshot, Number(body.leverage))
     const previewId = randomUUID()
     let applicationContext = null
     try {
@@ -593,7 +583,7 @@ const routes = [
     if (!KINDS.includes(b.kind)) throw new UserError('Unknown action')
     if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
     if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
-      if (!LOOP_ENABLED) throw new UserError('Unknown action')
+      if (!loopOpenTo(b.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
       if (localForkDappEnabled && !isLocalForkWallet(b.wallet, { rpcUrl: RPC_URL })) {
         return send(res, 503, { error: 'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.' })
       }
@@ -640,6 +630,7 @@ const routes = [
     if (!isAddress(String(b.wallet)) || typeof b.tx !== 'string' || b.tx.length > 100_000 || typeof b.intentId !== 'string') {
       throw new UserError('Invalid loop relay request')
     }
+    if (!loopOpenTo(b.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
     if (blocked(res, b.wallet, { failClosed: true })) return
     try { return send(res, 200, await loopExecution.send({ tx: b.tx, wallet: b.wallet, intentId: b.intentId })) }
     catch (error) {
@@ -734,7 +725,7 @@ const routes = [
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js). '/', '/lend' and '/market/:id' are old links it redirects.
-const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(LOOP_ENABLED ? ['/loop'] : []), '/analytics', '/liquidations', '/dashboard'])
+const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(loopOn ? ['/loop'] : []), '/analytics', '/liquidations', '/dashboard'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
   || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
   || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
@@ -773,7 +764,7 @@ const server = http.createServer(async (req, res) => {
   try {
     const { pathname } = new URL(req.url, 'http://localhost')
     if (pathname.startsWith('/api/')) {
-      if (!LOOP_ENABLED && pathname.startsWith('/api/loop-')) return send(res, 404, { error: 'Not found' })
+      if (!loopOn && pathname.startsWith('/api/loop-')) return send(res, 404, { error: 'Not found' })
       for (const [method, re, handler] of routes) {
         const match = pathname.match(re)
         if (!match) continue

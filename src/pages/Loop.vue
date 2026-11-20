@@ -1,15 +1,17 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { sendLoopAction, sendLoopSetup, state } from '../store.js'
-import { TOKENS } from '../config.js'
-import { amt, pct, usd } from '../logic.js'
+import { useRoute } from 'vue-router'
+import { sendLoopAction, sendLoopSetup, state, priceOf } from '../store.js'
+import { LOOP_ENABLED, TOKENS } from '../config.js'
+import { amt, pct, usdFull, num, floorTo, hfText, cleanAmount } from '../logic.js'
 import { formatBaseUnits } from '../swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
 import { selectedLoopCloseReadiness } from '../loop-positions.js'
 import TokenIcon from '../components/TokenIcon.vue'
+import NotFound from './NotFound.vue'
 
-const fundingAmount = ref('100')
+const fundingAmount = ref('')
+watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, TOKENS['svm-usdy'].decimals) })
 const leverage = ref(1.5)
 const strategy = ref(null)
 const preview = ref(null)
@@ -24,7 +26,6 @@ const previewBinding = ref(null)
 let previewRequestSequence = 0
 let setupStatusSequence = 0
 const route = useRoute()
-const router = useRouter()
 const usdc = TOKENS['svm-usdc']
 const usdy = TOKENS['svm-usdy']
 const strategies = computed(() => strategy.value?.strategies ?? [])
@@ -34,7 +35,6 @@ const networkLabel = computed(() => localForkMode.value ? 'Surfpool local'
   : executionMode.value === 'production-gated' ? 'Solana mainnet' : 'Checking network')
 const fees = computed(() => preview.value?.fees ?? [])
 const positions = computed(() => state.loopPositions ?? [])
-const selectedPosition = computed(() => positions.value.find((position) => position.id === route.query.position) ?? null)
 const currentPreviewRequest = () => ({
   fundingAmount: fundingAmount.value,
   leverage: Number(leverage.value),
@@ -50,9 +50,6 @@ const openReadiness = computed(() => {
   const carryIsAcknowledged = !preview.value?.carry?.requiresAcknowledgement || carryAcknowledged.value
   return { ...readiness, unavailableReasons, executionEnabled: previewIsCurrent.value && !!preview.value?.available && carryIsAcknowledged && unavailableReasons.length === 0 }
 })
-const closeReadiness = computed(() => selectedLoopCloseReadiness(
-  strategy.value?.actions?.fullClose ?? null, selectedPosition.value, state.address, state.loopPositionReadStatus,
-))
 const entryBlockers = computed(() => {
   const reasons = preview.value
     ? [...(preview.value.unavailableReasons ?? []), ...(openReadiness.value?.unavailableReasons ?? [])]
@@ -77,10 +74,6 @@ watch(() => state.address, () => {
   if (state.address) loadSetupStatus()
   else { setupStatusSequence++; setupRequired.value = false; setupLoading.value = false; setupError.value = null }
 })
-
-function selectPosition(position) {
-  router.replace({ query: { ...route.query, position: position.id } })
-}
 
 async function loadStrategies() {
   try {
@@ -169,251 +162,247 @@ async function openLoop() {
   finally { acting.value = false }
 }
 
-async function closeLoop() {
-  if (!closeReadiness.value?.executionEnabled || !selectedPosition.value) return
+async function closeLoop(position) {
+  if (!positionView(position).readiness?.executionEnabled) return
   acting.value = true
   error.value = null
-  try { await sendLoopAction('loop-close', { market: 'sol-usdy-usdc', positionId: selectedPosition.value.id }) }
+  try { await sendLoopAction('loop-close', { market: 'sol-usdy-usdc', positionId: position.id }) }
   catch (cause) { error.value = cause.message }
   finally { acting.value = false }
 }
 
 const feeLabel = (fee) => `${formatBaseUnits(BigInt(fee.amountBaseUnits), fee.mint === usdc.mint ? usdc.decimals : usdy.decimals)} ${fee.mint === usdc.mint ? usdc.name : usdy.name}`
-const leverageLabel = (value) => {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? `${numeric.toFixed(2)}×` : '—'
-}
-const walletBalanceLabel = (token) => {
-  if (!state.address) return 'Connect wallet'
-  if (state.walletError) return 'Unavailable'
-  const balance = state.balancesBaseUnits?.[token.token_id]
-  if ((typeof balance !== 'string' && typeof balance !== 'bigint') || !/^\d+$/.test(String(balance))) return 'Unavailable'
-  return `${formatBaseUnits(BigInt(balance), token.decimals)} ${token.name}`
-}
-const tokenAmountLabel = (value, token) => {
-  if (typeof value !== 'string' || !/^\d+(?:\.\d+)?$/.test(value)) return 'Unavailable'
-  const amount = Number(value)
-  return Number.isFinite(amount) ? `${amt(amount, token.decimals)} ${token.name}` : 'Unavailable'
+const lev = (value) => `${Number(value).toFixed(2).replace(/0$/, '')}×`
+
+// Estimates for the chosen leverage, before any quote: the summary moves with the slider; a preview replaces the token
+// amounts with the quoted ones.
+const rates = computed(() => {
+  const a = strategies.value[0]?.carry?.assumptions ?? {}
+  const supply = Number(a.collateralSupplyAprPct ?? 0), native = a.collateralNativeApyPct, borrow = a.liabilityBorrowAprPct
+  return { hold: supply + Number(native ?? 0), native: native ?? null, borrow: borrow ?? null }
+})
+const liqLtv = computed(() => state.reserves['sol-usdy-usdc']?.['svm-usdy']?.liqLtv ?? 95)
+const usdyPrice = computed(() => priceOf('svm-usdy'))
+const amount = computed(() => num(fundingAmount.value))
+const est = computed(() => {
+  const L = Number(leverage.value), ltv = (L - 1) / L
+  const quoted = previewIsCurrent.value && preview.value?.exposure?.source === 'kamino-sdk-net-route' ? preview.value.exposure : null
+  return {
+    collateral: quoted ? Number(quoted.collateralAmount) : amount.value * L,
+    debt: quoted ? Number(quoted.debtAmount) : (amount.value * usdyPrice.value * (L - 1)) / priceOf('svm-usdc'),
+    ltv: ltv * 100,
+    hf: (liqLtv.value / 100) / ltv,
+    liqPrice: (usdyPrice.value * ltv) / (liqLtv.value / 100),
+    netApy: rates.value.borrow == null ? null : rates.value.hold * L - rates.value.borrow * (L - 1),
+  }
+})
+const health = (hf) => (hf >= 1.8 ? ['ok', 'Safe'] : hf >= 1.3 ? ['warn', 'Medium'] : ['bad', 'Risky'])
+const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances['svm-usdy'] ?? 0) * p) / 100, usdy.decimals)) }
+
+const quoted = computed(() => previewIsCurrent.value && !!preview.value)
+// The preview needs only an amount; opening also needs the Kamino setup and no blocker.
+const status = computed(() => {
+  if (!state.address) return 'Connect a wallet to open a loop.'
+  if (!(amount.value > 0)) return 'Enter an amount.'
+  if (amount.value > (state.balances['svm-usdy'] ?? 0)) return `You only hold ${amt(state.balances['svm-usdy'] ?? 0)} USDY.`
+  if (!quoted.value) return null
+  if (setupLoading.value) return 'Checking Kamino setup…'
+  if (setupRequired.value) return 'Complete the one-time Kamino setup to open it.'
+  if (entryBlockers.value.length) return localForkMode.value ? 'This loop can\'t be opened on the local fork right now.' : 'Loops aren\'t open on Nysa yet.'
+  return null
+})
+const canAct = computed(() => !acting.value && !loading.value && !status.value && (!quoted.value || openReadiness.value?.executionEnabled))
+const act = () => (quoted.value ? openLoop() : runPreview())
+
+const positionView = (position) => {
+  const coll = Number(position.collateral.amount), debt = Number(position.liability.amount)
+  const collUsd = coll * usdyPrice.value, debtUsd = debt * priceOf('svm-usdc'), net = collUsd - debtUsd
+  return {
+    net, coll,
+    leverage: net > 0 ? collUsd / net : null,
+    netApy: net > 0 && rates.value.borrow != null ? (rates.value.hold * collUsd - rates.value.borrow * debtUsd) / net : null,
+    liqPrice: coll > 0 ? debtUsd / (coll * (liqLtv.value / 100)) : null,
+    hf: Number(position.healthFactor),
+    ltv: collUsd > 0 ? (debtUsd / collUsd) * 100 : 0,
+    readiness: selectedLoopCloseReadiness(strategy.value?.actions?.fullClose ?? null, position, state.address, state.loopPositionReadStatus),
+  }
 }
 onMounted(() => { loadStrategies(); loadSetupStatus() })
 </script>
 
 <template>
+  <NotFound v-if="!LOOP_ENABLED && !state.loopVisible" />
+  <template v-else>
   <div class="n-page-head">
     <h1 class="n-h1">Loop</h1>
-    <p class="n-sub">Borrow USDC against USDY collateral, then review the full position before opening.</p>
+    <p class="n-sub">Multiply your USDY yield by borrowing USDC against it, in one transaction.</p>
   </div>
 
-  <div class="n-table strategy-table">
-    <div class="n-thead strategy-grid"><div>Strategy</div><div>Network</div><div>Collateral</div><div>Borrow</div><div>Max leverage</div></div>
-    <div class="n-tr strategy-grid">
-      <div class="n-cell strategy-name" data-label="Strategy"><b>{{ strategies[0]?.marketName ?? 'USDY Ondo Market' }}</b></div>
-      <div class="n-cell" data-label="Network"><span class="n-chip" :class="localForkMode ? 'warn' : executionMode === 'production-gated' ? 'mainnet' : ''">{{ networkLabel }}</span></div>
-      <div class="n-cell n-asset" data-label="Collateral"><TokenIcon :token="usdy" size="sm" />{{ usdy.name }}</div>
-      <div class="n-cell n-asset" data-label="Borrow"><TokenIcon :token="usdc" size="sm" />{{ usdc.name }}</div>
-      <div class="n-cell n-num" data-label="Max leverage">1.5×</div>
-    </div>
-  </div>
-
-  <section class="n-panel entry-panel">
-    <div class="panel-heading">
-      <div><h2>Open loop</h2><p class="n-muted">Fund with USDY collateral, then review the leverage and estimated position before signing.</p></div>
-      <span class="n-chip" :class="preview?.available ? (openReadiness.executionEnabled && !setupRequired && !setupLoading ? 'ready' : 'warn') : ''">{{ preview?.available ? (openReadiness.executionEnabled && !setupRequired && !setupLoading ? 'Ready' : 'Review required') : 'Preview required' }}</span>
-    </div>
-
-    <div class="wallet-balances" aria-label="Wallet balances">
-      <div><span>USDY available to fund</span><b>{{ walletBalanceLabel(usdy) }}</b></div>
-      <div><span>USDC wallet balance</span><b>{{ walletBalanceLabel(usdc) }}</b></div>
-    </div>
-
-    <div class="form-grid">
-      <label class="field">
-        <span>USDY funding amount</span>
-        <div class="input-with-unit"><input v-model="fundingAmount" inputmode="decimal" autocomplete="off" aria-label="Funding amount in USDY" /><span>USDY</span></div>
-      </label>
-      <label class="field">
-        <span>Target leverage</span>
-        <div class="input-with-unit"><input v-model.number="leverage" type="number" min="1.01" max="1.5" step="0.05" aria-label="Target leverage" /><span>×</span></div>
-      </label>
-      <button class="n-btn-grad preview-button" :disabled="loading" @click="runPreview">{{ loading ? 'Loading preview…' : 'Preview loop' }}</button>
-    </div>
-    <p class="helper">Leverage is capped at 1.5×. Preview uses current route quotes and market rates; final transaction values may change.</p>
-
-    <p v-if="error" class="n-banner warn entry-error" role="status">{{ error }}</p>
-
-    <section v-if="preview?.exposure" class="review-section" aria-labelledby="loop-review-title">
-      <div class="review-heading"><h3 id="loop-review-title">Review estimate</h3><span v-if="preview.carry?.estimatedCarryPct != null" class="n-chip" :class="Number(preview.carry.estimatedCarryPct) > 0 ? 'ok' : 'warn'">{{ Number(preview.carry.estimatedCarryPct) > 0 ? '+' : '' }}{{ preview.carry.estimatedCarryPct }}% carry</span></div>
-      <div class="n-stats stat-4 review-stats">
-        <div class="n-stat"><div class="k">Estimated USDY supplied</div><div class="v">{{ preview.exposure.source === 'kamino-sdk-net-route' ? tokenAmountLabel(preview.exposure.collateralAmount, usdy) : 'Unavailable' }}</div></div>
-        <div class="n-stat"><div class="k">USDC borrow principal</div><div class="v">{{ preview.exposure.source === 'kamino-sdk-net-route' ? tokenAmountLabel(preview.exposure.borrowAmount, usdc) : 'Unavailable' }}</div></div>
-        <div class="n-stat"><div class="k">Total estimated USDC debt</div><div class="v">{{ preview.exposure.source === 'kamino-sdk-net-route' ? tokenAmountLabel(preview.exposure.debtAmount, usdc) : 'Unavailable' }}</div><div class="s">Includes borrow origination fee</div></div>
-        <div class="n-stat"><div class="k">Projected LTV</div><div class="v">{{ pct(Number(preview.risk?.projectedLtvPct)) }} <span class="stat-limit">/ {{ pct(Number(preview.limits?.projectedLtvPct)) }} limit</span></div></div>
-      </div>
-      <p class="valuation-note"><span>USD values</span><b>Equity {{ usd(Number(preview.exposure.equity)) }}</b><b>Collateral {{ usd(Number(preview.exposure.grossCollateral)) }}</b><b>Debt {{ usd(Number(preview.exposure.debt)) }}</b><span>{{ preview.exposure.source === 'kamino-sdk-net-route' ? 'Token amounts are estimates from the Kamino SDK.' : 'Token quantities need a verified live route quote.' }}</span></p>
-
-      <div class="economics-row">
-        <div class="economics-item"><span>Estimated leverage</span><b>{{ leverageLabel(preview.exposure.leverage ?? preview.carry?.basedOnLeverage ?? leverage) }}</b></div>
-        <div class="economics-item"><span>Loop execution</span><b>{{ preview.executionPlan?.loopPasses ?? 1 }} atomic transaction</b><small>One pass. Leverage describes position size, not repeated transactions.</small></div>
-        <div class="economics-item"><span>Router swaps · Nysa fee</span><b>{{ preview.executionPlan?.routerSwaps ?? 1 }} swap · {{ preview.feeTotalUsd != null ? usd(preview.feeTotalUsd) : 'fee unavailable' }}</b></div>
-        <div class="economics-item"><span>Borrow + flash fees</span><b>{{ preview.knownCostsTotalUsd != null ? usd(Math.max(0, preview.knownCostsTotalUsd - (preview.feeTotalUsd ?? 0))) : 'Unavailable' }}</b></div>
+  <div class="loop-grid">
+    <section class="n-panel">
+      <div class="panel-h">
+        <h2>Open loop</h2>
+        <span class="pair"><TokenIcon :token="usdy" size="sm" />USDY / <TokenIcon :token="usdc" size="sm" />USDC <span class="n-chip" :class="localForkMode ? 'warn' : executionMode === 'production-gated' ? 'mainnet' : ''">{{ networkLabel }}</span></span>
       </div>
 
-      <div v-if="preview?.carry?.requiresAcknowledgement" class="carry-ack-block">
-        <p class="carry-ack">Estimated carry is non-positive. Acknowledgement is required before opening.</p>
-        <label class="carry-ack-checkbox"><input v-model="carryAcknowledged" type="checkbox" /><span>I understand the current estimated carry is non-positive and may change.</span></label>
+      <div class="n-label row"><span>Amount</span><span class="hint">In wallet: {{ state.address ? `${amt(state.balances['svm-usdy'] ?? 0)} USDY` : '—' }}</span></div>
+      <div class="input-unit">
+        <input v-model="fundingAmount" class="n-input" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="USDY amount" />
+        <span class="unit"><TokenIcon :token="usdy" size="sm" />USDY</span>
+      </div>
+      <div class="n-quick">
+        <button v-for="p in [25, 50, 75]" :key="p" :disabled="!state.address" @click="setPct(p)">{{ p }}%</button>
+        <button :disabled="!state.address" @click="setPct(100)">MAX</button>
       </div>
 
-      <details class="review-details">
-        <summary>Risk, rates and fee breakdown</summary>
-        <div class="details-content">
-          <p class="preview-basis">{{ preview.exposure.source === 'kamino-sdk-net-route' ? 'Amounts use Kamino SDK position calculations and fee-adjusted swap quote outputs.' : 'Amounts are target-only estimates pending live fee-adjusted route quotes.' }}</p>
-          <p v-if="preview.risk?.healthFactor != null" class="detail-line">Health factor <b>{{ Number(preview.risk.healthFactor).toFixed(2) }}</b><span>Liquidation threshold {{ preview.risk.liquidationLtvPct }}% · liquidation price {{ usd(Number(preview.risk.liquidationPriceUsd)) }} per USDY</span></p>
-          <p v-if="preview.carry?.assumptions" class="detail-line">Carry assumptions <b>{{ usdy.name }} supply {{ preview.carry.assumptions.collateralSupplyAprPct }}% − {{ usdc.name }} borrow {{ preview.carry.assumptions.liabilityBorrowAprPct }}%</b><span>Live reserve rates as of {{ preview.carry.asOf ?? 'unknown' }}</span></p>
-          <div v-if="fees.length" class="fee-list">
-            <div v-for="fee in fees" :key="fee.action" class="fee-row"><span>Borrowed USDC to USDY router swap</span><b>{{ feeLabel(fee) }}</b></div>
-          </div>
-          <p class="footnote">10 bps is charged once per economic swap. DEX route hops do not add Nysa fees.</p>
-        </div>
+      <div class="lev">
+        <div class="n-label row"><span>Leverage</span><b>{{ lev(leverage) }}</b></div>
+        <input v-model.number="leverage" class="slider" type="range" min="1.1" max="1.5" step="0.05" aria-label="Leverage" />
+        <div class="ticks"><span>1.1×</span><span>1.25×</span><span>1.5× max</span></div>
+      </div>
+
+      <div class="ba" aria-label="Position after the loop">
+        <div class="ba-row"><span class="k">Collateral</span><span class="from">0 USDY</span><span class="to">{{ amt(est.collateral, 2) }} USDY</span></div>
+        <div class="ba-row"><span class="k">Debt</span><span class="from">0 USDC</span><span class="to">{{ amt(est.debt, 2) }} USDC</span></div>
+        <div class="ba-row"><span class="k">LTV</span><span class="from">0%</span><span class="to">{{ pct(est.ltv, 1) }}</span></div>
+        <div class="ba-row"><span class="k">Leverage</span><span class="from">1.00×</span><span class="to">{{ lev(leverage) }}</span></div>
+      </div>
+
+      <section v-if="state.address && setupRequired" class="setup">
+        <p>One-time Kamino setup: creates your Kamino user account. No deposit, borrow or Nysa fee; Kamino may charge network rent.</p>
+        <button class="n-btn-sm ghost" :disabled="acting || setupLoading" @click="initializeKaminoMetadata">{{ acting ? 'Setting up…' : 'Set up' }}</button>
+      </section>
+      <p v-if="setupError" class="err" role="status">{{ setupError }}</p>
+
+      <label v-if="quoted && preview.carry?.requiresAcknowledgement" class="ack"><input v-model="carryAcknowledged" type="checkbox" /><span>At current rates this loop earns less than it costs. I understand rates can change.</span></label>
+
+      <button class="n-btn-block go" :disabled="!canAct" @click="act">{{ acting ? 'Preparing…' : loading ? 'Checking route…' : quoted ? `Loop ${lev(leverage)}` : `Preview loop ${lev(leverage)}` }}</button>
+      <p class="why">{{ status ?? (quoted ? 'One signature: flash loan, swap and deposit in a single transaction.' : 'The preview quotes the swap; nothing is signed.') }}</p>
+      <details v-if="quoted && entryBlockers.length" class="more">
+        <summary>Why</summary>
+        <ul><li v-for="reason in entryBlockers" :key="reason.code + reason.message">{{ reason.message }}</li></ul>
+      </details>
+      <p v-if="error" class="err" role="status">{{ error }}</p>
+    </section>
+
+    <section class="n-panel summary">
+      <div class="apy">
+        <div class="k">Net APY</div>
+        <div class="v" :class="{ neg: est.netApy < 0 }">{{ est.netApy == null ? '—' : pct(est.netApy) }}</div>
+        <div v-if="est.netApy != null && rates.native != null" class="vs">vs {{ pct(rates.hold) }} holding USDY · <b :class="{ neg: est.netApy < rates.hold }">{{ est.netApy >= rates.hold ? '+' : '' }}{{ pct(est.netApy - rates.hold) }}</b></div>
+        <div v-else-if="rates.native == null" class="vs">USDY's own yield isn't included yet: it needs a week of recorded prices.</div>
+      </div>
+      <div class="rows">
+        <div class="n-kv"><span class="k">USDY yield × {{ Number(leverage).toFixed(2) }}</span><span class="v">{{ pct(rates.hold * leverage) }}</span></div>
+        <div class="n-kv"><span class="k">USDC borrow × {{ (leverage - 1).toFixed(2) }}</span><span class="v neg">{{ rates.borrow == null ? '—' : `−${pct(rates.borrow * (leverage - 1))}` }}</span></div>
+      </div>
+      <div class="rows">
+        <div class="n-kv"><span class="k">Liquidation price</span><span class="v">${{ est.liqPrice.toFixed(4) }} <small>USDY −{{ ((1 - est.liqPrice / usdyPrice) * 100).toFixed(0) }}%</small></span></div>
+        <div class="n-kv"><span class="k">Health</span><span class="n-chip" :class="health(est.hf)[0]">{{ health(est.hf)[1] }}</span></div>
+        <div class="bar" aria-hidden="true"><span class="lim" :style="{ left: `${liqLtv}%` }"></span><span class="mark" :style="{ left: `${est.ltv}%` }"></span></div>
+        <div class="bar-l"><span>LTV {{ pct(est.ltv, 1) }}</span><span>liquidation {{ pct(liqLtv, 0) }}</span></div>
+      </div>
+      <div class="rows last">
+        <div class="n-kv"><span class="k">Swap USDC → USDY</span><span class="v">{{ amt(est.debt, 2) }} USDC</span></div>
+        <div class="n-kv"><span class="k">Nysa fee (0.1% of swap)</span><span class="v">{{ quoted && preview.feeTotalUsd != null ? usdFull(preview.feeTotalUsd) : `≈ ${usdFull(est.debt * 0.001)}` }}</span></div>
+        <div v-if="quoted && preview.knownCostsTotalUsd != null" class="n-kv"><span class="k">Borrow and flash loan fees</span><span class="v">{{ usdFull(Math.max(0, preview.knownCostsTotalUsd - (preview.feeTotalUsd ?? 0))) }}</span></div>
+      </div>
+      <details class="more">
+        <summary>Details</summary>
+        <div class="n-kv"><span class="k">Health factor</span><span class="v">{{ hfText(est.hf) }}</span></div>
+        <div class="n-kv"><span class="k">Max slippage</span><span class="v">0.5%</span></div>
+        <div v-for="fee in quoted ? fees : []" :key="fee.action" class="n-kv"><span class="k">Nysa fee</span><span class="v">{{ feeLabel(fee) }}</span></div>
+        <div class="n-kv"><span class="k">USDY yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (30-day price)` }}</span></div>
+        <div class="n-kv"><span class="k">Rates as of</span><span class="v">{{ strategies[0]?.carry?.asOf ? new Date(strategies[0].carry.asOf).toLocaleString() : '—' }}</span></div>
       </details>
     </section>
+  </div>
 
-    <section v-if="state.address && setupRequired" class="setup-inline">
-      <div><h3>One-time Kamino setup</h3><p class="n-muted">Creates Kamino user metadata in a separate transaction. No deposit, borrow or Nysa swap fee; Kamino may charge network rent.</p></div>
-      <p v-if="setupError" class="setup-error" role="status">{{ setupError }}</p>
-      <button class="n-btn-sm ghost" :disabled="acting || setupLoading" @click="initializeKaminoMetadata">{{ acting ? 'Initializing…' : 'Initialize metadata' }}</button>
-    </section>
-    <p v-else-if="setupError" class="setup-error" role="status">{{ setupError }}</p>
-
-    <div class="entry-action">
-      <div class="entry-status">
-        <span v-if="!state.address" class="n-muted">Connect a wallet to open a loop.</span>
-        <span v-else-if="setupLoading" class="n-muted">Checking Kamino setup…</span>
-        <span v-else-if="setupRequired" class="n-muted">Complete one-time Kamino setup to continue.</span>
-        <span v-else-if="!preview" class="n-muted">Preview this loop to check availability and costs.</span>
-        <span v-else-if="!entryBlockers.length" class="n-muted">{{ localForkMode ? 'Ready to build and simulate on local Surfpool.' : 'No current eligibility blockers.' }}</span>
-        <ul v-if="entryBlockers.length" class="reason-list">
-          <li v-for="reason in entryBlockers" :key="reason.code + reason.message">{{ reason.message }}</li>
-        </ul>
-      </div>
-      <button class="n-btn-grad action-button" :disabled="acting || !openReadiness?.executionEnabled || setupRequired || setupLoading" :title="(openReadiness?.unavailableReasons ?? []).map((reason) => reason.message).join(' ')" @click="openLoop">{{ acting ? 'Preparing…' : 'Open loop' }}</button>
+  <section v-for="position in positions" :key="position.id" class="n-panel position" :class="{ picked: route.query.position === position.id }">
+    <div class="panel-h">
+      <h2>Your loop</h2>
+      <span class="pair"><TokenIcon :token="usdy" size="sm" />USDY / <TokenIcon :token="usdc" size="sm" />USDC <span v-if="Number.isFinite(positionView(position).hf)" class="n-chip" :class="health(positionView(position).hf)[0]">{{ health(positionView(position).hf)[1] }}</span></span>
+    </div>
+    <div class="n-stats pos-stats">
+      <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(positionView(position).net) }}</div><div class="s">{{ amt(positionView(position).coll, 2) }} USDY collateral</div></div>
+      <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ pct(positionView(position).netApy) }}</div><div class="s">vs {{ pct(rates.hold) }} holding USDY</div></div>
+      <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ positionView(position).leverage ? lev(positionView(position).leverage) : '—' }}</div><div class="s">max 1.5×</div></div>
+      <div class="n-stat"><div class="k">Liquidation price</div><div class="v">{{ positionView(position).liqPrice ? `$${positionView(position).liqPrice.toFixed(4)}` : '—' }}</div><div class="s">USDY at ${{ usdyPrice.toFixed(4) }}</div></div>
+      <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(positionView(position).hf) }}</div><div class="s">LTV {{ pct(positionView(position).ltv, 1) }}</div></div>
+    </div>
+    <div class="close">
+      <button class="n-btn-grad" :disabled="acting || !positionView(position).readiness?.executionEnabled" @click="closeLoop(position)">{{ acting ? 'Preparing…' : 'Close loop' }}</button>
+      <span class="why">{{ positionView(position).readiness?.executionEnabled ? 'Repays the debt with your collateral and returns the rest, in one transaction.' : 'Closing isn\'t available yet.' }}</span>
     </div>
   </section>
 
-  <section v-if="positions.length" class="n-panel position-panel">
-    <div class="panel-heading"><div><h2>Your positions</h2><p class="n-muted">Select a position to review its full-close readiness.</p></div><span class="n-chip">{{ positions.length }}</span></div>
-    <div class="n-table">
-      <div class="n-thead position-grid"><div>Position</div><div>Collateral</div><div>Debt</div><div>Health factor</div><div></div></div>
-      <div v-for="position in positions" :key="position.id" class="n-tr position-grid" :class="{ selected: selectedPosition?.id === position.id }">
-        <div class="n-cell" data-label="Position"><b>{{ position.market.name }}</b><span class="position-address">{{ position.obligation.address.slice(0, 8) }}…{{ position.obligation.address.slice(-4) }}</span></div>
-        <div class="n-cell n-num" data-label="Collateral">{{ position.collateral.amount }} USDY</div>
-        <div class="n-cell n-num" data-label="Debt">{{ position.liability.amount }} USDC</div>
-        <div class="n-cell n-num" data-label="Health factor">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div>
-        <div class="position-select"><button class="n-btn-sm ghost" :aria-pressed="selectedPosition?.id === position.id" @click="selectPosition(position)">{{ selectedPosition?.id === position.id ? 'Selected' : 'Select' }}</button></div>
-      </div>
-    </div>
-    <div class="position-actions">
-      <button class="n-btn-grad" :disabled="acting || !closeReadiness?.executionEnabled || !selectedPosition" :title="(closeReadiness?.unavailableReasons ?? []).map((reason) => reason.message).join(' ')" @click="closeLoop">{{ acting ? 'Preparing…' : 'Close full position' }}</button>
-      <p v-if="closeReadiness?.unavailableReasons?.length" class="n-muted">{{ closeReadiness.unavailableReasons.map((reason) => reason.message).join(' ') }}</p>
-    </div>
-  </section>
-
-  <div class="n-banner mode-banner">{{ localForkMode ? 'Local Surfpool only: transactions use the loopback validator and have no Mainnet effect.' : 'Execution availability depends on route security, fee configuration, and wallet readiness.' }}</div>
+  <div v-if="localForkMode" class="n-banner mode-banner">Local Surfpool only: transactions use the loopback validator and have no Mainnet effect.</div>
+  </template>
 </template>
 
 <style scoped>
-.strategy-table { margin-bottom: 20px; }
-.strategy-grid { grid-template-columns: 1.6fr .8fr 1fr 1fr .7fr; }
-.strategy-name { font-weight: 600; }
-.entry-panel { margin-bottom: 22px; }
-.entry-panel .panel-heading { align-items: flex-start; }
-.entry-panel .panel-heading h2 { margin: 0 0 6px; font-size: 18px; }
-.entry-panel .panel-heading p { margin: 0; font-size: 13px; }
-.setup-error { color: var(--n-red); }
-.wallet-balances { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
-.wallet-balances > div { display: grid; gap: 5px; min-width: 0; padding: 13px 15px; border: 1px solid var(--n-line); border-radius: 12px; background: var(--n-bg-2); }
-.wallet-balances span,.economics-item small { color: var(--n-text-3); font-size: 12px; }
-.wallet-balances b { overflow-wrap: anywhere; font-size: 14px; }
-.form-grid { display: grid; grid-template-columns: 1fr 1fr auto; gap: 16px; align-items: end; }
-.field { display: grid; gap: 8px; color: var(--n-text-2); font-size: 13px; }
-.input-with-unit { display: flex; align-items: center; border: 1px solid var(--n-line-2); border-radius: 12px; background: var(--n-bg-2); padding: 0 13px; }
-.input-with-unit:focus-within { border-color: var(--n-pink); box-shadow: 0 0 0 2px #ec008c33; }
-.input-with-unit input { min-width: 0; width: 100%; padding: 13px 0; border: 0; outline: 0; color: var(--n-text); background: transparent; font: inherit; font-size: 16px; }
-.input-with-unit span { color: var(--n-text-3); font-size: 12px; }
-.preview-button { min-height: 46px; white-space: nowrap; }
-.review-section { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--n-line); }
-.review-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
-.review-heading h3,.setup-inline h3 { margin: 0; font-size: 15px; }
-.review-stats { margin: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.review-stats .n-stat { padding: 17px 18px; }
-.review-stats .n-stat .k { margin-bottom: 6px; font-size: 10px; }
-.review-stats .n-stat .v { font-size: clamp(17px, 1.8vw, 20px); line-height: 1.35; overflow-wrap: anywhere; }
-.stat-limit { color: var(--n-text-3); font-size: 12px; font-weight: 400; letter-spacing: 0; }
-.valuation-note { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 14px; margin: 10px 0 0; color: var(--n-text-3); font-size: 12px; line-height: 1.5; }
-.valuation-note b { color: var(--n-text-2); font-weight: 500; }
-.valuation-note > span:last-child { flex-basis: 100%; font-size: 11px; }
-.economics-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
-.economics-item { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 13px 14px; border: 1px solid var(--n-line); border-radius: 8px; color: var(--n-text-3); font-size: 12px; line-height: 1.4; }
-.economics-item b { color: var(--n-text); text-align: left; font-size: 14px; line-height: 1.4; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-.economics-item small { color: var(--n-text-3); font-size: 11px; line-height: 1.45; }
-.carry-ack-block { margin-top: 14px; padding: 13px 14px; border: 1px solid #e8b33966; border-radius: 6px; background: #e8b3390c; }
-.carry-ack { margin: 0; color: var(--n-amber); font-size: 12px; }
-.carry-ack-checkbox { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; color: var(--n-text-2); font-size: 12px; }
-.carry-ack-checkbox input { margin-top: 2px; accent-color: var(--n-pink); }
-.review-details { margin-top: 14px; border: 1px solid var(--n-line); border-radius: 6px; }
-.review-details summary { padding: 12px 14px; color: var(--n-text-2); font-size: 12px; cursor: pointer; }
-.review-details summary:focus-visible { outline: 2px solid var(--n-pink); outline-offset: 2px; }
-.details-content { padding: 0 14px 14px; }
-.preview-basis { margin: 0 0 12px; color: var(--n-text-3); font-size: 12px; line-height: 1.5; }
-.detail-line { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 10px 0; color: var(--n-text-3); font-size: 12px; }
-.detail-line b { color: var(--n-text-2); }
-.detail-line span { flex-basis: 100%; }
-.fee-list { display: grid; gap: 10px; margin-top: 14px; }
-.fee-row { display: flex; justify-content: space-between; gap: 12px; color: var(--n-text-2); font-size: 12px; }
-.fee-row b { color: var(--n-text); font-variant-numeric: tabular-nums; }
-.footnote,.helper { margin: 12px 0 0; color: var(--n-text-3); font-size: 12px; line-height: 1.6; }
-.setup-inline { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 16px; margin-top: 18px; padding: 15px; border: 1px solid var(--n-line); border-radius: 6px; }
-.setup-inline p { margin: 5px 0 0; font-size: 12px; line-height: 1.5; }
-.setup-inline .setup-error { grid-column: 1 / -1; }
-.entry-error { margin: 16px 0 0; }
-.entry-action { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--n-line); }
-.entry-status { min-width: 0; }
-.entry-status .n-muted { font-size: 12px; }
-.position-panel { margin: 22px 0; }
-.position-panel .panel-heading { align-items: flex-start; }
-.position-panel h2 { margin: 0 0 6px; font-size: 17px; }
-.position-panel .panel-heading p { margin: 0; }
-.position-grid { grid-template-columns: 1.3fr .9fr .9fr .8fr auto; }
-.position-grid.selected { color: var(--n-text); }
-.position-address { display: block; margin-top: 4px; color: var(--n-text-3); font-family: var(--mono); font-size: 11px; }
-.position-empty { margin: 0; }
-.position-select { display: flex; justify-content: flex-end; }
-.position-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--n-line); }
-.position-actions p { margin: 0; font-size: 12px; line-height: 1.5; }
-.action-button { margin-top: 18px; }
-.reason-list { display: grid; gap: 6px; margin: 0; padding-left: 18px; color: var(--n-text-2); font-size: 12px; line-height: 1.5; }
-.panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
-.panel-heading h2 { margin: 0; font-size: 17px; }
-.n-chip.ready,.n-chip.ok { color: var(--n-green); }
-.mode-banner { margin-top: 18px; }
-@media (max-width: 1080px) {
-  .review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  .economics-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 860px) {
-  .strategy-grid { grid-template-columns: 1fr; }
-  .strategy-grid .n-cell { justify-content: flex-start; }
-  .position-grid { grid-template-columns: 1fr; }
-  .position-select { justify-content: flex-start; }
-}
-@media (max-width: 600px) {
-  .wallet-balances { grid-template-columns: 1fr; }
-  .form-grid { grid-template-columns: 1fr; }
-  .preview-button { width: 100%; }
-  .review-stats { grid-template-columns: 1fr !important; }
-  .economics-row { grid-template-columns: 1fr; }
-  .entry-action { align-items: stretch; flex-direction: column; }
-  .entry-action > .n-btn-grad { width: 100%; }
-  .setup-inline { grid-template-columns: 1fr; }
-  .setup-inline > button { width: 100%; }
-}
+.loop-grid { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); gap: 20px; align-items: start; }
+.panel-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+.panel-h h2 { font-size: 17px; font-weight: 600; }
+.pair { display: flex; align-items: center; gap: 7px; color: var(--n-text-2); font-size: 13px; }
+.pair .n-chip { margin-left: 4px; }
+.row { display: flex; justify-content: space-between; gap: 12px; }
+.row b { color: var(--n-text); font-weight: 600; font-size: 15px; }
+.hint { color: var(--n-text-4); }
+.input-unit { position: relative; }
+.input-unit .n-input { font-size: 20px; font-weight: 500; padding-right: 110px; }
+.input-unit .unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 7px; color: var(--n-text-2); font-weight: 500; }
+.n-quick { margin-top: 8px; }
+.lev { margin-top: 22px; }
+.slider { width: 100%; accent-color: var(--n-pink); }
+.ticks { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11.5px; font-family: var(--mono); margin-top: 2px; }
+.ba { margin-top: 22px; border: 1px solid var(--n-line); border-radius: 6px; }
+.ba-row { display: grid; grid-template-columns: 1fr auto auto; gap: 14px; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--n-hair); font-variant-numeric: tabular-nums; }
+.ba-row:last-child { border-bottom: 0; }
+.ba-row .k { color: var(--n-text-3); }
+.ba-row .from { color: var(--n-text-4); }
+.ba-row .from::after { content: " →"; }
+.ba-row .to { font-weight: 600; text-align: right; min-width: 96px; }
+.setup { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 14px; border: 1px solid var(--n-line); border-radius: 6px; font-size: 12.5px; color: var(--n-text-3); }
+.ack { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; color: var(--n-amber); font-size: 12.5px; }
+.ack input { margin-top: 3px; accent-color: var(--n-pink); }
+.go { margin-top: 22px; }
+.why { display: block; margin-top: 10px; text-align: center; color: var(--n-text-3); font-size: 12.5px; }
+.err { margin-top: 10px; color: var(--n-red); font-size: 12.5px; text-align: center; }
+.more { margin-top: 12px; color: var(--n-text-3); font-size: 12.5px; }
+.more summary { cursor: pointer; list-style: none; }
+.more summary::before { content: "+ "; color: var(--n-pink); }
+.more[open] summary::before { content: "− "; }
+.more ul { margin: 8px 0 0 18px; display: grid; gap: 4px; }
+.more .n-kv { margin-top: 8px; }
+.summary .apy { padding-bottom: 18px; border-bottom: 1px solid var(--n-line); }
+.apy .k { color: var(--n-text-3); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+.apy .v { font-size: 44px; font-weight: 600; letter-spacing: -.02em; line-height: 1.15; margin-top: 6px; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; font-variant-numeric: tabular-nums; }
+.apy .v.neg { background: none; color: var(--n-amber); }
+.apy .vs { color: var(--n-text-3); font-size: 13px; margin-top: 4px; }
+.apy .vs b { color: var(--n-green); font-weight: 600; }
+.apy .vs b.neg { color: var(--n-amber); }
+.rows { display: grid; gap: 9px; padding: 14px 0; border-bottom: 1px solid var(--n-line); }
+.rows.last { border-bottom: 0; padding-bottom: 0; }
+.n-kv .v.neg { color: var(--n-text-2); }
+.n-kv .v small { color: var(--n-text-4); font-weight: 400; font-size: 12px; margin-left: 6px; }
+.n-chip.ok { color: var(--n-green); border-color: #3ddc8459; }
+.n-chip.bad { color: var(--n-red); border-color: #ff5d5d66; }
+.bar { position: relative; height: 6px; border-radius: 999px; background: linear-gradient(90deg, var(--n-green) 0%, var(--n-green) 45%, var(--n-amber) 70%, var(--n-red) 100%); margin: 6px 0 0; opacity: .85; }
+.bar .mark { position: absolute; top: -5px; width: 3px; height: 16px; border-radius: 2px; background: #fff; transform: translateX(-50%); transition: left .2s; }
+.bar .lim { position: absolute; top: -3px; width: 1px; height: 12px; background: #fff8; }
+.bar-l { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11.5px; font-family: var(--mono); }
+.position { margin-top: 22px; }
+.position.picked { border-color: var(--n-line-2); }
+.pos-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.pos-stats .n-stat { padding: 18px 20px; }
+.pos-stats .n-stat .v { font-size: 22px; }
+.close { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 18px; }
+.close .why { margin: 0; text-align: left; }
+.close .n-btn-grad:disabled { opacity: .35; cursor: not-allowed; transform: none; box-shadow: none; }
+.mode-banner { margin-top: 22px; }
+@media (prefers-reduced-motion: reduce) { .bar .mark { transition: none; } }
+@media (max-width: 1080px) { .pos-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pos-stats .n-stat:last-child { grid-column: 1 / -1; } }
+@media (max-width: 860px) { .loop-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) { .ba-row { grid-template-columns: 1fr auto; } .ba-row .from { display: none; } .apy .v { font-size: 38px; } .setup { flex-direction: column; align-items: stretch; } }
 </style>

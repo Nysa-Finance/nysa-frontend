@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, riskOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, amtDust, usdFull, num, borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan, underLimit } from '../logic.js'
+import { pct, amt, usdFull, num, cleanAmount, borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan, underLimit } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({ market: Object, collateralTokens: Array, loanTokens: Array, initialTab: String, initialAsset: String, repayOnly: Boolean })
@@ -13,6 +13,9 @@ const collId = ref(props.collateralTokens[0]?.token_id)
 const deposit = ref('')
 const borrowAmt = ref('')
 const repayAmt = ref('')
+watch(deposit, (v) => { deposit.value = cleanAmount(v, coll.value.decimals) })
+watch(borrowAmt, (v) => { borrowAmt.value = cleanAmount(v, loan.value.decimals) })
+watch(repayAmt, (v) => { repayAmt.value = cleanAmount(v, loan.value.decimals) })
 
 const loan = computed(() => props.loanTokens.find((t) => t.token_id === loanId.value) ?? props.loanTokens[0])
 const coll = computed(() => props.collateralTokens.find((t) => t.token_id === collId.value) ?? props.collateralTokens[0])
@@ -155,7 +158,7 @@ async function submitRepay() {
         <option v-for="t in loanTokens" :key="t.token_id" :value="t.token_id">{{ t.name }}</option>
       </select>
       <div class="n-kv" style="margin-bottom: 10px"><span class="k">Borrow APY (current)</span><span class="v accent">{{ pct(loanRow?.reserve.borrowAPR) }}</span></div>
-      <div class="n-kv" style="margin-bottom: 10px"><span class="k">Outstanding debt</span><span class="v">{{ on ? `${amtDust(debt)} ${loan.name}` : '—' }}</span></div>
+      <div class="n-kv" style="margin-bottom: 10px"><span class="k">Outstanding debt</span><span class="v">{{ on ? `${amt(debt)} ${loan.name}` : '—' }}</span></div>
       <div class="n-kv" style="margin-bottom: 20px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(loanRow?.walletBalance ?? 0)} ${loan.name}` : '—' }}</span></div>
       <div class="n-label">Amount</div>
       <input v-model="repayAmt" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amtDust, rewardApr, liquidationBonusRange, pieSlices, arcPath, num, underLimit } from './logic.js'
+import { usd, pct, compact, borrowRateAt, supplyRateAt, borrowCapacity, weightedLtv, healthFactor, parsePoints, snapshotPoints, pointsCsv, hfText, dur, floorTo, ceilTo, coversAll, realizedApy, windowApy, dailyApySeries, niceTicks, repayPlan, amt, cleanAmount, priceApy, rewardApr, liquidationBonusRange, pieSlices, arcPath, num, underLimit } from './logic.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -89,9 +89,18 @@ assert.equal(repayPlan(0.5, 1.044221238, 0.4, 6).issue, 'wallet')
 assert.equal(repayPlan(0.5, 1.044221238, 3.5, 6).issue, null)
 assert.equal(repayPlan(0, 1, 1, 6).issue, null)
 // Dust display.
-assert.equal(amtDust(0.000002742), '< 0.0001')
-assert.equal(amtDust(0), '0')
-assert.equal(amtDust(1.04422), '1.0442')
+assert.equal(amt(0.000002742), '< 0.0001')
+assert.equal(amt(0), '0')
+assert.equal(amt(1.04422), '1.0442')
+assert.equal(amt(9.99996), '9.9999') // never rounded up past what can be sent
+assert.equal(amt(1234.5), '1,234.5')
+assert.equal(cleanAmount('1,000', 6), '1.000')
+assert.equal(cleanAmount('1,000.5', 6), '1000.5')
+assert.equal(cleanAmount('1.000,5', 6), '1000.5')
+assert.equal(cleanAmount('1.1234567', 6), '1.123456')
+assert.equal(cleanAmount('12.', 6), '12.')
+assert.equal(cleanAmount(',5', 6), '0.5')
+assert.equal(cleanAmount('1 000a', 6), '1000')
 
 assert.equal(Math.round(rewardApr(1000 / 31_536_000, 1, 10_000)), 10) // 1000 USDC/year on 10k staked = 10%
 assert.equal(rewardApr(1, 1, 0), 0) // nothing staked
@@ -119,3 +128,7 @@ assert.equal(underLimit(0.836779, 6), 0.835942)
 assert.equal(underLimit(1000, 6), 999)
 assert.equal(underLimit(0, 6), 0)
 console.log('logic ok')
+
+// USDY's own yield from recorded prices: 1.00 → 1.003 in 30 days ≈ 3.65%; under a week of prices, none.
+assert.ok(Math.abs(priceApy([{ ts: 0, price: 1 }, { ts: 15 * day }, { ts: 30 * day, price: 1.003 }]) - 3.65) < 0.01)
+assert.equal(priceApy([{ ts: 0, price: 1 }, { ts: 6 * day, price: 1.001 }]), null)

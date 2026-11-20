@@ -2,7 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { state, sendVaultAction, useTx, vaultApyNote as apyNote } from '../store.js'
 import { tok } from '../config.js'
-import { pct, amt, num, floorTo, coversAll } from '../logic.js'
+import { pct, amt, num, cleanAmount, floorTo, coversAll } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({ vault: Object, live: Object, initialTab: String })
@@ -10,6 +10,7 @@ const { tx, run, reset } = useTx()
 
 const tab = ref(props.initialTab === 'withdraw' ? 'withdraw' : 'deposit')
 const amount = ref('')
+watch(amount, (v) => { amount.value = cleanAmount(v, token.value.decimals) })
 const token = computed(() => tok(props.live?.tokenId ?? 'svm-usdc'))
 const on = computed(() => !!state.address)
 const position = computed(() => state.vaultPositions[props.vault.id]?.value ?? 0)

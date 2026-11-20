@@ -13,7 +13,10 @@ export const usd = (v) => {
 }
 export const usdFull = (v) =>
   ok(v) ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
-export const amt = (v, d = 4) => (ok(v) ? v.toLocaleString('en-US', { maximumFractionDigits: d }) : '—')
+// Truncated, never rounded up: a max or balance shown is one that can be typed back and sent (9.99996 reads 9.9999,
+// not 10). Amounts below the last shown digit read "< 0.0001", not 0.
+export const amt = (v, d = 4) => (!ok(v) ? '—' : v > 0 && v < 10 ** -d ? `< ${(10 ** -d).toFixed(d)}`
+  : v.toLocaleString('en-US', { maximumFractionDigits: d, roundingMode: 'trunc' }))
 export const compact = (v, unit) => {
   if (!ok(v)) return '—'
   const a = Math.abs(v)
@@ -21,7 +24,14 @@ export const compact = (v, unit) => {
   return unit ? `${n} ${unit}` : n
 }
 export const short = (s, a = 4, b = 4) => (s && s.length > a + b + 1 ? `${s.slice(0, a)}…${s.slice(-b)}` : s)
-// "," or "." as the decimal separator (phone keyboards); anything else is invalid → 0.
+// Applied to amount inputs as typed. The last "," or "." is the decimal point (phone keyboards type ","), shown as "."
+// at once so "1,000" reads 1.000, never a silent 1; "1,000.5" and "1.000,5" read 1000.5. Digits past the token's
+// decimals are dropped: the chain can't move them.
+export const cleanAmount = (s, d) => {
+  const t = String(s ?? ''), i = Math.max(t.lastIndexOf('.'), t.lastIndexOf(',')), digits = (x) => x.replace(/\D/g, '')
+  return i < 0 ? digits(t) : `${digits(t.slice(0, i)) || '0'}.${digits(t.slice(i + 1)).slice(0, d)}`
+}
+// "," or "." as the decimal separator; anything else is invalid → 0.
 export const num = (s) => {
   const n = Number(String(s ?? '').trim().replace(',', '.'))
   return Number.isFinite(n) && n > 0 ? n : 0
@@ -129,7 +139,6 @@ export function repayPlan(amount, debt, wallet, decimals) {
 }
 
 // Like Aave: tiny non-zero values show as "< 0.0001" instead of a misleading "0".
-export const amtDust = (v, d = 4) => (v > 0 && v < 10 ** -d ? `< ${(10 ** -d).toFixed(d)}` : amt(v, d))
 
 // Linear (growth × 365 / days): compounding a short window of a rewards-boosted vault (+9% in a day) gives absurd
 // figures (10^15 %); for ordinary rates the two barely differ.
@@ -143,6 +152,12 @@ export function windowApy(points, days) {
   const start = [...points].reverse().find((p) => p.ts <= target) ?? points[0]
   const spanDays = (end.ts - start.ts) / 86400
   return spanDays > 0 ? { apy: realizedApy(start.rate, end.rate, spanDays), spanDays, full: start.ts <= target, from: start.ts } : null
+}
+
+// A token's own yield from its recorded prices (USDY: Ondo's rate), over the last 30 days; null under a week of them.
+export function priceApy(points) {
+  const w = windowApy(points.filter((p) => p.price > 0).map((p) => ({ ts: p.ts, rate: p.price })), 30)
+  return w && w.spanDays >= 7 ? w.apy : null
 }
 
 export function dailyApySeries(points) {

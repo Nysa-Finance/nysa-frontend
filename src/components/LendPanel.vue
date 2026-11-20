@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, rewardAprOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, usdFull, num, floorTo, coversAll, underLimit } from '../logic.js'
+import { pct, amt, usdFull, num, cleanAmount, floorTo, coversAll, underLimit } from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
 // withdrawOnly: the market page, for collateral and deposits made before the Earn vaults.
@@ -12,6 +12,7 @@ const tab = ref(props.withdrawOnly || props.initialTab === 'withdraw' ? 'withdra
 const options = computed(() => (tab.value === 'withdraw' ? props.allTokens : props.tokens))
 const assetId = ref(props.initialAsset ?? props.tokens[0]?.token_id)
 const amount = ref('')
+watch(amount, (v) => { amount.value = cleanAmount(v, token.value.decimals) })
 const token = computed(() => options.value.find((t) => t.token_id === assetId.value) ?? options.value[0])
 const row = computed(() => rowOf(props.market, token.value.token_id))
 const on = computed(() => !!state.address)
