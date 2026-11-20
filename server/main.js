@@ -177,7 +177,7 @@ function currentSwapReadiness(request = {}) {
 }
 
 // Private beta, while LOOP_ENABLED is off: only LOOP_WALLETS see the loop, and they can open real ones (up to
-// LOOP_MAX_FUNDING USDY each, empty for no cap). Listing a wallet is the approval: it stands in for the risk owner and
+// LOOP_MAX_FUNDING USDC each, empty for no cap). Listing a wallet is the approval: it stands in for the risk owner and
 // the fork-only gates, covered by the passing `npm run verify:loop-fork` run (open, close, fees, rollback). Releasing to
 // everyone (LOOP_ENABLED) still needs NYSA_LOOP_RISK_OWNER / _APPROVED_AT and those gates.
 const LOOP_WALLETS = new Set((process.env.LOOP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
@@ -187,7 +187,7 @@ const LOOP_NOT_ENABLED = { error: 'Loop is not available for this wallet yet.' }
 const loopBeta = !LOOP_ENABLED && LOOP_WALLETS.size > 0
 const LOOP_MAX_FUNDING = Number(process.env.LOOP_MAX_FUNDING) > 0 ? Number(process.env.LOOP_MAX_FUNDING) : null
 const overLoopCap = (amount) => LOOP_MAX_FUNDING != null && Number(amount) > LOOP_MAX_FUNDING
-const LOOP_CAP_ERROR = () => `Loops are capped at ${LOOP_MAX_FUNDING} USDY during the beta.`
+const LOOP_CAP_ERROR = () => `Loops are capped at ${LOOP_MAX_FUNDING} USDC during the beta.`
 
 // USDY earns through its price (Ondo's rate), not Kamino's supply APR, so the loop's carry adds it: the annualized rise
 // of the oracle price the snapshot records. Until a week of prices exists, USDY_APY (Ondo's published rate) if set;
@@ -742,7 +742,7 @@ const routes = [
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js). '/', '/lend' and '/market/:id' are old links it redirects.
-const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(loopOn ? ['/loop'] : []), '/analytics', '/liquidations', '/dashboard'])
+const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(loopOn ? ['/loop', '/loop/usdy'] : []), '/analytics', '/liquidations', '/dashboard'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
   || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
   || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])

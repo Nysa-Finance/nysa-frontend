@@ -13,7 +13,7 @@ const tabs = [
   { to: '/borrow', label: 'Borrow', icon: '/app/icon-borrow.png' },
   { to: '/portfolio', label: 'Portfolio', icon: '/app/icon-portfolio.png' },
   { to: '/swap', label: 'Buy Collateral', icon: '/app/icon-swap.png' },
-  { to: '/loop', label: 'Loop', icon: '/app/icon-borrow.png' },
+  { to: '/loop', label: 'Loops', icon: '/app/icon-borrow.png' },
 ]
 const visibleTabs = computed(() => tabs.filter((t) => (t.to !== '/swap' || state.swapVisible) && (t.to !== '/loop' || LOOP_ENABLED || state.loopVisible)))
 const menu = ref(false)
