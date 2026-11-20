@@ -1,6 +1,7 @@
 // The server never holds keys: it builds and simulates, the wallet signs. First-time setup (Kamino user accounts) or an
 // oversized transaction comes back in two steps: the setup first, then, asked again, the action (`final: true`).
 import Decimal from 'decimal.js'
+import { pointFlashRepayAtBorrow } from './loop-composition.js'
 import { KaminoAction, KaminoVault, U64_MAX, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
@@ -83,7 +84,7 @@ async function compile(owner, ixs, luts, units = MAX_CU) {
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayer(owner, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstructions([cuLimitIx(units), cuPriceIx(price), ...body], m),
+    (m) => appendTransactionMessageInstructions(pointFlashRepayAtBorrow([cuLimitIx(units), cuPriceIx(price), ...body]), m),
     (m) => (Object.keys(luts).length ? compressTransactionMessageUsingAddressLookupTables(m, luts) : m),
   )
   const tx = compileTransaction(msg)
