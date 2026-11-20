@@ -179,7 +179,7 @@ const lev = (value) => `${Number(value).toFixed(2).replace(/0$/, '')}×`
 const rates = computed(() => {
   const a = strategies.value[0]?.carry?.assumptions ?? {}
   const supply = Number(a.collateralSupplyAprPct ?? 0), native = a.collateralNativeApyPct, borrow = a.liabilityBorrowAprPct
-  return { hold: supply + Number(native ?? 0), native: native ?? null, borrow: borrow ?? null }
+  return { hold: supply + Number(native ?? 0), native: native ?? null, nativeSource: a.collateralNativeApySource, borrow: borrow ?? null }
 })
 const liqLtv = computed(() => state.reserves['sol-usdy-usdc']?.['svm-usdy']?.liqLtv ?? 95)
 const usdyPrice = computed(() => priceOf('svm-usdy'))
@@ -314,7 +314,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         <div class="n-kv"><span class="k">Health factor</span><span class="v">{{ hfText(est.hf) }}</span></div>
         <div class="n-kv"><span class="k">Max slippage</span><span class="v">0.5%</span></div>
         <div v-for="fee in quoted ? fees : []" :key="fee.action" class="n-kv"><span class="k">Nysa fee</span><span class="v">{{ feeLabel(fee) }}</span></div>
-        <div class="n-kv"><span class="k">USDY yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (30-day price)` }}</span></div>
+        <div class="n-kv"><span class="k">USDY yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (${rates.nativeSource === 'env' ? 'Ondo rate' : '30-day price'})` }}</span></div>
         <div class="n-kv"><span class="k">Rates as of</span><span class="v">{{ strategies[0]?.carry?.asOf ? new Date(strategies[0].carry.asOf).toLocaleString() : '—' }}</span></div>
       </details>
     </section>

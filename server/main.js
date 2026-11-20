@@ -175,31 +175,34 @@ function currentSwapReadiness(request = {}) {
   return { readiness, availability, visible: providerConfigured && feeAccountsConfigured && walletEnabled }
 }
 
-// LOOP_WALLETS shows the loop to those wallets only while LOOP_ENABLED is off (preview, setup, and whatever the
-// gates below allow); the gates still decide whether a loop can be opened.
+// Private beta, while LOOP_ENABLED is off: only LOOP_WALLETS see the loop, and they can open real ones (up to
+// LOOP_MAX_FUNDING USDY each, empty for no cap). Listing a wallet is the approval: it stands in for the risk owner and
+// the fork-only gates, covered by the passing `npm run verify:loop-fork` run (open, close, fees, rollback). Releasing to
+// everyone (LOOP_ENABLED) still needs NYSA_LOOP_RISK_OWNER / _APPROVED_AT and those gates.
 const LOOP_WALLETS = new Set((process.env.LOOP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
 const loopOn = LOOP_ENABLED || LOOP_WALLETS.size > 0
 const loopOpenTo = (wallet) => LOOP_ENABLED || LOOP_WALLETS.has(wallet)
 const LOOP_NOT_ENABLED = { error: 'Loop is not available for this wallet yet.' }
-// Private beta: those wallets may open real loops once NYSA_LOOP_RISK_OWNER / _APPROVED_AT are set, the approval covering
-// the passing `npm run verify:loop-fork` run (open, close, fees, rollback) that stands in for the fork-only gates.
-// LOOP_ENABLED (everyone) needs its own release. LOOP_MAX_FUNDING caps each loop's USDY, empty for no cap.
 const loopBeta = !LOOP_ENABLED && LOOP_WALLETS.size > 0
 const LOOP_MAX_FUNDING = Number(process.env.LOOP_MAX_FUNDING) > 0 ? Number(process.env.LOOP_MAX_FUNDING) : null
 const overLoopCap = (amount) => LOOP_MAX_FUNDING != null && Number(amount) > LOOP_MAX_FUNDING
 const LOOP_CAP_ERROR = () => `Loops are capped at ${LOOP_MAX_FUNDING} USDY during the beta.`
 
 // USDY earns through its price (Ondo's rate), not Kamino's supply APR, so the loop's carry adds it: the annualized rise
-// of the oracle price the daily snapshot records. Null (left out of the carry) until a week of prices exists.
-let usdyApy = null
+// of the oracle price the snapshot records. Until a week of prices exists, USDY_APY (Ondo's published rate) if set;
+// otherwise it is left out of the carry.
+const USDY_APY = Number.isFinite(Number(process.env.USDY_APY)) && process.env.USDY_APY ? Number(process.env.USDY_APY) : null
+let usdyApy = USDY_APY == null ? null : { apy: USDY_APY, source: 'env' }
 async function loadUsdyApy() {
-  try { usdyApy = priceApy(JSON.parse((await read(HISTORY)) ?? '{}').tokens?.[marketById('sol-usdy-usdc').reserves['svm-usdy']]?.points ?? []) }
-  catch (error) { console.warn('[loop] USDY yield unavailable', error?.message) }
+  try {
+    const measured = priceApy(JSON.parse((await read(HISTORY)) ?? '{}').tokens?.[marketById('sol-usdy-usdc').reserves['svm-usdy']]?.points ?? [])
+    usdyApy = measured != null ? { apy: measured, source: 'price' } : USDY_APY == null ? null : { apy: USDY_APY, source: 'env' }
+  } catch (error) { console.warn('[loop] USDY yield unavailable', error?.message) }
 }
 if (loopOn) { loadUsdyApy(); setInterval(loadUsdyApy, 3_600_000).unref() }
 const loopReserves = (snapshot) => {
   const reserves = snapshot?.reserves?.['sol-usdy-usdc'] ?? {}
-  return reserves['svm-usdy'] ? { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], nativeApy: usdyApy } } : reserves
+  return reserves['svm-usdy'] ? { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], nativeApy: usdyApy?.apy ?? null, nativeApySource: usdyApy?.source ?? null } } : reserves
 }
 
 // Loop exits use the same route/program/fee/fork gates as swaps, but do not depend on new-entry allocation policy.
@@ -237,9 +240,9 @@ function loopStrategyForAction(snapshot, leverage = 1.5) {
     treasuryConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
       && !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
       && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
-    riskApproval: localExecution
-      ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
-      : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
+    riskApproval: localExecution ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
+      : loopBeta ? { owner: 'LOOP_WALLETS private beta', approvedAt: new Date(0).toISOString() }
+        : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
     feasibilityPassed: localExecution || loopBeta,
     leverage,
   })

@@ -77,6 +77,7 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
     liabilityBorrowSource: 'Kamino reserve borrow APR',
     collateralSupplyAprPct: finite(supplyAprPct) ? supplyAprPct : null,
     collateralNativeApyPct: nativeApyPct,
+    collateralNativeApySource: nativeApyPct == null ? null : collateral.nativeApySource ?? null, // 'price' measured, 'env' USDY_APY
     liabilityBorrowAprPct: finite(borrowAprPct) ? borrowAprPct : null,
     leverage,
   }
