@@ -110,6 +110,7 @@ export const state = reactive({
   blockedWallet: null,
   localFork: false, // on a local fork wallets only sign and the backend sends: a wallet would send to mainnet
   swapVisible: false, // SWAP_WALLETS beta: the server decides who can swap
+  loopVisible: false, // LOOP_WALLETS: the loop shows to those wallets only while it is off for everyone
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
@@ -284,7 +285,7 @@ function setAccount(w, acc) {
 async function loadSwapVisibility() {
   const addr = state.address
   const r = await api(`/api/swap-readiness${addr ? `?wallet=${addr}` : ''}`).catch(() => null)
-  if (state.address === addr) state.swapVisible = r?.visible === true
+  if (state.address === addr) { state.swapVisible = r?.visible === true; state.loopVisible = r?.loopVisible === true }
 }
 
 async function connectWith(w, silent) {

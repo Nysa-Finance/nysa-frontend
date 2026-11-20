@@ -71,6 +71,7 @@ export async function readMarkets(history, {
         supplyApy: r.totalSupplyAPY(now) * 100,
         borrowApy: r.totalBorrowAPY(now) * 100,
         utilization: r.calculateUtilizationRatio() * 100,
+        price: r.getOracleMarketPrice().toNumber(), // USDY's own yield is its price rising (the loop's carry)
       })
     }
   }
