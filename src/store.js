@@ -1104,7 +1104,8 @@ async function reconcilePendingSwap() {
 }
 
 async function reconcilePendingLendingFlow() {
-  if (reconcilingLending) return
+  // The action running in this page confirms its own transaction and shows its own result; this is for one left over.
+  if (reconcilingLending || state.lendingActionBusy) return
   const pending = persistedLendingPending()
   if (!['signed-pending', 'submitted', 'relay-unknown', 'setup-confirmed'].includes(pending?.status)
     || !pending.signature || state.address !== pending.wallet || account?.address !== pending.wallet) return

@@ -1,13 +1,14 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { sendLoopAction, sendLoopSetup, state, priceOf } from '../store.js'
+import { sendLoopAction, sendLoopSetup, state, priceOf, useTx } from '../store.js'
 import { LOOP_ENABLED, TOKENS } from '../config.js'
 import { amt, pct, usdFull, num, floorTo, hfText, cleanAmount } from '../logic.js'
 import { formatBaseUnits } from '../swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
 import { selectedLoopCloseReadiness } from '../loop-positions.js'
 import TokenIcon from '../components/TokenIcon.vue'
+import TxProgress from '../components/TxProgress.vue'
 import NotFound from './NotFound.vue'
 
 const fundingAmount = ref('')
@@ -16,9 +17,14 @@ const leverage = ref(1.49)
 const strategy = ref(null)
 const preview = ref(null)
 const loading = ref(false)
-const acting = ref(false)
+const { tx, run, reset } = useTx()
+const acting = computed(() => tx.status === 'running')
 const carryAcknowledged = ref(false)
 const error = ref(null)
+const previewError = ref(null)
+const quotedAt = ref(0)
+const clock = ref(Date.now())
+const highlight = ref(null)
 const setupRequired = ref(false)
 const setupLoading = ref(false)
 const setupError = ref(null)
@@ -60,15 +66,26 @@ const entryBlockers = computed(() => {
   return [...new Map(filtered.map((reason) => [reason.message, reason])).values()]
 })
 
+// Quotes come by themselves, like a swap app's: once typing settles, then every ~15s while the page is visible. A failed
+// refresh keeps the last good quote. Opening always takes a fresh one (openLoop).
+let quoteTimer = null
+const scheduleQuote = (ms = 600) => { clearTimeout(quoteTimer); quoteTimer = setTimeout(runPreview, ms) }
 function invalidatePreview() {
   previewRequestSequence++
   preview.value = null
   previewBinding.value = null
   carryAcknowledged.value = false
   loading.value = false
-  error.value = null
+  previewError.value = null
+  scheduleQuote()
 }
 watch([fundingAmount, leverage], invalidatePreview)
+const ticker = setInterval(() => {
+  clock.value = Date.now()
+  if (document.visibilityState === 'visible' && !acting.value && !loading.value && previewIsCurrent.value
+    && clock.value - quotedAt.value > 15_000) runPreview()
+}, 1000)
+onBeforeUnmount(() => { clearInterval(ticker); clearTimeout(quoteTimer) })
 watch(() => state.address, () => {
   invalidatePreview()
   if (state.address) loadSetupStatus()
@@ -105,29 +122,20 @@ async function loadSetupStatus() {
 async function initializeKaminoMetadata() {
   if (!state.address || !setupRequired.value || acting.value) return
   const wallet = state.address
-  acting.value = true
   setupError.value = null
-  try {
-    await sendLoopSetup({ market: 'sol-usdy-usdc' })
-    if (state.address === wallet) {
-      setupRequired.value = false
-      preview.value = null
-      previewBinding.value = null
-      carryAcknowledged.value = false
-      await loadSetupStatus()
-    }
-  } catch (cause) { if (state.address === wallet) setupError.value = cause.message }
-  finally { acting.value = false }
+  if (await run([{ label: 'Set up Kamino account', run: () => sendLoopSetup({ market: 'sol-usdy-usdc' }) }]) && state.address === wallet) {
+    setupRequired.value = false
+    await loadSetupStatus()
+    invalidatePreview()
+  }
 }
 
 async function runPreview() {
+  if (!state.address || !(num(fundingAmount.value) > 0)) return
   const request = currentPreviewRequest()
   const requestId = ++previewRequestSequence
   const binding = { ...request, requestId }
   loading.value = true
-  carryAcknowledged.value = false
-  error.value = null
-  preview.value = null
   try {
     const response = await fetch('/api/loop-preview', {
       method: 'POST',
@@ -137,44 +145,78 @@ async function runPreview() {
     const body = await response.json()
     if (!response.ok) throw new Error(body.error ?? 'Could not build the preview.')
     if (!loopPreviewRequestMatches({ request, current: currentPreviewRequest(), requestId, currentRequestId: previewRequestSequence })) return
+    // A refresh keeps the user's acknowledgement while the new quote still needs one.
+    carryAcknowledged.value = carryAcknowledged.value && body.carry?.requiresAcknowledgement === true
     preview.value = body
     previewBinding.value = binding
+    quotedAt.value = Date.now()
+    previewError.value = null
   } catch (cause) {
-    if (loopPreviewRequestMatches({ request, current: currentPreviewRequest(), requestId, currentRequestId: previewRequestSequence })) error.value = cause.message
+    if (loopPreviewRequestMatches({ request, current: currentPreviewRequest(), requestId, currentRequestId: previewRequestSequence })) previewError.value = friendly(cause)
   } finally {
     if (requestId === previewRequestSequence) loading.value = false
   }
 }
 
-// The build reuses the preview's swap quote, which must be seconds old: the preview is refreshed on click (keeping an
-// acknowledgement still needed), then the transaction is built at once.
+// Server answers that only mean "time or prices moved": nothing was sent, so the action is rebuilt once with a fresh
+// quote and the wallet asked again. Anything else (a rejection in the wallet, a balance, a failed transaction) is shown.
+const MOVED = /intent|expired|preview|stale|changed after|authorization changed|quote|oracle|carry|simulation effects/i
+const retriable = (e) => (e?.code === 'TRANSACTION_REJECTED' || [400, 503].includes(e?.status)) && MOVED.test(e?.message ?? '')
+function friendly(e) {
+  const message = e?.message ?? String(e ?? '')
+  if (/reject|cancel/i.test(message) || e?.code === 'PENDING_TRANSACTION') return message
+  if (MOVED.test(message)) return 'Prices moved while this was being prepared. Try again.'
+  if (/failed on-chain/i.test(message)) return 'The transaction failed on-chain, so nothing changed (only the network fee was spent). Try again.'
+  return message
+}
+// Runs a loop action in the shared progress sheet; once, a "prices moved" answer rebuilds it with a fresh quote.
+async function loopAction(label, attempt) {
+  return run([{ label, run: async () => {
+    for (let tries = 0; ; tries++) {
+      try {
+        const signature = await attempt()
+        tx.steps[0] = label
+        return signature
+      } catch (e) {
+        if (tries === 0 && retriable(e)) { tx.steps[0] = 'Quote refreshed: approve the updated transaction'; continue }
+        throw new Error(friendly(e), { cause: e })
+      }
+    }
+  } }])
+}
+
+// The build reuses the preview's swap quote, which must be seconds old: a fresh quote first, then the build at once.
 async function openLoop() {
-  if (!openReadiness.value?.executionEnabled || !previewIsCurrent.value) return
-  const acknowledged = carryAcknowledged.value
-  await runPreview()
-  if (acknowledged && preview.value?.carry?.requiresAcknowledgement) carryAcknowledged.value = true
-  const actionPreview = preview.value
-  const request = currentPreviewRequest()
-  if (!openReadiness.value?.executionEnabled || !previewIsCurrent.value || !actionPreview?.previewId) return
-  acting.value = true
-  error.value = null
-  try {
-    await sendLoopAction('loop-open', {
+  if (!openReadiness.value?.executionEnabled) return
+  const before = new Set(positions.value.map((p) => p.id))
+  const ok = await loopAction('Open loop', async () => {
+    await runPreview()
+    const actionPreview = preview.value
+    const request = currentPreviewRequest()
+    if (!openReadiness.value?.executionEnabled || !previewIsCurrent.value || !actionPreview?.previewId) {
+      throw new Error(previewError.value ?? 'This loop can\'t be opened right now. Try again in a moment.')
+    }
+    return sendLoopAction('loop-open', {
       market: 'sol-usdy-usdc', amount: request.fundingAmount, leverage: request.leverage,
       previewId: actionPreview.previewId,
       acknowledgementKey: actionPreview.carry?.requiresAcknowledgement ? actionPreview.carry.acknowledgementKey : undefined,
     })
-  } catch (cause) { error.value = cause.message }
-  finally { acting.value = false }
+  })
+  if (!ok) return
+  const opened = positions.value.find((p) => !before.has(p.id)) ?? positions.value[0]
+  if (opened) {
+    const v = positionView(opened)
+    highlight.value = opened.id
+    tx.note = `${amt(v.coll, 2)} USDY collateral, ${amt(Number(opened.liability.amount), 2)} USDC debt, ${v.leverage ? lev(v.leverage) : ''} leverage. Liquidation if USDY falls to $${v.liqPrice?.toFixed(4)}.`
+  }
+  fundingAmount.value = ''
 }
 
 async function closeLoop(position) {
   if (!positionView(position).readiness?.executionEnabled) return
-  acting.value = true
-  error.value = null
-  try { await sendLoopAction('loop-close', { market: 'sol-usdy-usdc', positionId: position.id }) }
-  catch (cause) { error.value = cause.message }
-  finally { acting.value = false }
+  const before = state.balances['svm-usdy'] ?? 0
+  const ok = await loopAction('Close loop', () => sendLoopAction('loop-close', { market: 'sol-usdy-usdc', positionId: position.id }))
+  if (ok) tx.note = `${amt(Math.max(0, (state.balances['svm-usdy'] ?? 0) - before), 2)} USDY returned to your wallet.`
 }
 
 const feeLabel = (fee) => `${formatBaseUnits(BigInt(fee.amountBaseUnits), fee.mint === usdc.mint ? usdc.decimals : usdy.decimals)} ${fee.mint === usdc.mint ? usdc.name : usdy.name}`
@@ -212,14 +254,14 @@ const status = computed(() => {
   if (!(amount.value > 0)) return 'Enter an amount.'
   if (amount.value > (state.balances['svm-usdy'] ?? 0)) return `You only hold ${amt(state.balances['svm-usdy'] ?? 0)} USDY.`
   if (strategy.value?.maxFunding && amount.value > strategy.value.maxFunding) return `Loops are capped at ${strategy.value.maxFunding} USDY during the beta.`
-  if (!quoted.value) return null
   if (setupLoading.value) return 'Checking Kamino setup…'
   if (setupRequired.value) return 'Complete the one-time Kamino setup to open it.'
+  if (!quoted.value) return previewError.value ?? 'Getting a quote…'
   if (entryBlockers.value.length) return localForkMode.value ? 'This loop can\'t be opened on the local fork right now.' : 'Loops aren\'t open on Nysa yet.'
   return null
 })
-const canAct = computed(() => !acting.value && !loading.value && !status.value && (!quoted.value || openReadiness.value?.executionEnabled))
-const act = () => (quoted.value ? openLoop() : runPreview())
+const canAct = computed(() => !acting.value && !status.value && !!openReadiness.value?.executionEnabled)
+const quoteAge = computed(() => (quotedAt.value && quoted.value ? Math.max(0, Math.round((clock.value - quotedAt.value) / 1000)) : null))
 
 const positionView = (position) => {
   const coll = Number(position.collateral.amount), debt = Number(position.liability.amount)
@@ -284,8 +326,8 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
       <label v-if="quoted && preview.carry?.requiresAcknowledgement" class="ack"><input v-model="carryAcknowledged" type="checkbox" /><span>At current rates this loop earns less than it costs. I understand rates can change.</span></label>
 
-      <button class="n-btn-block go" :disabled="!canAct" @click="act">{{ acting ? 'Preparing…' : loading ? 'Checking route…' : quoted ? `Loop ${lev(leverage)}` : `Preview loop ${lev(leverage)}` }}</button>
-      <p class="why">{{ status ?? (quoted ? 'One signature: flash loan, swap and deposit in a single transaction.' : 'The preview quotes the swap; nothing is signed.') }}</p>
+      <button class="n-btn-block go" :disabled="!canAct" @click="openLoop">{{ acting ? 'Opening…' : `Loop ${lev(leverage)}` }}</button>
+      <p class="why">{{ status ?? 'One signature: flash loan, swap and deposit in a single transaction.' }}</p>
       <details v-if="quoted && entryBlockers.length" class="more">
         <summary>Why</summary>
         <ul><li v-for="reason in entryBlockers" :key="reason.code + reason.message">{{ reason.message }}</li></ul>
@@ -315,6 +357,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         <div class="n-kv"><span class="k">Nysa fee (0.1% of swap)</span><span class="v">{{ quoted && preview.feeTotalUsd != null ? usdFull(preview.feeTotalUsd) : `≈ ${usdFull(est.debt * 0.001)}` }}</span></div>
         <div v-if="quoted && preview.knownCostsTotalUsd != null" class="n-kv"><span class="k">Borrow and flash loan fees</span><span class="v">{{ usdFull(Math.max(0, preview.knownCostsTotalUsd - (preview.feeTotalUsd ?? 0))) }}</span></div>
       </div>
+      <p v-if="state.address && amount > 0" class="fresh" aria-live="polite">{{ loading ? 'Updating quote…' : quoteAge != null ? `Quote updated ${quoteAge}s ago` : '' }}</p>
       <details class="more">
         <summary>Details</summary>
         <div class="n-kv"><span class="k">Health factor</span><span class="v">{{ hfText(est.hf) }}</span></div>
@@ -326,7 +369,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
     </section>
   </div>
 
-  <section v-for="position in positions" :key="position.id" class="n-panel position" :class="{ picked: route.query.position === position.id }">
+  <section v-for="position in positions" :key="position.id" class="n-panel position" :class="{ picked: route.query.position === position.id || highlight === position.id }">
     <div class="panel-h">
       <h2>Your loop</h2>
       <span class="pair"><TokenIcon :token="usdy" size="sm" />USDY / <TokenIcon :token="usdc" size="sm" />USDC <span v-if="Number.isFinite(positionView(position).hf)" class="n-chip" :class="health(positionView(position).hf)[0]">{{ health(positionView(position).hf)[1] }}</span></span>
@@ -344,6 +387,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
     </div>
   </section>
 
+  <TxProgress :tx="tx" @dismiss="reset" />
   <div v-if="localForkMode" class="n-banner mode-banner">Local Surfpool only: transactions use the loopback validator and have no Mainnet effect.</div>
   </template>
 </template>
@@ -401,7 +445,6 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .bar .lim { position: absolute; top: -3px; width: 1px; height: 12px; background: #fff8; }
 .bar-l { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11.5px; font-family: var(--mono); }
 .position { margin-top: 22px; }
-.position.picked { border-color: var(--n-line-2); }
 .pos-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .pos-stats .n-stat { padding: 18px 20px; }
 .pos-stats .n-stat .v { font-size: 22px; }
@@ -409,6 +452,8 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .close .why { margin: 0; text-align: left; }
 .close .n-btn-grad:disabled { opacity: .35; cursor: not-allowed; transform: none; box-shadow: none; }
 .mode-banner { margin-top: 22px; }
+.fresh { margin-top: 12px; color: var(--n-text-4); font-size: 12px; }
+.position.picked { border-color: var(--n-pink); }
 @media (prefers-reduced-motion: reduce) { .bar .mark { transition: none; } }
 @media (max-width: 1080px) { .pos-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pos-stats .n-stat:last-child { grid-column: 1 / -1; } }
 @media (max-width: 860px) { .loop-grid { grid-template-columns: minmax(0, 1fr); } }

@@ -821,3 +821,11 @@ console.log('loop preview ok')
   assert.equal(out[4].data[16], 2)
   assert.equal(repay.data[16], 0) // the input is not mutated
 }
+
+// Interest accrues between preview and simulation: the debt may read a base unit or so more, never far off.
+{
+  const { debtWithinAccrual } = await import('./loop.js')
+  assert.equal(debtWithinAccrual('11290830', '11290829'), true)
+  assert.equal(debtWithinAccrual('11291900', '11290829'), true) // 0.01% of 11.29 USDC is 1,129 base units
+  assert.equal(debtWithinAccrual('11293000', '11290829'), false)
+}
