@@ -437,7 +437,7 @@ export function createKaminoSwapCallbacks({
       ({ built } = await prepare(inputs))
     }
     if (built.fee?.bps !== 10 || built.fee?.mint !== outputMint) throw new LoopPreviewError('Kamino swapper requires the same fee-aware output-mint policy as its route quote.')
-    if (!Number.isFinite(built.quoteAt) || Date.now() - built.quoteAt < 0 || Date.now() - built.quoteAt > 15_000) {
+    if (!Number.isFinite(built.quoteAt) || Date.now() - built.quoteAt < 0 || Date.now() - built.quoteAt > LOOP_COMPOSE_WINDOW_MS) {
       throw new LoopPreviewError('Kamino swap quote expired before instruction composition.')
     }
     if (built.compositionValidated !== true) throw new LoopPreviewError('Swap route was not validated for atomic composition.')
@@ -571,6 +571,13 @@ export function quoteMultiplyOpen(inputs, callbacks) {
   return getDepositWithLeverageSwapInputs({ ...inputs, quoter: callbacks.quoter })
 }
 
+// A loop preview lives 90s (read it, click); a built loop transaction 45s from its quote (approve it in the wallet).
+// The build reuses the preview's swap quote (the app refreshes the preview on click, so it is seconds old): it must be
+// at most 30s old when composed. The signed transaction's own minimum output still binds the price.
+export const LOOP_PREVIEW_TTL_MS = 90_000
+export const LOOP_SIGNING_WINDOW_MS = 45_000
+export const LOOP_COMPOSE_WINDOW_MS = 30_000
+
 export async function quoteMultiplyOpenAtFinalAmount(inputs, callbacks, quoteSdk = quoteMultiplyOpen, { maxIterations = 6 } = {}) {
   if (typeof quoteSdk !== 'function' || typeof callbacks?.quoter !== 'function' || typeof callbacks?.setPricingQuote !== 'function'
     || !Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > 12) {
@@ -682,7 +689,7 @@ async function assertComposableFeeRoute(route, inputMint, outputMint, {
   if (typeof authorizeRoute !== 'function' || await authorizeRoute(route) !== true) {
     throw new LoopPreviewError('Loop swap route programs are not approved for this execution environment.')
   }
-  if (!Number.isFinite(route.quoteAt) || now < route.quoteAt || now - route.quoteAt > 15_000) {
+  if (!Number.isFinite(route.quoteAt) || now < route.quoteAt || now - route.quoteAt > LOOP_COMPOSE_WINDOW_MS) {
     throw new LoopPreviewError('Loop swap quote expired before atomic composition.')
   }
   if (typeof validateRoute !== 'function') throw new LoopPreviewError('Shared router route validation is unavailable.')
@@ -732,7 +739,7 @@ function mergeApplicationParts({ routes, instructionGroups, lookupTables = [], s
     routeProgramIdsByLabel,
     addressesByLookupTableAddress,
     simulationAccounts: [...new Set([...feeEvents.map((fee) => fee.account), ...simulationAccounts].filter(Boolean))],
-    expiresAt: Math.min(...routes.map((route) => route.quoteAt + 15_000)),
+    expiresAt: Math.min(...routes.map((route) => route.quoteAt + LOOP_SIGNING_WINDOW_MS)),
   }
 }
 

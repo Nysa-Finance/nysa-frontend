@@ -14,8 +14,12 @@ const carry = {
 }
 assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z' }, now), true,
   'metadata refresh may advance the snapshot time while economics remain unchanged and fresh')
-assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', assumptions: { ...carry.assumptions, collateralSupplyAprPct: 0.6 } }, now), false,
-  'changed carry source assumptions invalidate the preview')
+assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', estimatedCarryPct: '-0.7', assumptions: { ...carry.assumptions, liabilityBorrowAprPct: 2.9 } }, now), true,
+  'rates drifting between snapshots keep the preview')
+assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', estimatedCarryPct: '-0.4', assumptions: { ...carry.assumptions, liabilityBorrowAprPct: 2.3 } }, now), false,
+  'a carry moving more than 0.25 points invalidates the preview')
+assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', assumptions: { ...carry.assumptions, leverage: 1.2 } }, now), false,
+  'changed carry sources invalidate the preview')
 assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:01:11.000Z' }, now), false,
   'a refreshed snapshot beyond the bounded freshness window invalidates the preview')
 assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:11.000Z' }, now), false,
