@@ -1,5 +1,5 @@
 # The RPC key is only read at runtime by the backend (SOLANA_RPC); nothing secret goes into the browser bundle.
-FROM node:26.13.0-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS build
+FROM node:26.13.1-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY vendor ./vendor
@@ -7,7 +7,7 @@ RUN npm ci
 COPY . .
 RUN npm test && npm run build && npm prune --omit=dev
 
-FROM node:26.13.0-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072
+FROM node:26.13.1-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc
 WORKDIR /app
 ENV NODE_ENV=production PORT=3000 DATA_DIR=/data
 COPY --from=build /app/package.json ./
