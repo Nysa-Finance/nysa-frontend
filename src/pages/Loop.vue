@@ -146,7 +146,13 @@ async function runPreview() {
   }
 }
 
+// The build reuses the preview's swap quote, which must be seconds old: the preview is refreshed on click (keeping an
+// acknowledgement still needed), then the transaction is built at once.
 async function openLoop() {
+  if (!openReadiness.value?.executionEnabled || !previewIsCurrent.value) return
+  const acknowledged = carryAcknowledged.value
+  await runPreview()
+  if (acknowledged && preview.value?.carry?.requiresAcknowledgement) carryAcknowledged.value = true
   const actionPreview = preview.value
   const request = currentPreviewRequest()
   if (!openReadiness.value?.executionEnabled || !previewIsCurrent.value || !actionPreview?.previewId) return

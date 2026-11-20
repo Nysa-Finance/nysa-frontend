@@ -17,7 +17,7 @@ import { read, POINTS, HISTORY } from './storage.js'
 import { priceApy } from '../src/logic.js'
 import { LIVE, LOOP_ENABLED, LOOP_LOOKUP_TABLE, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
-import { buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
+import { LOOP_PREVIEW_TTL_MS, LOOP_SIGNING_WINDOW_MS, buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
 import { buildSwap, configuredFeeAccountForMint, swapFeeAccountsConfigured, SwapError } from './swap.js'
 import { LOOP_PREVIEW_MAX_AGE_MS, loopCarryStillCurrent, loopMarketRiskFromSnapshot, loopMarketRiskStillCurrent } from './loop-preview-validation.js'
 import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, marketForPair, swapPairAvailability, swapReadiness } from './swap-routes.js'
@@ -323,7 +323,8 @@ const sendAuthorizedSwap = createAuthorizedSwapSender({
 })
 
 const loopPreviews = new Map()
-const loopIntentStore = createSwapIntentStore({ messageMatcher: loopSetupMessageMatchesIgnoringBlockhash })
+// Time to review and approve in the wallet; the transaction's own minimum swap output and Kamino's checks still bind.
+const loopIntentStore = createSwapIntentStore({ ttlMs: LOOP_SIGNING_WINDOW_MS, messageMatcher: loopSetupMessageMatchesIgnoringBlockhash })
 function activeLoopPreview(id) {
   const preview = loopPreviews.get(id)
   if (!preview || Date.now() >= preview.expiresAt) {
@@ -529,7 +530,9 @@ const routes = [
             actionReadiness.executionEnabled = false
             actionReadiness.unavailableReasons.push({ code: 'kamino-metadata-setup-required', message: 'Initialize the one-time Kamino UserMetadata account before opening a loop.' })
           }
-          const expiresAt = Math.min(Date.now() + 15_000, Number.isFinite(preview.quoteAt) ? preview.quoteAt + 15_000 : Date.now() + 15_000)
+          // The preview only binds amount, leverage and acknowledgement: the build quotes again and rechecks prices and
+          // limits, so it can outlive its quote long enough to read it and click (it bounded preview → signed send to 15s).
+          const expiresAt = Date.now() + LOOP_PREVIEW_TTL_MS
           if (body.wallet && applicationContext) {
             const record = {
               ...preview,
