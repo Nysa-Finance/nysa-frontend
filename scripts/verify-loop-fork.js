@@ -671,7 +671,7 @@ async function executeStandaloneRouterSwap({ rpcClient, signer, built, feeAccoun
   return { outputDeltaBaseUnits, feeDeltaBaseUnits, signature: confirmed.signature }
 }
 
-async function executeLocalMultiplyScenario({ rpcClient, signer, market, collReserve, debtReserve, callbacks, feeAccounts, initialUsdyBaseUnits, leverage, flashBorrowType, localSwapQuotes, composedSwapQuotes, localRouteProgramVerifier, validateRoute, log }) {
+async function executeLocalMultiplyScenario({ rpcClient, signer, market, collReserve, debtReserve, callbacks, feeAccounts, fundingBaseUnits, leverage, flashBorrowType, localSwapQuotes, composedSwapQuotes, localRouteProgramVerifier, validateRoute, log }) {
   let currentLedgerInstant = await getCurrentLedgerInstant(rpcClient)
   let selectedPosition = null, activeApplication = null, activeRoutes = [], activeCompiled = null
   let rawSimulation = null, completedSimulation = null, trackedSimulationAccounts = [], beforeSimulationTokenAccounts = []
@@ -682,8 +682,8 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
   const usdyAta = await ataOf(signer.address, address(collateralToken.mint), collReserve.getLiquidityTokenProgram())
   const allTokenAccounts = [...feeAccounts.map(({ account }) => account), usdcAta, usdyAta]
   const beforeOpen = await snapshotTokenAccounts(rpcClient, allTokenAccounts)
-  if (BigInt(beforeOpen.find((x) => x.address === usdyAta)?.amount ?? '0') < BigInt(initialUsdyBaseUnits)) {
-    throw new Error('Local test wallet lacks the USDY amount selected for loop funding.')
+  if (BigInt(beforeOpen.find((x) => x.address === usdcAta)?.amount ?? '0') < BigInt(fundingBaseUnits)) {
+    throw new Error('Local test wallet lacks the USDC amount selected for loop funding.')
   }
   const vanillaObligation = await market.getObligationByWallet(signer.address, obligationType())
   if (!vanillaObligation?.getDepositByReserve(collReserve.address)?.amount?.gt(0)) {
@@ -712,16 +712,17 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
     collateralReserve: collReserve, liabilityReserve: debtReserve,
   })
 
-  const fundingAmount = new Decimal(String(initialUsdyBaseUnits)).div(new Decimal(10).pow(collateralToken.decimals)).toString()
+  // Loops are funded in USDC (swapped into USDY with the borrowed USDC) and close back into USDC.
+  const fundingAmount = new Decimal(String(fundingBaseUnits)).div(new Decimal(10).pow(liabilityToken.decimals)).toString()
   const openInputs = {
     owner: signer,
     kaminoMarket: market,
     debtReserveAddress: debtReserve.address,
     collReserveAddress: collReserve.address,
-    depositAmount: new Decimal(String(initialUsdyBaseUnits)).div(new Decimal(10).pow(collReserve.stats.decimals)),
+    depositAmount: new Decimal(String(fundingBaseUnits)).div(new Decimal(10).pow(debtReserve.stats.decimals)),
     priceDebtToColl: new Decimal(String(debtReserve.getOracleMarketPrice())).div(String(collReserve.getOracleMarketPrice())),
     slippagePct: sdkSlippagePctFromBps(50), obligation: null, referrer: none(), currentLedgerInstant,
-    targetLeverage: leverage, selectedTokenMint: collReserve.getLiquidityMint(),
+    targetLeverage: leverage, selectedTokenMint: debtReserve.getLiquidityMint(),
     obligationTypeTagOverride: ObligationTypeTag.Multiply, scopeRefreshIx: [], budgetAndPriorityFeeIxs: [],
     quoteBufferBps: new Decimal(0), useV2Ixs: true, flashBorrowType, logger: () => {},
   }
@@ -796,7 +797,7 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
       },
     },
     applicationContext: {
-      wallet: String(signer.address), fundingAmount, fundingBaseUnits: String(initialUsdyBaseUnits),
+      wallet: String(signer.address), fundingAmount, fundingBaseUnits: String(fundingBaseUnits),
       leverage: Number(leverage), leverageQuote, callbacks,
     },
   }
@@ -961,6 +962,9 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
     if (expected === '0') assertTokenBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: '0', label: `Open fee account ${mint}` })
     else assertRouterFeeBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: expected, label: `Open fee account ${mint}` })
   }
+  const usdcSpent = BigInt(beforeOpen.find((x) => x.address === usdcAta).amount) - BigInt((await readTokenAccount(rpcClient, usdcAta)).amount)
+  if (usdcSpent <= 0n || usdcSpent > BigInt(fundingBaseUnits)) throw new Error(`Multiply open spent ${usdcSpent} USDC base units; approved ${fundingBaseUnits}.`)
+  log(`LOCAL USDC FUNDING PASS: open spent ${usdcSpent} of ${fundingBaseUnits} approved USDC base units.`)
   await refreshLocalMarket()
   await assertVanillaStillPositive('Multiply open')
   const opened = await market.getObligationByWallet(signer.address, multiplyType)
@@ -1020,6 +1024,9 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
     if (expected === '0') assertTokenBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: '0', label: `Full-close fee account ${mint}` })
     else assertRouterFeeBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: expected, label: `Full-close fee account ${mint}` })
   }
+  const usdcReturned = BigInt((await readTokenAccount(rpcClient, usdcAta)).amount) - BigInt(beforeClose.find((x) => x.address === usdcAta).amount)
+  if (usdcReturned <= 0n) throw new Error('Multiply full close returned no USDC to the wallet.')
+  log(`LOCAL USDC CLOSE PASS: close returned ${usdcReturned} USDC base units.`)
   await refreshLocalMarket()
   await assertVanillaStillPositive('Multiply full close')
   const closed = await market.getObligationByWallet(signer.address, multiplyType)
@@ -1355,8 +1362,9 @@ async function runConfiguredLocalFork(env, endpoint, log) {
   if (!vanillaBeforeLoop?.getDepositByReserve(collReserve.address)?.amount?.gt(0)) {
     throw new Error('Local pre-loop fixture must retain positive USDY collateral in the vanilla obligation.')
   }
-  const loopStartingUsdyBaseUnits = (await readTokenAccount(localRpc, usdyAta)).amount
-  if (BigInt(loopStartingUsdyBaseUnits) <= 0n) throw new Error('The local test wallet needs USDY for the Multiply loop funding amount.')
+  const usdcBalance = BigInt((await readTokenAccount(localRpc, usdcAta)).amount)
+  if (usdcBalance <= 0n) throw new Error('The local test wallet needs USDC for the Multiply loop funding amount.')
+  const loopFundingBaseUnits = String(usdcBalance < 20_000_000n ? usdcBalance : 20_000_000n) // 20 USDC, under the beta cap
   const result = await executeLocalMultiplyScenario({
     rpcClient: localRpc,
     signer,
@@ -1366,7 +1374,7 @@ async function runConfiguredLocalFork(env, endpoint, log) {
     callbacks: makeLoopCallbacks(),
     validateRoute: validateLocalSwapInstructions,
     feeAccounts,
-    initialUsdyBaseUnits: loopStartingUsdyBaseUnits,
+    fundingBaseUnits: loopFundingBaseUnits,
     leverage,
     flashBorrowType,
     localSwapQuotes,

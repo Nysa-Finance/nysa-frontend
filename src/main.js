@@ -30,7 +30,7 @@ const router = createRouter({
     { path: '/borrow/:id', name: 'market-detail', component: () => import('./pages/MarketDetail.vue') },
     { path: '/portfolio', name: 'portfolio', component: () => import('./pages/Portfolio.vue') },
     { path: '/swap', name: 'swap', component: () => import('./pages/Swap.vue') },
-    { path: '/loop', name: 'loop', component: () => import('./pages/Loop.vue') }, // a 404 page unless the wallet is in LOOP_WALLETS
+    { path: '/loop/:asset(usdy)?', name: 'loop', component: () => import('./pages/Loop.vue') }, // a 404 page unless the wallet is in LOOP_WALLETS
     // Old links: Lend is now Earn (the vault); a market page is now its borrow page.
     { path: '/lend', redirect: { name: 'earn' } },
     { path: '/market/:id', redirect: (to) => (to.query.mode === 'lend' && VAULTS[0] ? { name: 'vault', params: { id: VAULTS[0].id } } : { name: 'market-detail', params: to.params, query: to.query }) },
