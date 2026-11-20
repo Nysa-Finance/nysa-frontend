@@ -38,6 +38,8 @@ assert.equal(loopMarketRiskStillCurrent(marketRisk, snapshotRisk, marketSnapshot
   'fresh snapshot oracle values and governance limits remain bound to the preview')
 assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.10' }, marketSnapshot.blockTime), false,
   'changed oracle price invalidates relay authorization')
+assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.0905' }, marketSnapshot.blockTime), true,
+  'an oracle update under 0.1% keeps the preview valid')
 assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, maxBorrowLtvPct: 80 }, marketSnapshot.blockTime), false,
   'changed governance LTV invalidates relay authorization')
 assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralOracleTimestamp: 1_798_000_000 - 61 }, marketSnapshot.blockTime), false,

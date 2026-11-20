@@ -801,9 +801,14 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
   }
   callbacks.sealQuotes()
 
-  const localCompile = async ({ wallet, instructions }) => {
-    const temporaryTable = await prepareLocalAddressLookupTable(rpcClient, signer, instructions)
-    const lookupTables = temporaryTable ? [temporaryTable] : []
+  // LOCAL_FORK_LOOP_LUT: compile as production does, with the SDK's tables plus Nysa's loop table created on this fork
+  // by scripts/create-loop-lut.js, instead of a temporary table holding every account.
+  const localCompile = async ({ wallet, instructions, lookupTables: upstream = [] }) => {
+    const nysaTable = process.env.LOCAL_FORK_LOOP_LUT
+    const temporaryTable = nysaTable ? null : await prepareLocalAddressLookupTable(rpcClient, signer, instructions)
+    const lookupTables = temporaryTable ? [temporaryTable] : nysaTable
+      ? await Promise.all([...new Set([...upstream.map((t) => String(t?.address ?? t)), nysaTable])].map((t) => fetchAddressLookupTable(rpcClient, address(t), { commitment: 'confirmed' })))
+      : []
     const tx = await compileSignedLocalTransaction(rpcClient, signer, instructions, lookupTables)
     const decoded = getTransactionDecoder().decode(Buffer.from(tx, 'base64'))
     activeCompiled = {
@@ -813,7 +818,7 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
       minContextSlot: await readLocalSlot(rpcClient),
       lookupTables,
     }
-    log(`LOCAL FINAL APPLICATION SIZE: ${activeCompiled.size} bytes with ${temporaryTable?.data.addresses.length ?? 0} temporary local ALT entries.`)
+    log(`LOCAL FINAL APPLICATION SIZE: ${activeCompiled.size} bytes with ${nysaTable ? `Nysa table ${nysaTable} plus ${upstream.length} SDK tables` : `${temporaryTable?.data.addresses.length ?? 0} temporary local ALT entries`}.`)
     return activeCompiled
   }
 

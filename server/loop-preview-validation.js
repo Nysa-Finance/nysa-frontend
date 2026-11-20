@@ -72,8 +72,9 @@ export function loopMarketRiskStillCurrent(previewRisk, currentRisk, nowSeconds)
     const currentValue = decimal(currentRisk[field])
     if (!previewValue || !currentValue) return false
     if (field.endsWith('PriceUsd')) {
-      const tolerance = Math.max(1, Math.abs(previewValue.toNumber()), Math.abs(currentValue.toNumber())) * Number.EPSILON * 4
-      if (previewValue.minus(currentValue).abs().gt(tolerance)) return false
+      // Oracles update every ~30s, so a preview rarely meets an identical price at build. Up to 0.1% is accepted: the
+      // build rechecks LTV, slippage and the swap's minimum output against current prices anyway.
+      if (previewValue.minus(currentValue).abs().gt(previewValue.abs().mul(0.001))) return false
     } else if (!previewValue.eq(currentValue)) return false
   }
   if (!decimal(currentRisk.collateralPriceUsd)?.gt(0) || !decimal(currentRisk.liabilityPriceUsd)?.gt(0)) return false
