@@ -220,7 +220,8 @@ function listenMarket() {
 const UNREACHABLE = [502, 503, 504]
 async function api(path, init) {
   let res = await fetch(path, init)
-  if (UNREACHABLE.includes(res.status) && path !== '/api/tx/send') {
+  // Sends spend a one-time authorization: a second try only finds it used and hides the first answer.
+  if (UNREACHABLE.includes(res.status) && !['/api/tx/send', '/api/swap-send', '/api/loop-send'].includes(path)) {
     await new Promise((r) => setTimeout(r, 2500))
     res = await fetch(path, init)
   }
