@@ -945,7 +945,10 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
   for (const before of beforeOpen.slice(0, feeAccounts.length)) {
     const after = openFeesAfter.find((item) => item.address === before.address)
     const mint = feeAccounts.find((item) => item.account === before.address).mint
-    assertRouterFeeBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: simulatedOpenFees[mint] ?? '0', label: `Open fee account ${mint}` })
+    const expected = simulatedOpenFees[mint] ?? '0'
+    // The open charges its fee in one mint only (the leverage swap's output): the other fee account must not move.
+    if (expected === '0') assertTokenBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: '0', label: `Open fee account ${mint}` })
+    else assertRouterFeeBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: expected, label: `Open fee account ${mint}` })
   }
   await refreshLocalMarket()
   await assertVanillaStillPositive('Multiply open')
@@ -1002,7 +1005,9 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
   for (const before of beforeClose.slice(0, feeAccounts.length)) {
     const after = closeFeesAfter.find((item) => item.address === before.address)
     const mint = feeAccounts.find((item) => item.account === before.address).mint
-    assertRouterFeeBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: simulatedCloseFees[mint] ?? '0', label: `Full-close fee account ${mint}` })
+    const expected = simulatedCloseFees[mint] ?? '0'
+    if (expected === '0') assertTokenBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: '0', label: `Full-close fee account ${mint}` })
+    else assertRouterFeeBalanceDelta({ beforeBaseUnits: before.amount, afterBaseUnits: after.amount, expectedBaseUnits: expected, label: `Full-close fee account ${mint}` })
   }
   await refreshLocalMarket()
   await assertVanillaStillPositive('Multiply full close')

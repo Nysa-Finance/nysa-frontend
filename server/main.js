@@ -181,6 +181,13 @@ const LOOP_WALLETS = new Set((process.env.LOOP_WALLETS ?? '').split(',').map((a)
 const loopOn = LOOP_ENABLED || LOOP_WALLETS.size > 0
 const loopOpenTo = (wallet) => LOOP_ENABLED || LOOP_WALLETS.has(wallet)
 const LOOP_NOT_ENABLED = { error: 'Loop is not available for this wallet yet.' }
+// Private beta: those wallets may open real loops once NYSA_LOOP_RISK_OWNER / _APPROVED_AT are set, the approval covering
+// the passing `npm run verify:loop-fork` run (open, close, fees, rollback) that stands in for the fork-only gates.
+// LOOP_ENABLED (everyone) needs its own release. LOOP_MAX_FUNDING caps each loop's USDY, empty for no cap.
+const loopBeta = !LOOP_ENABLED && LOOP_WALLETS.size > 0
+const LOOP_MAX_FUNDING = Number(process.env.LOOP_MAX_FUNDING) > 0 ? Number(process.env.LOOP_MAX_FUNDING) : null
+const overLoopCap = (amount) => LOOP_MAX_FUNDING != null && Number(amount) > LOOP_MAX_FUNDING
+const LOOP_CAP_ERROR = () => `Loops are capped at ${LOOP_MAX_FUNDING} USDY during the beta.`
 
 // USDY earns through its price (Ondo's rate), not Kamino's supply APR, so the loop's carry adds it: the annualized rise
 // of the oracle price the daily snapshot records. Null (left out of the carry) until a week of prices exists.
@@ -201,6 +208,7 @@ function currentLoopRouteReadiness() {
   const snapshotFresh = Number.isFinite(snapshot?.updatedAt) && snapshot.updatedAt > 0
     && Date.now() >= snapshot.updatedAt && Date.now() - snapshot.updatedAt <= 60_000
   const localExecution = localForkProgramEvidenceReady()
+  const forkProof = localExecution || loopBeta
   const routeReadiness = swapReadiness({
     providerConfigured: !!process.env.JUPITER_API_KEY || localExecution,
     feeAccountsConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
@@ -210,7 +218,7 @@ function currentLoopRouteReadiness() {
     marketAvailabilityReasons: [
       ...(snapshotFresh ? [] : [{ code: 'market-data-stale', message: 'Fresh market data is unavailable for a safe loop transaction.' }]),
       // The loop is not released on mainnet yet: its transactions build only on the local fork.
-      ...(localExecution ? [] : [{ code: 'fork-proof-missing', message: 'The required local-fork fee and rollback checks have not passed.' }]),
+      ...(forkProof ? [] : [{ code: 'fork-proof-missing', message: 'The required local-fork fee and rollback checks have not passed.' }]),
     ],
   })
   return routeReadiness
@@ -232,7 +240,7 @@ function loopStrategyForAction(snapshot, leverage = 1.5) {
     riskApproval: localExecution
       ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
       : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-    feasibilityPassed: localExecution,
+    feasibilityPassed: localExecution || loopBeta,
     leverage,
   })
 }
@@ -466,7 +474,7 @@ const routes = [
       open: evaluateLoopActionReadiness({ action: 'loop-open', strategy, routeReadiness, builderAvailable: true }),
       fullClose: evaluateLoopActionReadiness({ action: 'loop-close', routeReadiness, builderAvailable: true }),
     }
-    return send(res, 200, { strategies: [strategy], actions, readOnly: true,
+    return send(res, 200, { strategies: [strategy], actions, readOnly: true, maxFunding: LOOP_MAX_FUNDING,
       executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
   }],
   ['GET', /^\/api\/loop-setup-status$/, async (req, res) => {
@@ -487,6 +495,7 @@ const routes = [
     if ((body.marketId ?? 'sol-usdy-usdc') !== 'sol-usdy-usdc') throw new UserError('Unknown loop strategy')
     if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
     if (!loopOpenTo(body.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
+    if (overLoopCap(body.fundingAmount)) throw new UserError(LOOP_CAP_ERROR())
     if (typeof body.fundingAmount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(body.fundingAmount)) throw new UserError('Invalid funding amount')
     if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > 1.5) throw new UserError('Funding amount or leverage is outside the preview range')
     const snapshot = getSnapshot()
@@ -593,6 +602,7 @@ const routes = [
         || !Number.isFinite(Number(b.leverage)) || Number(b.leverage) <= 1 || Number(b.leverage) > 1.5)) {
         throw new UserError('Funding amount or leverage is outside the loop range')
       }
+      if (b.kind === 'loop-open' && overLoopCap(b.amount)) throw new UserError(LOOP_CAP_ERROR())
       if (b.kind === 'loop-close' && (typeof b.positionId !== 'string' || !/^multiply:[a-f0-9]{64}$/.test(b.positionId))) {
         throw new UserError('An identified Multiply position is required for full close')
       }
