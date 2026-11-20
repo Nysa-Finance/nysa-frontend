@@ -26,6 +26,7 @@ import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransac
 import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash, messageMatchesWithLighthouse } from './tx-intent.js'
 import { createLendingTransactionIntentService } from './lending-intents.js'
 import { noteBuilt } from './relay.js'
+import { LOOP_PROGRAMS } from './program-policy.js'
 import { DefiniteSendRefusal, SendOutcomeUnknownError } from './send-safety.js'
 import { createLoopExecutionService, LoopExecutionError } from './loop-execution.js'
 import { compileAtomicTransaction } from './tx.js'
@@ -379,7 +380,7 @@ const loopExecution = createLoopExecutionService({
   authorize: async ({ intent }) => {
     const ready = currentLoopRouteReadiness().executionEnabled
     if (localForkDappEnabled) return ready && await localIntentAuthorized(intent)
-    return swapIntentStillAuthorized(intent, { executionEnabled: ready })
+    return swapIntentStillAuthorized(intent, { executionEnabled: ready, approvedPrograms: LOOP_PROGRAMS })
   },
   authorizeSetup: async ({ intent }) => intent?.metadata?.kind === 'loop-setup'
     && (!localForkDappEnabled || isLocalForkWallet(intent?.wallet, { rpcUrl: RPC_URL }))
