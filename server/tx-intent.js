@@ -49,7 +49,9 @@ function messageDigest(messageBytes) {
 
 // A wallet may refresh only the recent blockhash of the non-economic Kamino metadata setup message.
 export function loopSetupMessageMatchesIgnoringBlockhash(expectedBytes, candidateBytes, metadata) {
-  if (metadata?.kind !== 'loop-setup') return false
+  // Loop open/close: only Phantom's appended read-only Lighthouse assertions, as for swaps. Appended, they leave the
+  // flash loan's instruction indexes alone.
+  if (metadata?.kind !== 'loop-setup') return messageMatchesWithLighthouse(expectedBytes, candidateBytes)
   if (messageMatchesWithLighthouse(expectedBytes, candidateBytes, { ignoreLifetimeToken: true })) return true
   try {
     const decode = getCompiledTransactionMessageDecoder()

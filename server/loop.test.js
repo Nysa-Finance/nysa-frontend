@@ -807,3 +807,17 @@ const changedAcknowledgementPreviews = [
 for (const changed of changedAcknowledgementPreviews) assert.notEqual(changed.carry.acknowledgementKey, finalAcknowledgementPreview.carry.acknowledgementKey)
 
 console.log('loop preview ok')
+
+// The flash repay names its borrow by index: after compile puts its compute-budget instructions in front, it must
+// point at the borrow's new position (Kamino error 6033 InvalidFlashRepay otherwise).
+{
+  const { pointFlashRepayAtBorrow } = await import('./loop-composition.js')
+  const { PROGRAM_ID } = await import('@kamino-finance/klend-sdk')
+  const ix = (program, bytes) => ({ programAddress: program, accounts: [], data: Uint8Array.from(bytes) })
+  const borrow = ix(PROGRAM_ID, [135, 231, 52, 167, 7, 52, 212, 193])
+  const repay = ix(PROGRAM_ID, [185, 117, 0, 203, 96, 245, 180, 186, ...Array(8).fill(0), 0])
+  const budget = ix('ComputeBudget111111111111111111111111111111', [2])
+  const out = pointFlashRepayAtBorrow([budget, budget, borrow, ix('11111111111111111111111111111111', [1]), repay])
+  assert.equal(out[4].data[16], 2)
+  assert.equal(repay.data[16], 0) // the input is not mutated
+}

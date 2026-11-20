@@ -3,7 +3,7 @@ import Decimal from 'decimal.js'
 import {
   address, appendTransactionMessageInstructions, compressTransactionMessageUsingAddressLookupTables, lamports,
   createKeyPairSignerFromBytes, createNoopSigner, createTransactionMessage, fetchEncodedAccount, getBase64EncodedWireTransaction,
-  getCompiledTransactionMessageDecoder, getTransactionDecoder,
+  getCompiledTransactionMessageDecoder, getTransactionDecoder, signTransaction,
   none, signTransactionMessageWithSigners, setTransactionMessageFeePayerSigner, setTransactionMessageLifetimeUsingBlockhash,
 } from '@solana/kit'
 import { fetchAddressLookupTable, getCreateLookupTableInstructionAsync, getExtendLookupTableInstruction } from '@solana-program/address-lookup-table'
@@ -15,6 +15,7 @@ import { buildSwap, inspectFeeTokenAccount } from '../server/swap.js'
 import { createRpc } from '../server/rpc.js'
 import { ROUTE_PROGRAM_IDS_BY_LABEL } from '../server/program-policy.js'
 import { composeAtomicOpenInstructions } from '../server/loop-composition.js'
+import { compileAtomicTransaction } from '../server/tx.js'
 import { createLoopExecutionService } from '../server/loop-execution.js'
 import { multiplyPosition } from '../server/positions.js'
 import { validateProviderSwapInstructions } from '../server/swap-execution.js'
@@ -801,15 +802,20 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
   }
   callbacks.sealQuotes()
 
-  // LOCAL_FORK_LOOP_LUT: compile as production does, with the SDK's tables plus Nysa's loop table created on this fork
-  // by scripts/create-loop-lut.js, instead of a temporary table holding every account.
+  // LOCAL_FORK_LOOP_LUT: compile with the server's own compileAtomicTransaction (its compute-budget instructions, the
+  // SDK's tables plus Nysa's loop table created on this fork by scripts/create-loop-lut.js), then sign here, instead of
+  // a local compile with a temporary table holding every account.
   const localCompile = async ({ wallet, instructions, lookupTables: upstream = [] }) => {
     const nysaTable = process.env.LOCAL_FORK_LOOP_LUT
     const temporaryTable = nysaTable ? null : await prepareLocalAddressLookupTable(rpcClient, signer, instructions)
+    const tableAddresses = [...new Set([...upstream.map((t) => String(t?.address ?? t)), ...(nysaTable ? [nysaTable] : [])])]
     const lookupTables = temporaryTable ? [temporaryTable] : nysaTable
-      ? await Promise.all([...new Set([...upstream.map((t) => String(t?.address ?? t)), nysaTable])].map((t) => fetchAddressLookupTable(rpcClient, address(t), { commitment: 'confirmed' })))
+      ? await Promise.all(tableAddresses.map((t) => fetchAddressLookupTable(rpcClient, address(t), { commitment: 'confirmed' })))
       : []
-    const tx = await compileSignedLocalTransaction(rpcClient, signer, instructions, lookupTables)
+    const tx = nysaTable
+      ? getBase64EncodedWireTransaction(await signTransaction([signer.keyPair],
+        getTransactionDecoder().decode(Buffer.from((await compileAtomicTransaction({ wallet: String(signer.address), instructions, lookupTables: tableAddresses })).tx, 'base64'))))
+      : await compileSignedLocalTransaction(rpcClient, signer, instructions, lookupTables)
     const decoded = getTransactionDecoder().decode(Buffer.from(tx, 'base64'))
     activeCompiled = {
       tx,
