@@ -15,6 +15,7 @@ import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
 import { priceApy } from '../src/logic.js'
+import { DEFAULT_LOOP_LIMITS } from '../src/loop-policy.js'
 import { LIVE, LOOP_ENABLED, LOOP_LOOKUP_TABLE, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { LOOP_PREVIEW_TTL_MS, LOOP_SIGNING_WINDOW_MS, buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
@@ -502,7 +503,7 @@ const routes = [
     if (!loopOpenTo(body.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
     if (overLoopCap(body.fundingAmount)) throw new UserError(LOOP_CAP_ERROR())
     if (typeof body.fundingAmount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(body.fundingAmount)) throw new UserError('Invalid funding amount')
-    if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > 1.5) throw new UserError('Funding amount or leverage is outside the preview range')
+    if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage) throw new UserError('Funding amount or leverage is outside the preview range')
     const snapshot = getSnapshot()
     const strategy = loopStrategyForAction(snapshot, Number(body.leverage))
     const previewId = randomUUID()
@@ -606,7 +607,7 @@ const routes = [
       if (b.market !== 'sol-usdy-usdc') throw new UserError('Unknown loop strategy')
       if (b.kind === 'loop-open' && (typeof b.amount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(b.amount)
         || !Number.isFinite(Number(b.amount)) || Number(b.amount) <= 0
-        || !Number.isFinite(Number(b.leverage)) || Number(b.leverage) <= 1 || Number(b.leverage) > 1.5)) {
+        || !Number.isFinite(Number(b.leverage)) || Number(b.leverage) <= 1 || Number(b.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage)) {
         throw new UserError('Funding amount or leverage is outside the loop range')
       }
       if (b.kind === 'loop-open' && overLoopCap(b.amount)) throw new UserError(LOOP_CAP_ERROR())
