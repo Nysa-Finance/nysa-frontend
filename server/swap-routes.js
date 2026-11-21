@@ -1,6 +1,6 @@
 import { isAddress } from '@solana/kit'
 import { LIVE, TOKENS, swapTokens } from '../src/config.js'
-import { buildSwap, configuredFeeAccountForMint } from './swap.js'
+import { buildSwap, configuredFeeAccountForMint, FEE_BPS } from './swap.js'
 
 export const SWAP_QUOTE_MAX_AGE_MS = 15_000
 const U64_MAX = (1n << 64n) - 1n
@@ -128,7 +128,7 @@ export async function createPublicSwapQuote(body, {
 } = {}) {
   const request = parseSwapQuoteRequest(body)
   const feeAccount = feeAccountResolver(request.outputMint)
-  if (!feeAccount?.account || feeAccount.mint !== request.outputMint) {
+  if ((FEE_BPS && !feeAccount?.account) || feeAccount?.mint !== request.outputMint) {
     throw new SwapRouteError('No verified fee account is configured for the output token.')
   }
   const built = await buildSwapFn({

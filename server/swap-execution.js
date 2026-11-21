@@ -12,6 +12,7 @@ import { rpc } from './rpc.js'
 import { parseSwapQuoteRequest, publicSwapQuote, SWAP_QUOTE_MAX_AGE_MS } from './swap-routes.js'
 import { evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
 import { TransactionIntentError } from './tx-intent.js'
+import { FEE_BPS } from './swap.js'
 
 const MAX_TX_BYTES = 1232
 const SYSTEM_PROGRAM = '11111111111111111111111111111111'
@@ -43,6 +44,13 @@ function positiveRaw(value, label) {
   return BigInt(value)
 }
 
+// The fee amount a route must carry: positive with a Nysa fee, exactly 0 without one.
+function feeRaw(value, label) {
+  if (FEE_BPS) return positiveRaw(value, label)
+  if (String(value) !== '0') throw new SwapExecutionError(`Unexpected ${label}: Nysa takes no fee.`)
+  return 0n
+}
+
 export function assertSwapQuoteFresh(quoteAt, currentTime) {
   if (!Number.isFinite(currentTime) || !Number.isFinite(quoteAt) || currentTime < quoteAt
     || currentTime - quoteAt >= SWAP_QUOTE_MAX_AGE_MS) {
@@ -54,12 +62,12 @@ export function assertSwapQuoteFresh(quoteAt, currentTime) {
 export function assertSwapSimulationEffects(request, simulation) {
   const inputAmount = positiveRaw(request.inputAmountBaseUnits, 'input amount')
   const minimumOutput = positiveRaw(request.minimumOutputBaseUnits, 'minimum output')
-  const feeAmount = positiveRaw(request.feeAmountBaseUnits, 'fee amount')
+  const feeAmount = feeRaw(request.feeAmountBaseUnits, 'fee amount')
   if (simulation?.inputDeltaBaseUnits !== String(inputAmount)) throw new SwapExecutionError('Simulated input balance delta does not match the authorized amount.')
   if (!/^\d+$/.test(simulation?.outputDeltaBaseUnits ?? '') || BigInt(simulation.outputDeltaBaseUnits) < minimumOutput) {
     throw new SwapExecutionError('Simulated output balance delta is below the authorized minimum output.')
   }
-  if (simulation?.feeDeltaBaseUnits !== String(feeAmount)) throw new SwapExecutionError('Simulated fee balance delta does not match Nysa’s 10-bps fee.')
+  if (simulation?.feeDeltaBaseUnits !== String(feeAmount)) throw new SwapExecutionError('Simulated fee balance delta does not match Nysa’s fee.')
   if (!Array.isArray(simulation?.additionalTokenDeltas)
     || simulation.additionalTokenDeltas.some((item) => item?.deltaBaseUnits !== '0')) {
     throw new SwapExecutionError('Simulated swap changed an unrelated wallet token account.')
@@ -206,17 +214,17 @@ export function decodeJupiterV6RouteInstruction(instruction, request, built) {
   if (builtMinimumOutput !== expectedMinimumOutput) {
     throw new SwapExecutionError('Jupiter V6 encoded slippage does not enforce the authorized minimum output.')
   }
-  if (platformFeeBps !== 10 || built.fee?.bps !== 10) {
-    throw new SwapExecutionError('Jupiter V6 encoded platform fee does not match Nysa’s 10-bps policy.')
+  if (platformFeeBps !== FEE_BPS || built.fee?.bps !== FEE_BPS) {
+    throw new SwapExecutionError('Jupiter V6 encoded platform fee does not match Nysa’s fee policy.')
   }
   return { inputAmount: String(inputAmount), quotedOutput: String(quotedOutput), slippageBps, platformFeeBps, routeSteps }
 }
 
 const JUPITER_V6_DESTINATION_TOKEN_ACCOUNT_PLACEHOLDER = JUPITER_V6_PROGRAM
 const SPL_MEMO_PROGRAM = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'
-// The captured Jupiter route has ten common metas, its optional destination slot, and the Orca program at index 11,
-// followed by WhirlpoolSwapV2's 15 accounts.
-const ORCA_ROUTE_V2_ACCOUNT_COUNT = 27
+// The captured Jupiter route has ten common metas (its optional destination slot included), the platform fee account
+// when Nysa takes a fee, then the Orca program and WhirlpoolSwapV2's 15 accounts.
+const ORCA_ROUTE_V2_ACCOUNT_COUNT = 26
 
 function routeMeta(instruction, index, expectedAddress, expectedRole, label) {
   const meta = instruction.accounts[index]
@@ -235,8 +243,9 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, deri
     || built.routePlan[0]?.bps !== 10_000) {
     throw new SwapExecutionError('Jupiter V6 WhirlpoolSwapV2 requires one direct exact-input route_v2 step.')
   }
-  if (instruction.accounts.length !== ORCA_ROUTE_V2_ACCOUNT_COUNT) {
-    throw new SwapExecutionError('Jupiter V6 WhirlpoolSwapV2 route_v2 must contain exactly 27 accounts with no trailing metadata.')
+  const f = FEE_BPS ? 1 : 0 // the fee account slot shifts every later account by one
+  if (instruction.accounts.length !== ORCA_ROUTE_V2_ACCOUNT_COUNT + f) {
+    throw new SwapExecutionError(`Jupiter V6 WhirlpoolSwapV2 route_v2 must contain exactly ${ORCA_ROUTE_V2_ACCOUNT_COUNT + f} accounts with no trailing metadata.`)
   }
   const ata = async (mint) => deriveAta(address(request.wallet), address(mint), TOKEN_PROGRAM_ADDRESS)
   // Only classic SPL Token mints: Token-2022 extensions and transfer hooks need their own verified CPI contract.
@@ -250,23 +259,23 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, deri
   routeMeta(instruction, 7, JUPITER_V6_DESTINATION_TOKEN_ACCOUNT_PLACEHOLDER, AccountRole.READONLY, 'optional destination account placeholder')
   routeMeta(instruction, 8, JUPITER_V6_EVENT_AUTHORITY, AccountRole.READONLY, 'event authority')
   routeMeta(instruction, 9, JUPITER_V6_PROGRAM, AccountRole.READONLY, 'Jupiter program account')
-  routeMeta(instruction, 10, built.feeAccount, AccountRole.WRITABLE, 'platform fee account')
-  routeMeta(instruction, 11, WHIRLPOOL_PROGRAM, AccountRole.READONLY, 'Orca program')
-  routeMeta(instruction, 12, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca token program A')
-  routeMeta(instruction, 13, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca token program B')
-  routeMeta(instruction, 14, SPL_MEMO_PROGRAM, AccountRole.READONLY, 'Orca memo program')
-  routeMeta(instruction, 15, request.wallet, AccountRole.READONLY, 'Orca token authority')
-  routeMeta(instruction, 16, built.routePlan[0].swapInfo.ammKey, AccountRole.WRITABLE, 'Orca pool')
+  if (f) routeMeta(instruction, 10, built.feeAccount, AccountRole.WRITABLE, 'platform fee account')
+  routeMeta(instruction, 10 + f, WHIRLPOOL_PROGRAM, AccountRole.READONLY, 'Orca program')
+  routeMeta(instruction, 11 + f, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca token program A')
+  routeMeta(instruction, 12 + f, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca token program B')
+  routeMeta(instruction, 13 + f, SPL_MEMO_PROGRAM, AccountRole.READONLY, 'Orca memo program')
+  routeMeta(instruction, 14 + f, request.wallet, AccountRole.READONLY, 'Orca token authority')
+  routeMeta(instruction, 15 + f, built.routePlan[0].swapInfo.ammKey, AccountRole.WRITABLE, 'Orca pool')
   // Orca orders a pool's mints as A/B; the swap direction must send the input mint in and the output mint out.
-  const aIsInput = String(instruction.accounts[17]?.address) === String(request.inputMint)
+  const aIsInput = String(instruction.accounts[16 + f]?.address) === String(request.inputMint)
   const [mintA, mintB] = aIsInput ? [request.inputMint, request.outputMint] : [request.outputMint, request.inputMint]
   if (decoded.routeSteps[0].aToB !== aIsInput) throw new SwapExecutionError('WhirlpoolSwapV2 direction does not match the source and destination mints.')
-  routeMeta(instruction, 17, mintA, AccountRole.READONLY, 'Orca mint A')
-  routeMeta(instruction, 18, mintB, AccountRole.READONLY, 'Orca mint B')
-  routeMeta(instruction, 19, await ata(mintA), AccountRole.WRITABLE, 'Orca user token account A')
-  routeMeta(instruction, 21, await ata(mintB), AccountRole.WRITABLE, 'Orca user token account B')
-  for (const [index, label] of [[20, 'vault A'], [22, 'vault B'], [23, 'tick array 0'], [24, 'tick array 1'], [25, 'tick array 2'], [26, 'oracle']]) {
-    if (instruction.accounts[index]?.role !== AccountRole.WRITABLE) throw new SwapExecutionError(`Jupiter V6 WhirlpoolSwapV2 ${label} account role is invalid.`)
+  routeMeta(instruction, 16 + f, mintA, AccountRole.READONLY, 'Orca mint A')
+  routeMeta(instruction, 17 + f, mintB, AccountRole.READONLY, 'Orca mint B')
+  routeMeta(instruction, 18 + f, await ata(mintA), AccountRole.WRITABLE, 'Orca user token account A')
+  routeMeta(instruction, 20 + f, await ata(mintB), AccountRole.WRITABLE, 'Orca user token account B')
+  for (const [index, label] of [[19, 'vault A'], [21, 'vault B'], [22, 'tick array 0'], [23, 'tick array 1'], [24, 'tick array 2'], [25, 'oracle']]) {
+    if (instruction.accounts[index + f]?.role !== AccountRole.WRITABLE) throw new SwapExecutionError(`Jupiter V6 WhirlpoolSwapV2 ${label} account role is invalid.`)
   }
 }
 
@@ -332,10 +341,9 @@ function validateRoutePlan(built) {
   const inputAmount = positiveRaw(built.inputAmountBaseUnits, 'route input amount')
   const netOutput = positiveRaw(built.outputAmountBaseUnits, 'route net output amount')
   const minimumOutput = positiveRaw(built.minimumOutputBaseUnits, 'route minimum output')
-  const feeAmount = positiveRaw(built.fee?.amountBaseUnits, 'route fee amount')
-  if (minimumOutput > netOutput || built.fee?.bps !== 10
-    || built.fee.mint !== built.feeAccountMint
-    || ![built.inputMint, built.outputMint].includes(built.fee.mint)) {
+  const feeAmount = feeRaw(built.fee?.amountBaseUnits, 'route fee amount')
+  if (minimumOutput > netOutput || built.fee?.bps !== FEE_BPS
+    || FEE_BPS && (built.fee.mint !== built.feeAccountMint || ![built.inputMint, built.outputMint].includes(built.fee.mint))) {
     throw new SwapExecutionError('Swap route fee or net-output bounds do not match the authorized pair.')
   }
   const expectedInput = built.fee.mint === built.inputMint ? inputAmount - feeAmount : inputAmount
@@ -391,7 +399,7 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
   }
   const seenCompute = { limit: false, price: false }
   for (const instruction of compute) validateComputeBudgetInstruction(instruction, seenCompute)
-  try { address(built.feeAccount) } catch { throw new SwapExecutionError('Swap fee recipient is invalid.') }
+  if (FEE_BPS) try { address(built.feeAccount) } catch { throw new SwapExecutionError('Swap fee recipient is invalid.') }
   const pairAtas = new Set()
   const invokedPrograms = new Set([...built.instructions.map((instruction) => String(instruction.programAddress)), ...routeProgramIds.map(String)])
   if (invokedPrograms.size !== declaredPrograms.size || [...invokedPrograms].some((program) => !declaredPrograms.has(program))) {
@@ -500,7 +508,7 @@ function validateCompiledSwapMessage(messageBytes, request, built, resolvedLooku
       throw new SwapExecutionError('Compiled swap instruction data, account order, or program differs from the authorized provider route.')
     }
   }
-  if (!allResolvedAccounts.has(String(built.feeAccount))) {
+  if (FEE_BPS && !allResolvedAccounts.has(String(built.feeAccount))) {
     throw new SwapExecutionError('Compiled swap transaction does not resolve the configured treasury recipient.')
   }
 }
@@ -688,11 +696,11 @@ export async function simulateSwapTransaction({ request, built, compiled, rpcCli
   const owner = address(request.wallet)
   const inputAta = await ataOf(owner, address(request.inputMint), TOKEN_PROGRAM_ADDRESS)
   const outputAta = await ataOf(owner, address(request.outputMint), TOKEN_PROGRAM_ADDRESS)
-  const feeAta = address(built.feeAccount)
+  const feeAta = FEE_BPS ? address(built.feeAccount) : null
   const writableRouteAccounts = built.instructions.flatMap((instruction) => instruction.accounts
     .filter((meta) => meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER)
     .map((meta) => address(meta.address)))
-  const accounts = [...new Set([inputAta, outputAta, feeAta, ...writableRouteAccounts].map(String))].map(address)
+  const accounts = [...new Set([inputAta, outputAta, ...(feeAta ? [feeAta] : []), ...writableRouteAccounts].map(String))].map(address)
   const before = await fetchEncodedAccounts(rpcClient, accounts, { commitment: 'confirmed' })
   const tracked = new Map()
   for (let index = 0; index < accounts.length; index++) {
@@ -706,7 +714,7 @@ export async function simulateSwapTransaction({ request, built, compiled, rpcCli
       else if (accountAddress === String(feeAta)) throw new SwapExecutionError('Configured fee account is not a readable token account during simulation.')
     }
   }
-  if (!tracked.has(String(inputAta)) || !tracked.has(String(outputAta)) || !tracked.has(String(feeAta))) {
+  if (!tracked.has(String(inputAta)) || !tracked.has(String(outputAta)) || (feeAta && !tracked.has(String(feeAta)))) {
     throw new SwapExecutionError('Swap simulation could not identify the authorized user and treasury token accounts.')
   }
   const trackedAddresses = [...tracked.keys()].map(address)
@@ -727,8 +735,12 @@ export async function simulateSwapTransaction({ request, built, compiled, rpcCli
     ? { exists: true, programAddress: accountInfo.owner, data: Uint8Array.from(Buffer.from(accountInfo.data[0], 'base64')) }
     : null)
   const balanceAfter = (accountInfo) => tokenAccountDetails(accountInfo)?.amount ?? 0n
+  // No fee account: its delta reads 0 (index -1 finds no account).
   const beforeRaw = [String(inputAta), String(outputAta), String(feeAta)].map((key) => tracked.get(key)?.amount ?? 0n)
-  const afterRaw = [String(inputAta), String(outputAta), String(feeAta)].map((key) => balanceAfter(after[trackedAddresses.findIndex((item) => String(item) === key)]))
+  const afterRaw = [String(inputAta), String(outputAta), String(feeAta)].map((key) => {
+    const index = trackedAddresses.findIndex((item) => String(item) === key)
+    return index < 0 ? 0n : balanceAfter(after[index])
+  })
   const additionalTokenDeltas = []
   for (const [index, key] of trackedAddresses.entries()) {
     const accountAddress = String(key)
@@ -775,7 +787,7 @@ export function createSwapExecutionService({
       await validateProviderSwapInstructions(request, built)
       if (Number(built.priceImpactPct) > 1) throw new SwapExecutionError('Price impact exceeds Nysa’s 1% limit.')
       if (!built.programPolicy?.approved) throw new SwapExecutionError('Swap route contains an unreviewed program.')
-      if (built.feeAccountMintVerified !== true || built.feeAccountMint !== request.outputMint && built.feeAccountMint !== request.inputMint) {
+      if (FEE_BPS && (built.feeAccountMintVerified !== true || built.feeAccountMint !== request.outputMint && built.feeAccountMint !== request.inputMint)) {
         throw new SwapExecutionError('Swap fee account is not verified for the configured fee mint.')
       }
       const compiled = await compile({ request, built })

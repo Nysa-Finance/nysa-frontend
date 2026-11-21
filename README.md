@@ -84,11 +84,12 @@ The shared backend adapter uses Jupiter V2 Build's native `platformFeeBps=10` an
 validates the provider's route-based fee amount, net output and fee-account mint; it never adds a separate fee transfer.
 Keyless Jupiter access is available for prototype/read-only requests at 0.5 requests per second.
 
-Swap execution turns on when the server has `JUPITER_API_KEY`, a `SWAP_FEE_ACCOUNT_<TOKEN NAME>` for every token of
-every market pair (`SWAP_FEE_ACCOUNT_USDC`, `SWAP_FEE_ACCOUNT_USDY`, …; also listed in `docker-compose.yml`) and
-`SWAP_FEE_TREASURY_AUTHORITY` in `.env` (every fee account must exist on-chain, owned by that authority) and fresh market
-data shows a nonzero Nysa vault allocation to the pair's market; removing the keys turns it off. Never put them in browser
-config. To try it on mainnet before launch, also set `SWAP_WALLETS` to a comma-separated list of addresses:
+Nysa's fee is `NYSA_FEE_BPS` (basis points, swaps and loops alike); empty or 0 means no fee, and then no fee account is
+needed or passed to Jupiter. Swap execution turns on when the server has `JUPITER_API_KEY` and fresh market data shows a
+nonzero Nysa vault allocation to the pair's market. With a fee it also needs a `SWAP_FEE_ACCOUNT_<TOKEN NAME>` for every
+token of every market pair (`SWAP_FEE_ACCOUNT_USDC`, `SWAP_FEE_ACCOUNT_USDY`, …; also listed in `docker-compose.yml`) and
+`SWAP_FEE_TREASURY_AUTHORITY` in `.env` (every fee account must exist on-chain, owned by that authority). Never put them
+in browser config. To try it on mainnet before launch, also set `SWAP_WALLETS` to a comma-separated list of addresses:
 only those wallets can quote, build and relay a swap, and only they see the Swap tab and the swap banners (the server
 enforces it; hiding the links is just presentation). Remove `SWAP_WALLETS` to open swap to everyone. Changing these
 values needs only a container restart, not a deploy. A route may only invoke the programs in `server/program-policy.js` (`APPROVED_PROGRAMS`: Jupiter V6, Orca
@@ -97,7 +98,7 @@ Whirlpool, Compute Budget, Associated Token); add one there only after reviewing
 `/swap` requests and displays a sanitized USDY/USDC provider route. The server-side execution pipeline admits only a
 Jupiter V2 `route_v2` single-hop `WhirlpoolSwapV2`: it checks the exact 27-account layout (signer, wallet ATAs, mints and
 direction, fee account, programs, the pool named by the route, writable roles), compiles the exact provider instructions,
-and simulates them, requiring the exact input, at least the minimum output, the exact 10-bps fee and no other wallet
+and simulates them, requiring the exact input, at least the minimum output, the exact Nysa fee (`NYSA_FEE_BPS`, none when empty or 0) and no other wallet
 token change. Pool, vault, tick-array and oracle relationships are Orca's own on-chain constraints. Legacy `route` /
 `sharedAccountsRoute`, multihop, Token-2022/hooks and extra route metadata are refused. Provider instructions and
 unsigned transactions are never returned by the quote endpoint; a signed swap is relayed only against its one-time
@@ -130,7 +131,7 @@ composed swapper quote. Follow-up fork runs could not revalidate it: one had sta
 snapshot timed out while confirming local setup. No economic open was submitted.
 
 The loop implementation remains guarded until all release evidence below is recorded. Keep the economic open and full
-close atomic; acquisition and leverage swaps use the shared 10-bps Nysa fee policy. Do not split either economic action
+close atomic; acquisition and leverage swaps use the shared Nysa fee policy (`NYSA_FEE_BPS`). Do not split either economic action
 into a sequence that can leave a partially opened or closed Multiply position.
 
 Loop risk defaults are conservative: leverage is at most 1.5×; projected LTV is capped at the lower of 50% of the

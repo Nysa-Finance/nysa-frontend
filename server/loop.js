@@ -11,7 +11,7 @@ import {
 import { DEFAULT_LOOP_LIMITS, loopExposure, projectedLtvLimitPct } from '../src/loop-policy.js'
 import { LIVE, TOKENS } from '../src/config.js'
 import { parseBaseUnits } from '../src/swap-fees.js'
-import { buildSwap, configuredFeeAccountForMint } from './swap.js'
+import { buildSwap, configuredFeeAccountForMint, FEE_BPS } from './swap.js'
 import { rpc } from './rpc.js'
 import { getLive, reserveOf, refreshMarketForExecution } from './market.js'
 import { ataOf } from './account.js'
@@ -362,7 +362,7 @@ export function createKaminoSwapCallbacks({
     const outputMint = String(inputs?.outputMint ?? '')
     const inputAmountBaseUnits = rawAmount(inputs?.inputAmountLamports)
     const feeDestination = await getFeeAccount(outputMint)
-    if (!feeDestination || feeDestination.mint !== outputMint || typeof feeDestination.account !== 'string') {
+    if (!feeDestination || feeDestination.mint !== outputMint || (FEE_BPS && typeof feeDestination.account !== 'string')) {
       throw new LoopPreviewError('A validated output-mint Nysa fee account is not configured for this swap.')
     }
     const key = routeKey(inputMint, outputMint, inputAmountBaseUnits)
@@ -376,20 +376,18 @@ export function createKaminoSwapCallbacks({
         wallet,
         feeAccount: feeDestination.account,
         feeAccountMint: outputMint,
-        feeBps: 10,
-        platformFeeBps: 10,
         providerApiKey,
         slippageBps,
         signal,
       })
       routeCache.set(key, built)
-    } else if (built.feeAccount !== feeDestination.account || built.feeAccountMint !== outputMint) {
+    } else if (FEE_BPS && (built.feeAccount !== feeDestination.account || built.feeAccountMint !== outputMint)) {
       throw new LoopPreviewError('The fee destination changed after the loop preview; build a fresh preview.')
     }
     if (!built || !built.fee?.routeDeltaVerified || !built.programPolicy
       || built.feeAccountMintVerified !== true || !Array.isArray(built.instructions) || built.instructions.length === 0
       || typeof validateRoute !== 'function') {
-      throw new LoopPreviewError('Swap route did not verify its 10-bps fee and provider route.')
+      throw new LoopPreviewError('Swap route did not verify its Nysa fee and provider route.')
     }
     if (!localForkSimulation && !built.programPolicy.approved) {
       throw new LoopPreviewError('Swap route programs and fee-account mint are not approved for composition.')
@@ -436,7 +434,7 @@ export function createKaminoSwapCallbacks({
     if (!built || built.inputMint !== inputMint || built.outputMint !== outputMint || built.inputAmountBaseUnits !== inputAmountBaseUnits) {
       ({ built } = await prepare(inputs))
     }
-    if (built.fee?.bps !== 10 || built.fee?.mint !== outputMint) throw new LoopPreviewError('Kamino swapper requires the same fee-aware output-mint policy as its route quote.')
+    if (built.fee?.bps !== FEE_BPS || (FEE_BPS && built.fee?.mint !== outputMint)) throw new LoopPreviewError('Kamino swapper requires the same fee-aware output-mint policy as its route quote.')
     if (!Number.isFinite(built.quoteAt) || Date.now() - built.quoteAt < 0 || Date.now() - built.quoteAt > LOOP_COMPOSE_WINDOW_MS) {
       throw new LoopPreviewError('Kamino swap quote expired before instruction composition.')
     }
@@ -509,12 +507,12 @@ export function buildLoopPreview({
     mint: fee?.mint ?? null,
     amountBaseUnits: fee?.amountBaseUnits ?? null,
     bps: fee?.bps ?? null,
-    usd: fee?.mint && fee?.amountBaseUnits && Number.isFinite(feePricesUsd[fee.mint])
+    usd: fee?.bps === 0 ? 0 : fee?.mint && fee?.amountBaseUnits && Number.isFinite(feePricesUsd[fee.mint])
       ? Number(fee.amountBaseUnits) / 10 ** tokenDecimals(fee.mint) * feePricesUsd[fee.mint]
       : null,
   })) : []
   const estimatedCosts = sdkPosition
-    ? estimateSdkCosts({ ...sdkPosition, swapFees: fees }, feePricesUsd)
+    ? estimateSdkCosts({ ...sdkPosition, swapFees: fees.filter((fee) => fee.bps > 0) }, feePricesUsd)
     : { costs: fees, knownCostsTotalUsd: fees.every((fee) => fee.usd != null) ? fees.reduce((sum, fee) => sum + fee.usd, 0) : null }
   const projectedLtv = new PreciseDecimal(exposure.projectedLtvPct)
   const liquidationLimit = positiveDecimal(liquidationLtvPct, 'liquidation LTV')
@@ -681,9 +679,8 @@ async function assertComposableFeeRoute(route, inputMint, outputMint, {
   now = Date.now(),
 } = {}) {
   if (!route || route.inputMint !== inputMint || route.outputMint !== outputMint
-    || route.fee?.bps !== 10 || route.fee?.mint !== outputMint || route.fee?.routeDeltaVerified !== true
-    || route.feeAccountMint !== outputMint || route.feeAccountMintVerified !== true
-    || typeof route.feeAccount !== 'string'
+    || route.fee?.bps !== FEE_BPS || route.fee?.routeDeltaVerified !== true || route.feeAccountMintVerified !== true
+    || FEE_BPS && (route.fee?.mint !== outputMint || route.feeAccountMint !== outputMint || typeof route.feeAccount !== 'string')
     || !Array.isArray(route.instructions) || route.instructions.length === 0) {
     throw new LoopPreviewError('Loop swap does not satisfy the shared router composition fee and route policy.')
   }
@@ -709,7 +706,7 @@ async function assertComposableFeeRoute(route, inputMint, outputMint, {
 }
 
 function mergeApplicationParts({ routes, instructionGroups, lookupTables = [], simulationAccounts = [] }) {
-  const feeEvents = routes.map((route) => ({
+  const feeEvents = routes.filter((route) => route.fee.bps > 0).map((route) => ({
     account: route.feeAccount,
     mint: route.fee.mint,
     amountBaseUnits: String(route.fee.amountBaseUnits),
@@ -836,6 +833,8 @@ export async function buildAtomicMultiplyFullCloseApplication({
 }
 
 export function verifyAtomicLoopFeeDeltas(feeEvents, tokenDeltas) {
+  // No Nysa fee: no fee events, so there is no fee account delta to check.
+  if (!FEE_BPS && Array.isArray(feeEvents) && !feeEvents.length && Array.isArray(tokenDeltas) && !tokenDeltas.length) return
   if (!Array.isArray(feeEvents) || !feeEvents.length || !Array.isArray(tokenDeltas)) {
     throw new LoopPreviewError('Atomic loop fee balance deltas are unavailable.')
   }
@@ -843,7 +842,7 @@ export function verifyAtomicLoopFeeDeltas(feeEvents, tokenDeltas) {
   const eventCounts = new Map()
   for (const fee of feeEvents) {
     if (typeof fee?.account !== 'string' || typeof fee.mint !== 'string'
-      || !/^[1-9]\d*$/.test(String(fee.amountBaseUnits)) || fee.bps !== 10) {
+      || !/^[1-9]\d*$/.test(String(fee.amountBaseUnits)) || fee.bps !== FEE_BPS) {
       throw new LoopPreviewError('Atomic loop contains an invalid router fee event.')
     }
     const key = `${fee.account}:${fee.mint}`

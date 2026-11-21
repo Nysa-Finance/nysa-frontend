@@ -110,6 +110,7 @@ export const state = reactive({
   blockedWallet: null,
   localFork: false, // on a local fork wallets only sign and the backend sends: a wallet would send to mainnet
   swapVisible: false, // SWAP_WALLETS beta: the server decides who can swap
+  feeBps: null, // Nysa's swap fee (NYSA_FEE_BPS), from /api/swap-readiness
   loopVisible: false, // LOOP_WALLETS: the loop shows to those wallets only while it is off for everyone
 })
 
@@ -286,6 +287,7 @@ function setAccount(w, acc) {
 async function loadSwapVisibility() {
   const addr = state.address
   const r = await api(`/api/swap-readiness${addr ? `?wallet=${addr}` : ''}`).catch(() => null)
+  if (Number.isSafeInteger(r?.feeBps)) state.feeBps = r.feeBps
   if (state.address === addr) { state.swapVisible = r?.visible === true; state.loopVisible = r?.loopVisible === true }
 }
 

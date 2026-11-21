@@ -45,6 +45,7 @@ const strategies = computed(() => strategy.value?.strategies ?? [])
 const executionMode = computed(() => preview.value?.executionMode ?? strategy.value?.executionMode ?? null)
 const localForkMode = computed(() => executionMode.value === 'surfpool-local')
 const fees = computed(() => preview.value?.fees ?? [])
+const feeBps = computed(() => fees.value[0]?.bps ?? state.feeBps ?? 0) // Nysa's swap fee; 0 = none
 const positions = computed(() => state.loopPositions ?? [])
 const currentPreviewRequest = () => ({
   fundingAmount: fundingAmount.value,
@@ -426,14 +427,15 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         </div>
         <div class="rows last">
           <div class="n-kv"><span class="k">Swap USDC → USDY</span><span class="v">{{ amt(est.swap, 2) }} USDC</span></div>
-          <div class="n-kv"><span class="k">Nysa fee (0.1% of swap)</span><span class="v">{{ quoted && preview.feeTotalUsd != null ? usdFull(preview.feeTotalUsd) : `≈ ${usdFull(est.swap * 0.001)}` }}</span></div>
+          <div v-if="feeBps" class="n-kv"><span class="k">Nysa fee ({{ feeBps / 100 }}% of swap)</span><span class="v">{{ quoted && preview.feeTotalUsd != null ? usdFull(preview.feeTotalUsd) : `≈ ${usdFull(est.swap * feeBps / 10000)}` }}</span></div>
+          <div v-else class="n-kv"><span class="k">Fees</span><span class="v">0% fees taken by Nysa</span></div>
           <div v-if="quoted && preview.knownCostsTotalUsd != null" class="n-kv"><span class="k">Borrow and flash loan fees</span><span class="v">{{ usdFull(Math.max(0, preview.knownCostsTotalUsd - (preview.feeTotalUsd ?? 0))) }}</span></div>
         </div>
         <details class="more">
           <summary>Details</summary>
           <div class="n-kv"><span class="k">Health factor</span><span class="v">{{ hfText(est.hf) }}</span></div>
           <div class="n-kv"><span class="k">Max slippage</span><span class="v">0.5%</span></div>
-          <div v-for="fee in quoted ? fees : []" :key="fee.action" class="n-kv"><span class="k">Nysa fee</span><span class="v">{{ feeLabel(fee) }}</span></div>
+          <div v-for="fee in quoted ? fees.filter((f) => f.bps) : []" :key="fee.action" class="n-kv"><span class="k">Nysa fee</span><span class="v">{{ feeLabel(fee) }}</span></div>
           <div class="n-kv"><span class="k">USDY yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (${rates.nativeSource === 'env' ? 'Ondo rate' : '30-day price'})` }}</span></div>
           <div class="n-kv"><span class="k">Closing</span><span class="v">returns USDC</span></div>
           <div class="n-kv"><span class="k">Rates as of</span><span class="v">{{ strategies[0]?.carry?.asOf ? new Date(strategies[0].carry.asOf).toLocaleString() : '—' }}</span></div>
