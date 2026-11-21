@@ -329,15 +329,15 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
           <span class="pair"><TokenIcon :token="usdy" size="sm" />USDY / <TokenIcon :token="usdc" size="sm" />USDC <span v-if="Number.isFinite(positionView(position).hf)" class="n-chip" :class="health(positionView(position).hf)[0]">{{ health(positionView(position).hf)[1] }}</span></span>
         </div>
         <div class="n-stats pos-stats">
-          <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(positionView(position).net) }}</div><div class="s">{{ amt(positionView(position).coll, 2) }} USDY collateral</div></div>
-          <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ pct(positionView(position).netApy) }}</div><div class="s">vs {{ pct(rates.hold) }} holding USDY</div></div>
-          <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ positionView(position).leverage ? lev(positionView(position).leverage) : '—' }}</div><div class="s">max {{ lev(MAX_LEV) }}</div></div>
-          <div class="n-stat"><div class="k">Liquidation price</div><div class="v">{{ positionView(position).liqPrice ? `$${positionView(position).liqPrice.toFixed(4)}` : '—' }}</div><div class="s">USDY at ${{ usdyPrice.toFixed(4) }}</div></div>
-          <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(positionView(position).hf) }}</div><div class="s">LTV {{ pct(positionView(position).ltv, 1) }}</div></div>
+          <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(positionView(position).net) }}</div></div>
+          <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ pct(positionView(position).netApy) }}</div></div>
+          <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ positionView(position).leverage ? lev(positionView(position).leverage) : '—' }}</div></div>
+          <div class="n-stat"><div class="k">Liquidation price</div><div class="v">{{ positionView(position).liqPrice ? `$${positionView(position).liqPrice.toFixed(4)}` : '—' }}</div></div>
+          <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(positionView(position).hf) }}</div></div>
         </div>
         <div class="close">
           <button class="n-btn-grad" :disabled="acting || !positionView(position).readiness?.executionEnabled" @click="closeLoop(position)">{{ acting ? 'Preparing…' : 'Close loop' }}</button>
-          <span class="why">{{ positionView(position).readiness?.executionEnabled ? 'Sells the USDY, repays the debt and returns the rest in USDC, in one transaction.' : 'Closing isn\'t available yet.' }}</span>
+          <span v-if="!positionView(position).readiness?.executionEnabled" class="why">Closing isn't available yet.</span>
         </div>
       </section>
     </template>
@@ -400,7 +400,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         <label v-if="quoted && preview.carry?.requiresAcknowledgement" class="ack"><input v-model="carryAcknowledged" type="checkbox" /><span>At current rates this loop earns less than it costs. I understand rates can change.</span></label>
 
         <button class="n-btn-block go" :disabled="!canAct" @click="openLoop">{{ acting ? 'Opening…' : `Loop ${lev(leverage)}` }}</button>
-        <p class="why">{{ status ?? 'One signature: flash loan, swap and deposit in a single transaction.' }}</p>
+        <p v-if="status" class="why">{{ status }}</p>
         <p v-if="state.address && amount > 0" class="fresh" aria-live="polite">{{ loading ? 'Updating quote…' : quoteAge != null ? `Quote updated ${quoteAge}s ago` : '' }}</p>
         <details v-if="quoted && entryBlockers.length" class="more">
           <summary>Why</summary>
