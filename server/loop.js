@@ -660,7 +660,7 @@ export function buildMultiplyOpenIxs(inputs, callbacks, builder = getDepositWith
     }
   }
   const leverage = positiveDecimal(inputs?.targetLeverage, 'target leverage')
-  if (leverage.lte(1) || leverage.gt(DEFAULT_LOOP_LIMITS.maxLeverage)) throw new LoopPreviewError('Target leverage must be above 1 and at most 1.5.')
+  if (leverage.lte(1) || leverage.gt(DEFAULT_LOOP_LIMITS.maxLeverage)) throw new LoopPreviewError(`Target leverage must be above 1 and at most ${DEFAULT_LOOP_LIMITS.maxLeverage}.`)
   return builder({ ...inputs, obligationTypeTagOverride: ObligationTypeTag.Multiply, quoter: callbacks.quoter, swapper: callbacks.swapper })
 }
 
