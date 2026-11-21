@@ -11,7 +11,7 @@ import { getCurrentLedgerInstant, KaminoAction, MultiplyObligation, ObligationTy
 import { TOKENS, marketById } from '../src/config.js'
 import { ataOf, maxWithdrawFromObligation, obligationType } from '../server/account.js'
 import { loadMarket, reserveOf } from '../server/market.js'
-import { buildSwap, inspectFeeTokenAccount } from '../server/swap.js'
+import { buildSwap, FEE_BPS, inspectFeeTokenAccount } from '../server/swap.js'
 import { createRpc } from '../server/rpc.js'
 import { ROUTE_PROGRAM_IDS_BY_LABEL } from '../server/program-policy.js'
 import { composeAtomicOpenInstructions } from '../server/loop-composition.js'
@@ -1052,6 +1052,8 @@ async function executeLocalMultiplyScenario({ rpcClient, signer, market, collRes
 }
 
 async function runConfiguredLocalFork(env, endpoint, log) {
+  // This verifier proves the fee path (fee deltas, treasury credits); the no-fee path is covered by server/no-fee.test.js.
+  if (!FEE_BPS) throw new Error('Run with NYSA_FEE_BPS set (e.g. NYSA_FEE_BPS=10 npm run verify:loop-fork).')
   const missingInputs = missingLocalExecutionInputs(env)
   if (missingInputs.length) throw new Error(`Configure isolated local transaction inputs: ${missingInputs.join(', ')}.`)
   let secretBytes

@@ -192,7 +192,8 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
     <div v-if="quote" class="details">
       <div class="n-kv"><span class="k">Minimum received</span><span class="v">{{ fmt(output, quote.minimumOutputBaseUnits) }} {{ output.name }}</span></div>
       <div class="n-kv"><span class="k">Price impact</span><span class="v">{{ Number(quote.priceImpactPct).toFixed(3) }}%</span></div>
-      <div class="n-kv"><span class="k">Nysa fee (0.1%)</span><span class="v">{{ quote.fee ? `${fmt(output, quote.fee.amountBaseUnits)} ${output.name}` : '-' }}</span></div>
+      <div v-if="quote.fee?.bps" class="n-kv"><span class="k">Nysa fee ({{ quote.fee.bps / 100 }}%)</span><span class="v">{{ fmt(output, quote.fee.amountBaseUnits) }} {{ output.name }}</span></div>
+      <div v-else class="n-kv"><span class="k">Fees</span><span class="v">0% fees taken by Nysa</span></div>
       <div class="n-kv"><span class="k">Route</span><span class="v">{{ quote.routePlan.map((leg) => leg.label).join(' → ') || '-' }}</span></div>
     </div>
   </div>

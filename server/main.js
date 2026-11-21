@@ -19,7 +19,7 @@ import { DEFAULT_LOOP_LIMITS } from '../src/loop-policy.js'
 import { LIVE, LOOP_ENABLED, LOOP_LOOKUP_TABLE, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { LOOP_PREVIEW_TTL_MS, LOOP_SIGNING_WINDOW_MS, buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
-import { buildSwap, configuredFeeAccountForMint, swapFeeAccountsConfigured, SwapError } from './swap.js'
+import { buildSwap, configuredFeeAccountForMint, FEE_BPS, swapFeeAccountsConfigured, SwapError } from './swap.js'
 import { LOOP_PREVIEW_MAX_AGE_MS, loopCarryStillCurrent, loopMarketRiskFromSnapshot, loopMarketRiskStillCurrent } from './loop-preview-validation.js'
 import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, marketForPair, swapPairAvailability, swapReadiness } from './swap-routes.js'
 import { runWithRequestAbortSignal } from './request-signal.js'
@@ -398,7 +398,7 @@ const routes = [
     const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
     if (wallet && !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
     const { readiness, availability, visible } = currentSwapReadiness({ wallet: wallet ?? undefined })
-    return send(res, 200, { ...readiness, visible, loopVisible: loopOpenTo(wallet), marketAvailability: availability,
+    return send(res, 200, { ...readiness, visible, loopVisible: loopOpenTo(wallet), feeBps: FEE_BPS, marketAvailability: availability,
       executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
   }],
   ['POST', /^\/api\/swap-quote$/, async (req, res) => {

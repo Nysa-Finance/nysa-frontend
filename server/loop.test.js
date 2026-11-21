@@ -267,7 +267,6 @@ const quote = await callbacks.quoter(inputs, [])
 assert.equal(quote.priceAInB.toString(), '1.0989')
 assert.equal(quote.quoteResponse.outputAmountBaseUnits, '1098900')
 const previewRoute = quote.quoteResponse
-assert.equal(buildRequests[0].feeBps, 10)
 assert.equal(buildRequests[0].slippageBps, 49) // preserves a small execution margin under the SDK's 50-bps sizing buffer.
 assert.equal(buildRequests[0].feeAccount, feeAccount)
 assert.equal(buildRequests[0].feeAccountMint, usdy)

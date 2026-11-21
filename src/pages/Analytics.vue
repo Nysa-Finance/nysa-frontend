@@ -142,10 +142,10 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
   </div>
 
   <div class="sections">
-    <Section title="Swap fee receivers" open>
-      <template #meta>10 bps per swap</template>
+    <Section v-if="feeReceivers?.feeBps" title="Swap fee receivers" open>
+      <template #meta>{{ feeReceivers.feeBps }} bps per swap</template>
       <div class="receiver-network"><span class="n-chip">Network: {{ feeReceiverNetwork }}</span></div>
-      <p class="receiver-intro">Nysa charges 10 bps (0.10%) once per economic swap. Standalone swaps and swaps inside loops use these same configured receivers; route hops do not add another Nysa fee. These addresses identify where fees are sent, not a total of fees earned.</p>
+      <p class="receiver-intro">Nysa charges {{ feeReceivers.feeBps }} bps ({{ (feeReceivers.feeBps / 100).toFixed(2) }}%) once per economic swap. Standalone swaps and swaps inside loops use these same configured receivers; route hops do not add another Nysa fee. These addresses identify where fees are sent, not a total of fees earned.</p>
       <div v-if="feeReceivers === undefined" class="n-empty">Loading fee receiver settings…</div>
       <div v-else-if="feeReceivers === null" class="n-empty">Fee receiver settings are temporarily unavailable.</div>
       <template v-else>

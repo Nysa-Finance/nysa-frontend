@@ -6,7 +6,7 @@ import { getLive, getVault, num } from './market.js'
 import { freshIndex } from './updates.js'
 import { vaultShares } from './account.js'
 import { indexedPositionSummary, obligationPair } from './positions.js'
-import { feeAccountEnv } from './swap.js'
+import { FEE_BPS, feeAccountEnv } from './swap.js'
 
 const addrDecoder = getAddressDecoder()
 
@@ -17,6 +17,7 @@ export function getFeeReceiverMetadata({ env = process.env, rpcUrl = RPC_URL } =
   const local = localForkExecutionEnabled({ env, rpcUrl })
   return {
     network: local ? 'surfpool-local' : isLoopbackRpc(rpcUrl) ? 'unknown' : 'mainnet',
+    feeBps: FEE_BPS,
     treasuryAuthority: publicAddress(env.SWAP_FEE_TREASURY_AUTHORITY),
     accounts: swapTokens.map((t) => ({ tokenId: t.token_id, mint: t.mint, address: publicAddress(env[feeAccountEnv(t)]) })),
   }
