@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { calculateCarryPct, carryNeedsAcknowledgement, loopExposure, projectedLtvLimitPct, riskViolations } from './loop-policy.js'
 
-assert.equal(projectedLtvLimitPct(90, 95), 89.1)
-assert.equal(projectedLtvLimitPct(60, 80), 59.4)
+assert.equal(projectedLtvLimitPct(90, 95), 90)
+assert.equal(projectedLtvLimitPct(60, 80), 60)
 assert.throws(() => projectedLtvLimitPct(0, 95), /LTV/)
 assert.throws(() => projectedLtvLimitPct(90, 101), /LTV/)
 
@@ -10,14 +10,14 @@ assert.deepEqual(loopExposure('100', '1.5'), {
   equity: '100', grossCollateral: '150', debt: '50', leverage: '1.5', projectedLtvPct: '33.33333333333333333333333333333333333333',
 })
 assert.throws(() => loopExposure('0', '1.5'), /funding amount/)
-assert.throws(() => loopExposure('100', '9.01'), /leverage/)
+assert.throws(() => loopExposure('100', '10.01'), /leverage/)
 
 assert.deepEqual(riskViolations({
   leverage: 1.5, projectedLtvPct: 33.34, maxBorrowLtvPct: 90, liquidationLtvPct: 95,
   slippageBps: 50, priceImpactPct: 1, quoteAgeSeconds: 15, oracleAgeSeconds: 30, oracleHeartbeatSeconds: 30,
 }), [])
 assert.deepEqual(riskViolations({
-  leverage: 9.1, projectedLtvPct: 89.2, maxBorrowLtvPct: 90, liquidationLtvPct: 95,
+  leverage: 10.1, projectedLtvPct: 90.1, maxBorrowLtvPct: 90, liquidationLtvPct: 95,
   slippageBps: 51, priceImpactPct: 1.1, quoteAgeSeconds: 16, oracleAgeSeconds: 31, oracleHeartbeatSeconds: 30,
 }), ['leverage-cap', 'projected-ltv-cap', 'slippage-cap', 'price-impact-cap', 'stale-quote', 'stale-oracle'])
 assert.ok(riskViolations({ leverage: 1.2 }).includes('missing-risk-input'))

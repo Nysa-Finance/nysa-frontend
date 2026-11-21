@@ -2,10 +2,10 @@ import Decimal from 'decimal.js'
 
 const D = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP })
 export const DEFAULT_LOOP_LIMITS = Object.freeze({
-  // Swap and borrow costs push the real leverage a bit above the 8x target, so the hard cap is 9x and the LTV
-  // cap (99% of Kamino's max borrow LTV: 89.1% on USDY) is the binding limit.
-  maxLeverage: 9,
-  maxBorrowLtvRatio: 0.99,
+  // Swap and borrow costs push the real leverage a bit above the 9x target, so the hard cap is 10x and the LTV
+  // cap (Kamino's own max borrow LTV: 90% on USDY) is the binding limit.
+  maxLeverage: 10,
+  maxBorrowLtvRatio: 1,
   liquidationLtvRatio: 0.95,
   maxSlippageBps: 50,
   maxPriceImpactPct: 1,
