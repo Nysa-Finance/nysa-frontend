@@ -1063,7 +1063,7 @@ async function runConfiguredLocalFork(env, endpoint, log) {
   if (String(signer.address) !== env.LOCAL_FORK_TEST_WALLET) throw new Error('Local signer does not match LOCAL_FORK_TEST_WALLET.')
   const leverageValue = env.LOCAL_FORK_TARGET_LEVERAGE == null ? '1.5' : env.LOCAL_FORK_TARGET_LEVERAGE
   const leverage = new Decimal(leverageValue)
-  if (!leverage.isFinite() || leverage.lte(1) || leverage.gt(8)) throw new Error('LOCAL_FORK_TARGET_LEVERAGE must be above 1 and at most 8.')
+  if (!leverage.isFinite() || leverage.lte(1) || leverage.gt(9)) throw new Error('LOCAL_FORK_TARGET_LEVERAGE must be above 1 and at most 9.')
   const flashBorrowType = env.LOCAL_FORK_FLASH_BORROW_TYPE ?? 'coll'
   if (!['coll', 'debt'].includes(flashBorrowType)) throw new Error('LOCAL_FORK_FLASH_BORROW_TYPE must be coll or debt.')
 

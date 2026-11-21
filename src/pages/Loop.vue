@@ -13,7 +13,7 @@ import NotFound from './NotFound.vue'
 
 const usdc = TOKENS['svm-usdc']
 const usdy = TOKENS['svm-usdy']
-const MAX_LEV = 8 // USDY borrows up to 90% LTV (10x); 8x leaves room for swap costs and price moves
+const MAX_LEV = 9 // USDY borrows up to 90% LTV (10x); 9x leaves room for swap costs
 const fundingAmount = ref('') // loops are funded in USDC: it buys USDY together with the borrowed USDC
 watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, usdc.decimals) })
 const leverage = ref(MAX_LEV)
