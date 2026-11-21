@@ -50,7 +50,7 @@ assert.equal(openBuilt[0].ixs[0].kind, 'sdk-leverage-ix')
 assert.equal(sdkCalls.at(-1).quoter, compositionCallbacks.quoter)
 assert.equal(sdkCalls.at(-1).swapper, compositionCallbacks.swapper)
 assert.equal(sdkCalls.at(-1).obligationTypeTagOverride, 1, 'loop open always derives a separate Multiply obligation')
-assert.throws(() => loop.buildMultiplyOpenIxs({ ...openInput, targetLeverage: new Decimal('1.51') }, compositionCallbacks, sdkBuilder), /leverage/i)
+assert.throws(() => loop.buildMultiplyOpenIxs({ ...openInput, targetLeverage: new Decimal('9.01') }, compositionCallbacks, sdkBuilder), /leverage/i)
 assert.throws(() => loop.buildMultiplyOpenIxs({ ...openInput, obligation: { refreshedStats: { userTotalDeposit: new Decimal(1) } } }, compositionCallbacks, sdkBuilder), /top.?up|existing/i)
 assert.throws(() => loop.buildMultiplyFullCloseIxs({ isClosingPosition: false }, compositionCallbacks, sdkBuilder), /full close/i)
 const closeBuilt = await loop.buildMultiplyFullCloseIxs({
@@ -723,7 +723,7 @@ const preview = buildLoopPreview({
 })
 assert.equal(preview.exposure.grossCollateral, '1500')
 assert.equal(preview.exposure.debt, '500')
-assert.equal(preview.limits.projectedLtvPct, 38)
+assert.equal(preview.limits.projectedLtvPct, 89.1)
 assert.equal(preview.risk.projectedLtvPct, '33.33333333333333333333333333333333333333')
 assert.equal(preview.fees.length, 1)
 assert.equal(preview.available, false)
@@ -737,17 +737,17 @@ const adverseRoutePreview = buildLoopPreview({
   feePricesUsd: { [usdc]: 1, [usdy]: 0.8 },
   sdkPosition: {
     collateralMint: usdy, collateralDecimals: 6, collateralAmount: '135', collateralPriceUsd: '0.8',
-    liabilityMint: usdc, liabilityDecimals: 6, debtBorrowAmount: '60', borrowFeeRatio: '0.01', liabilityPriceUsd: '1',
+    liabilityMint: usdc, liabilityDecimals: 6, debtBorrowAmount: '97', borrowFeeRatio: '0.01', liabilityPriceUsd: '1',
     flashBorrowAmount: '35', flashFeeRatio: '0.001',
   },
 })
 assert.equal(adverseRoutePreview.exposure.grossCollateral, '108')
-assert.equal(adverseRoutePreview.exposure.debt, '60.6')
-assert.equal(adverseRoutePreview.exposure.projectedLtvPct, '56.11111111111111111111111111111111111111')
+assert.equal(adverseRoutePreview.exposure.debt, '97.97')
+assert.equal(adverseRoutePreview.exposure.projectedLtvPct, '90.71296296296296296296296296296296296296')
 assert.equal(adverseRoutePreview.risk.liquidationLtvPct, 95)
 assert.ok(Number(adverseRoutePreview.risk.healthFactor) < 2)
 assert.ok(adverseRoutePreview.risk.violations.includes('projected-ltv-cap'))
-assert.equal(adverseRoutePreview.costs.find((cost) => cost.action === 'borrow-origination-fee').usd, 0.6)
+assert.equal(adverseRoutePreview.costs.find((cost) => cost.action === 'borrow-origination-fee').usd, 0.97)
 assert.equal(adverseRoutePreview.costs.find((cost) => cost.action === 'flash-loan-fee').usd, 0.028)
 assert.ok(adverseRoutePreview.knownCostsTotalUsd > 0.62)
 
