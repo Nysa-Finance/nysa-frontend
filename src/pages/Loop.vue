@@ -269,6 +269,7 @@ const quoted = computed(() => previewIsCurrent.value && !!preview.value)
 // The preview needs only an amount; opening also needs the Kamino setup and no blocker.
 const status = computed(() => {
   if (!state.address) return 'Connect a wallet to open a loop.'
+  if (positions.value.length) return 'You already have an open loop. Close it to open a new one.'
   if (!(amount.value > 0)) return 'Enter an amount.'
   if (amount.value > (state.balances['svm-usdc'] ?? 0)) return `You only hold ${amt(state.balances['svm-usdc'] ?? 0)} USDC.`
   if (strategy.value?.maxFunding && amount.value > strategy.value.maxFunding) return `Loops are capped at ${strategy.value.maxFunding} USDC during the beta.`
