@@ -425,9 +425,8 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
           <div class="bar-l"><span>LTV {{ pct(est.ltv, 1) }}</span><span>liquidation {{ pct(liqLtv, 0) }}</span></div>
         </div>
         <div class="rows last">
-          <div class="n-kv"><span class="k">Swap USDC → USDY</span><span class="v">{{ amt(est.swap, 2) }} USDC</span></div>
           <div v-if="feeBps" class="n-kv"><span class="k">Nysa fee ({{ feeBps / 100 }}% of swap)</span><span class="v">{{ quoted && preview.feeTotalUsd != null ? usdFull(preview.feeTotalUsd) : `≈ ${usdFull(est.swap * feeBps / 10000)}` }}</span></div>
-          <div v-else class="n-kv"><span class="k">Fees</span><span class="v">0% fees taken by Nysa</span></div>
+          <p v-else class="fee-note">Nysa charges 0% fees. Standard slippage and routing fees apply.</p>
           <div v-if="quoted && preview.knownCostsTotalUsd != null" class="n-kv"><span class="k">Borrow and flash loan fees</span><span class="v">{{ usdFull(Math.max(0, preview.knownCostsTotalUsd - (preview.feeTotalUsd ?? 0))) }}</span></div>
         </div>
         <details class="more">
@@ -538,6 +537,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .pos-stats .n-chip { vertical-align: middle; margin-left: 6px; }
 .close { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 18px; }
 .close .why { margin: 0; text-align: left; }
+.fee-note { margin: 0; padding: 6px 0; color: var(--n-text-3); font-size: 12px; font-weight: 300; }
 .close .n-btn-grad:disabled { opacity: .35; cursor: not-allowed; transform: none; box-shadow: none; }
 .mode-banner { margin-top: 22px; }
 .position.picked { border-color: var(--n-pink); }
