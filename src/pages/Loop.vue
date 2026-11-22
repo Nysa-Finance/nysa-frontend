@@ -326,15 +326,14 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
       <div v-if="!positions.length" class="n-table"><div class="n-empty">No open loops yet. <button class="link" @click="tab = 'loops'">Explore loops</button></div></div>
       <section v-for="position in positions" :key="position.id" class="n-panel position" :class="{ picked: route.query.position === position.id || highlight === position.id }">
         <div class="panel-h">
-          <h2>USDY Loop</h2>
-          <span class="pair"><TokenIcon :token="usdy" size="sm" />USDY / <TokenIcon :token="usdc" size="sm" />USDC <span v-if="Number.isFinite(positionView(position).hf)" class="n-chip" :class="health(positionView(position).hf)[0]">{{ health(positionView(position).hf)[1] }}</span></span>
+          <span class="pair"><TokenIcon :token="usdy" size="sm" />USDY / <TokenIcon :token="usdc" size="sm" />USDC</span>
         </div>
         <div class="n-stats pos-stats">
           <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(positionView(position).net) }}</div></div>
           <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ pct(positionView(position).netApy) }}</div></div>
           <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ positionView(position).leverage ? lev(positionView(position).leverage) : '—' }}</div></div>
           <div class="n-stat"><div class="k">Liquidation price</div><div class="v">{{ positionView(position).liqPrice ? `$${positionView(position).liqPrice.toFixed(4)}` : '—' }}</div></div>
-          <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(positionView(position).hf) }}</div></div>
+          <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(positionView(position).hf) }} <span v-if="Number.isFinite(positionView(position).hf)" class="n-chip" :class="health(positionView(position).hf)[0]">{{ health(positionView(position).hf)[1] }}</span></div></div>
         </div>
         <div class="close">
           <button class="n-btn-grad" :disabled="acting || !positionView(position).readiness?.executionEnabled" @click="closeLoop(position)">{{ acting ? 'Preparing…' : 'Close loop' }}</button>
@@ -536,6 +535,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .pos-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .pos-stats .n-stat { padding: 18px 20px; }
 .pos-stats .n-stat .v { font-size: 22px; }
+.pos-stats .n-chip { vertical-align: middle; margin-left: 6px; }
 .close { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 18px; }
 .close .why { margin: 0; text-align: left; }
 .close .n-btn-grad:disabled { opacity: .35; cursor: not-allowed; transform: none; box-shadow: none; }
