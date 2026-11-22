@@ -9,7 +9,7 @@ import {
   ObligationTypeTag,
 } from '@kamino-finance/klend-sdk'
 import { DEFAULT_LOOP_LIMITS, loopExposure, projectedLtvLimitPct } from '../src/loop-policy.js'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, TOKENS, loopByMarket } from '../src/config.js'
 import { parseBaseUnits } from '../src/swap-fees.js'
 import { buildSwap, configuredFeeAccountForMint, FEE_BPS } from './swap.js'
 import { rpc } from './rpc.js'
@@ -224,8 +224,8 @@ export function createLoopAcknowledgementKey({ strategy, fundingAmount, leverage
   const fundingBaseUnits = parseBaseUnits(String(fundingAmount), TOKENS['svm-usdc'].decimals).toString()
   const signedPreview = {
     policyVersion,
-    marketId: strategy.id ?? 'sol-usdy-usdc',
-    fundingTokenId: 'svm-usdy',
+    marketId: strategy.id,
+    fundingTokenId: loopByMarket(strategy.id)?.collateral,
     fundingAmountBaseUnits: fundingBaseUnits,
     selectedLeverage: String(leverage),
     rateAssumptions: strategy.carry.assumptions ?? null,
@@ -532,7 +532,7 @@ export function buildLoopPreview({
       && unavailableReasons.length > 0
       && unavailableReasons.every((item) => item?.code === 'carry-acknowledgement-required'))
   for (const violation of violations) unavailableReasons.push({ code: violation, message: 'The preview cannot confirm that this request is within the current loop risk limits.' })
-  if (fees.length !== 1) unavailableReasons.push({ code: 'swap-quotes-unavailable', message: 'The borrowed-USDC-to-USDY loop swap needs a fee-aware provider quote.' })
+  if (fees.length !== 1) unavailableReasons.push({ code: 'swap-quotes-unavailable', message: 'The loop swap needs a fee-aware provider quote.' })
   const preview = {
     available: strategyExecutionEligible && violations.length === 0 && fees.length === 1,
     executionEnabled: false,
@@ -744,6 +744,7 @@ function mergeApplicationParts({ routes, instructionGroups, lookupTables = [], s
 export async function buildAtomicMultiplyOpenApplication({
   wallet,
   sdkInputs,
+  mints, // { collateral, debt }
   callbacks,
   validateRoute = validateProviderSwapInstructions,
   builder = getDepositWithLeverageIxs,
@@ -757,14 +758,14 @@ export async function buildAtomicMultiplyOpenApplication({
   const leverage = leverageTransactions[0]
   const leverageInputBaseUnits = leverage?.swapInputs?.inputAmountLamports?.toString() ?? null
   const capturedRoutes = typeof callbacks.composedQuotes === 'function' ? callbacks.composedQuotes() : []
-  const composedLeverageRoute = capturedRoutes.filter((candidate) => candidate.inputMint === TOKENS['svm-usdc'].mint
-    && candidate.outputMint === TOKENS['svm-usdy'].mint
+  const composedLeverageRoute = capturedRoutes.filter((candidate) => candidate.inputMint === mints.debt
+    && candidate.outputMint === mints.collateral
     && (leverageInputBaseUnits == null || candidate.inputAmountBaseUnits === leverageInputBaseUnits)).at(-1)
   if (typeof callbacks.composedQuotes === 'function' && !composedLeverageRoute) {
     throw new LoopPreviewError('The exact fee-aware leverage route composed by Kamino could not be identified.')
   }
   const route = await assertComposableFeeRoute(composedLeverageRoute ?? leverage?.quote,
-    TOKENS['svm-usdc'].mint, TOKENS['svm-usdy'].mint, {
+    mints.debt, mints.collateral, {
       wallet, validateRoute, authorizeRoute: callbacks.authorizeComposedRoute, now: Math.max(now, Date.now()),
     })
   const instructions = composeAtomicOpenInstructions([], leverage.ixs ?? [])
@@ -790,6 +791,7 @@ export async function buildAtomicMultiplyOpenApplication({
 
 export async function buildAtomicMultiplyFullCloseApplication({
   sdkInputs,
+  mints, // { collateral, debt }
   callbacks,
   wallet,
   validateRoute = validateProviderSwapInstructions,
@@ -804,14 +806,14 @@ export async function buildAtomicMultiplyFullCloseApplication({
   const leverage = leverageTransactions[0]
   const leverageInputBaseUnits = leverage?.swapInputs?.inputAmountLamports?.toString() ?? null
   const capturedRoutes = typeof callbacks.composedQuotes === 'function' ? callbacks.composedQuotes() : []
-  const composedCloseRoute = capturedRoutes.filter((candidate) => candidate.inputMint === TOKENS['svm-usdy'].mint
-    && candidate.outputMint === TOKENS['svm-usdc'].mint
+  const composedCloseRoute = capturedRoutes.filter((candidate) => candidate.inputMint === mints.collateral
+    && candidate.outputMint === mints.debt
     && (leverageInputBaseUnits == null || candidate.inputAmountBaseUnits === leverageInputBaseUnits)).at(-1)
   if (typeof callbacks.composedQuotes === 'function' && !composedCloseRoute) {
     throw new LoopPreviewError('The exact fee-aware close route composed by Kamino could not be identified.')
   }
   const route = await assertComposableFeeRoute(composedCloseRoute ?? leverage?.quote,
-    TOKENS['svm-usdy'].mint, TOKENS['svm-usdc'].mint, {
+    mints.collateral, mints.debt, {
     wallet: wallet ?? String(sdkInputs.owner?.address ?? sdkInputs.owner ?? ''), validateRoute, now: Math.max(now, Date.now()),
     authorizeRoute: callbacks.authorizeComposedRoute,
   })
@@ -871,13 +873,14 @@ export function verifyAtomicLoopFeeDeltas(feeEvents, tokenDeltas) {
   })
 }
 
-function currentUsdYUsdcContext(wallet) {
+function loopContext(wallet, marketId) {
   const owner = address(wallet)
-  const marketConfig = LIVE.find((market) => market.id === 'sol-usdy-usdc')
-  if (!marketConfig) throw new LoopPreviewError('The USDY/USDC Multiply market is not configured.')
+  const loop = loopByMarket(marketId)
+  const marketConfig = loop && LIVE.find((market) => market.id === loop.market)
+  if (!marketConfig) throw new LoopPreviewError('This loop market is not configured.')
   const { market, now: currentLedgerInstant } = getLive(marketConfig)
-  const collateral = TOKENS['svm-usdy']
-  const liability = TOKENS['svm-usdc']
+  const collateral = TOKENS[loop.collateral]
+  const liability = TOKENS[loop.debt]
   const collateralReserve = reserveOf(market, collateral)
   const liabilityReserve = reserveOf(market, liability)
   return { owner, marketConfig, market, currentLedgerInstant, collateral, liability, collateralReserve, liabilityReserve }
@@ -903,19 +906,19 @@ export async function buildLoopMetadataSetupBundle({ kaminoMarket, owner, payer 
   return { required: true, metadataAddress: String(metadataAddress), ixs: setupBundle.ixs }
 }
 
-export async function loopMetadataStatus({ wallet } = {}) {
+export async function loopMetadataStatus({ wallet, market } = {}) {
   if (typeof wallet !== 'string' || !wallet) throw new LoopPreviewError('Wallet address is required for Kamino metadata status.')
   await refreshMarketForExecution()
-  const fresh = currentUsdYUsdcContext(wallet)
+  const fresh = loopContext(wallet, market)
   const [metadataAddress, metadata] = await fresh.market.getUserMetadata(fresh.owner)
   if (metadata && String(metadata.owner) !== wallet) throw new LoopPreviewError('Kamino UserMetadata owner does not match this wallet.')
   return { required: !metadata, metadataAddress: String(metadataAddress) }
 }
 
-export async function buildLoopMetadataSetupApplication({ wallet } = {}) {
+export async function buildLoopMetadataSetupApplication({ wallet, market } = {}) {
   if (typeof wallet !== 'string' || !wallet) throw new LoopPreviewError('Wallet address is required for Kamino metadata setup.')
   await refreshMarketForExecution()
-  const fresh = currentUsdYUsdcContext(wallet)
+  const fresh = loopContext(wallet, market)
   const owner = createNoopSigner(fresh.owner)
   const [, existing] = await fresh.market.getUserMetadata(fresh.owner)
   if (existing && String(existing.owner) !== wallet) throw new LoopPreviewError('Kamino UserMetadata owner does not match this wallet.')
@@ -953,7 +956,7 @@ export async function buildLoopOpenApplication({
   flashBorrowType = 'coll',
   validateRoute = validateProviderSwapInstructions,
   refreshMarket = refreshMarketForExecution,
-  contextReader = currentUsdYUsdcContext,
+  contextReader = loopContext,
   applicationBuilder = buildAtomicMultiplyOpenApplication,
 } = {}) {
   const application = preview?.applicationContext
@@ -962,7 +965,7 @@ export async function buildLoopOpenApplication({
     throw new LoopPreviewError('The exact server-side loop preview is unavailable; build a fresh preview.')
   }
   await refreshMarket()
-  const fresh = contextReader(wallet)
+  const fresh = contextReader(wallet, preview.marketId)
   const freshRisk = assertCurrentLoopMarketRisk(preview.sdk?.marketRisk, fresh)
   const [, userMetadata] = await fresh.market.getUserMetadata(fresh.owner)
   if (!userMetadata || String(userMetadata.owner) !== wallet) {
@@ -980,14 +983,14 @@ export async function buildLoopOpenApplication({
     }
   }
   const multiplyObligationAddress = await multiplyType.toPda(address(fresh.marketConfig.kaminoMarket), fresh.owner)
-  // The loop is funded in USDC: Kamino swaps it, with the borrowed USDC, into the USDY collateral.
+  // The loop is funded in the debt token: Kamino swaps it, with the borrowed debt, into the collateral.
   const fundingBaseUnits = parseBaseUnits(String(amount), fresh.liability.decimals).toString()
   if (fundingBaseUnits !== application.fundingBaseUnits) {
-    throw new LoopPreviewError('USDC funding amount changed after preview; build a fresh preview before opening.')
+    throw new LoopPreviewError('Funding amount changed after preview; build a fresh preview before opening.')
   }
   const funding = new Decimal(fundingBaseUnits).div(new Decimal(10).pow(fresh.liability.decimals))
-  const collateralPrice = positiveDecimal(freshRisk.collateralPriceUsd, 'USDY oracle price')
-  const liabilityPrice = positiveDecimal(freshRisk.liabilityPriceUsd, 'USDC oracle price')
+  const collateralPrice = positiveDecimal(freshRisk.collateralPriceUsd, 'collateral oracle price')
+  const liabilityPrice = positiveDecimal(freshRisk.liabilityPriceUsd, 'debt oracle price')
   const sdkInputs = {
     owner: createNoopSigner(fresh.owner),
     kaminoMarket: fresh.market,
@@ -1016,6 +1019,7 @@ export async function buildLoopOpenApplication({
     built = await applicationBuilder({
       wallet,
       sdkInputs,
+      mints: { collateral: fresh.collateral.mint, debt: fresh.liability.mint },
       callbacks: application.callbacks,
       validateRoute,
       now,
@@ -1065,6 +1069,7 @@ export async function buildLoopOpenApplication({
     simulationAccounts: [...built.simulationAccounts, String(multiplyObligationAddress)],
     simulationContext: {
       kind: 'loop-open', wallet,
+      collateralMint: fresh.collateral.mint, debtMint: fresh.liability.mint,
       market: fresh.market,
       marketAddress: fresh.marketConfig.kaminoMarket,
       currentLedgerInstant: fresh.currentLedgerInstant,
@@ -1102,14 +1107,14 @@ export async function buildLoopCloseApplication({
   localForkRpcUrl,
   localRouteProgramVerifier,
   refreshMarket = refreshMarketForExecution,
-  contextReader = currentUsdYUsdcContext,
+  contextReader = loopContext,
   callbacks: suppliedCallbacks,
   applicationBuilder = buildAtomicMultiplyFullCloseApplication,
 } = {}) {
-  if (!position || position.wallet !== wallet || position.market?.id !== 'sol-usdy-usdc'
+  if (!position || position.wallet !== wallet || !loopByMarket(position.market?.id)
     || position.obligation?.type !== 'multiply') throw new LoopPreviewError('The selected Multiply position is not owned by this wallet.')
   await refreshMarket()
-  const fresh = contextReader(wallet)
+  const fresh = contextReader(wallet, position.market.id)
   const multiplyType = getObligationType(fresh.market, ObligationTypeTag.Multiply,
     some(fresh.collateralReserve.address), some(fresh.liabilityReserve.address))
   const obligationAddress = await multiplyType.toPda(address(fresh.marketConfig.kaminoMarket), fresh.owner)
@@ -1124,8 +1129,8 @@ export async function buildLoopCloseApplication({
   const deposited = new Decimal(String(depositedRaw)).div(String(fresh.collateralReserve.getMintFactor()))
   const borrowed = new Decimal(String(borrowedRaw)).div(String(fresh.liabilityReserve.getMintFactor()))
   if (!deposited.gt(0)) throw new LoopPreviewError('The selected Multiply obligation has no collateral to close.')
-  const collateralPrice = positiveDecimal(fresh.collateralReserve.getOracleMarketPrice(), 'USDY oracle price')
-  const liabilityPrice = positiveDecimal(fresh.liabilityReserve.getOracleMarketPrice(), 'USDC oracle price')
+  const collateralPrice = positiveDecimal(fresh.collateralReserve.getOracleMarketPrice(), 'collateral oracle price')
+  const liabilityPrice = positiveDecimal(fresh.liabilityReserve.getOracleMarketPrice(), 'debt oracle price')
   const callbacks = suppliedCallbacks ?? createKaminoSwapCallbacks({ wallet, validateRoute, localForkSimulation, localForkRpcUrl, localRouteProgramVerifier })
   const sdkInputs = {
     owner: createNoopSigner(fresh.owner),
@@ -1139,7 +1144,7 @@ export async function buildLoopCloseApplication({
     priceCollToDebt: collateralPrice.div(liabilityPrice),
     slippagePct: sdkSlippagePctFromBps(50),
     isClosingPosition: true,
-    selectedTokenMint: address(fresh.liability.mint), // everything is swapped to USDC: the debt is repaid, the rest returns as USDC
+    selectedTokenMint: address(fresh.liability.mint), // everything is swapped to the debt token: the debt is repaid, the rest returns to the wallet
     budgetAndPriorityFeeIxs: [],
     scopeRefreshIx: [],
     quoteBufferBps: new Decimal(0),
@@ -1152,7 +1157,7 @@ export async function buildLoopCloseApplication({
   callbacks.setPricingQuote?.(null)
   callbacks.beginComposition?.()
   let built
-  try { built = await applicationBuilder({ sdkInputs, callbacks, wallet, validateRoute }) }
+  try { built = await applicationBuilder({ sdkInputs, mints: { collateral: fresh.collateral.mint, debt: fresh.liability.mint }, callbacks, wallet, validateRoute }) }
   finally { callbacks.sealQuotes?.() }
   const [walletUsdc, walletUsdy] = await Promise.all([
     ataOf(fresh.owner, address(fresh.liability.mint), fresh.liabilityReserve.getLiquidityTokenProgram()),
@@ -1167,6 +1172,7 @@ export async function buildLoopCloseApplication({
     simulationAccounts: [...built.simulationAccounts, String(obligationAddress)],
     simulationContext: {
       kind: 'loop-close', wallet,
+      collateralMint: fresh.collateral.mint, debtMint: fresh.liability.mint,
       market: fresh.market,
       marketAddress: fresh.marketConfig.kaminoMarket,
       currentLedgerInstant: fresh.currentLedgerInstant,
@@ -1247,21 +1253,19 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
   const feeDeltas = simulation.tokenDeltas.filter((delta) => feeAccounts.has(`${delta.account}:${delta.mint}`))
   try { verifyAtomicLoopFeeDeltas(built.feeEvents, feeDeltas) } catch { return false }
   if (kind === 'loop-open') {
-    const usdc = TOKENS['svm-usdc']
-    const usdy = TOKENS['svm-usdy']
-    const fundingAccount = built.ownerTokenAccounts.find((item) => item.mint === usdc.mint)
-    const collateralAccount = built.ownerTokenAccounts.find((item) => item.mint === usdy.mint)
+    const fundingAccount = built.ownerTokenAccounts.find((item) => item.mint === context.debtMint)
+    const collateralAccount = built.ownerTokenAccounts.find((item) => item.mint === context.collateralMint)
     // An unchanged account has no delta entry: read it as 0.
     const deltaOf = (account, mint) => simulation.tokenDeltas.find((item) => item.account === account?.account && item.mint === mint)?.deltaBaseUnits ?? '0'
-    const fundingDelta = deltaOf(fundingAccount, usdc.mint)
-    const collateralDelta = deltaOf(collateralAccount, usdy.mint)
+    const fundingDelta = deltaOf(fundingAccount, context.debtMint)
+    const collateralDelta = deltaOf(collateralAccount, context.collateralMint)
     const authorized = context.authorizedPosition
     if (!authorized || !fundingAccount || !collateralAccount
       || !/^-?\d+$/.test(String(fundingDelta)) || !/^-?\d+$/.test(String(collateralDelta))) return false
     try {
       const fundingBaseUnits = BigInt(context.fundingBaseUnits)
       const fundingChange = BigInt(fundingDelta)
-      // The wallet pays at most the approved USDC; the swap can leave a small USDY surplus in the wallet, never take any.
+      // The wallet pays at most the approved funding; the swap can leave a small collateral surplus in the wallet, never take any.
       if (fundingBaseUnits <= 0n || fundingChange > 0n || -fundingChange > fundingBaseUnits || BigInt(collateralDelta) < 0n) return false
     } catch { return false }
     try {
@@ -1295,7 +1299,6 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
   }
   if (kind === 'loop-close') {
     const ownerDeltas = simulation.tokenDeltas.filter((item) => built.ownerTokenAccounts.some((account) => account.account === item.account && account.mint === item.mint))
-    const usdc = TOKENS['svm-usdc']
     const balances = simulation.obligationBalances
     const exactZero = (value) => typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value) && !/[1-9]/.test(value)
     const allCollateralZero = Array.isArray(balances?.deposits) && balances.deposits.every((item) =>
@@ -1306,20 +1309,22 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
       && new Decimal(String(simulation.positionCollateralAmount ?? '-1')).isZero()
       && allCollateralZero && allDebtZero
       && ownerDeltas.every((item) => /^-?\d+$/.test(item.deltaBaseUnits) && BigInt(item.deltaBaseUnits) >= 0n)
-      && ownerDeltas.some((item) => item.mint === usdc.mint && BigInt(item.deltaBaseUnits) > 0n)
+      && ownerDeltas.some((item) => item.mint === context.debtMint && BigInt(item.deltaBaseUnits) > 0n)
   }
   return false
 }
 
 // Quote only: never returns instructions, never simulates an economic transaction, never offers a signer path.
-export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage, snapshot, strategy, now = Date.now(), signal, onApplicationContext,
+export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount, leverage, snapshot, strategy, now = Date.now(), signal, onApplicationContext,
   localForkSimulation = false, localForkRpcUrl, localRouteProgramVerifier } = {}) {
-  const collateral = TOKENS['svm-usdy']
-  const liability = TOKENS['svm-usdc']
+  const loop = loopByMarket(marketId)
+  if (!loop) throw new LoopPreviewError('Unknown loop strategy.')
+  const collateral = TOKENS[loop.collateral]
+  const liability = TOKENS[loop.debt]
   const fundingBaseUnits = parseBaseUnits(String(fundingAmount), liability.decimals).toString()
   const feeAccount = configuredFeeAccountForMint(collateral.mint)
   const strategyView = strategy ?? { enabled: false, unavailableReasons: [], carry: { estimatedCarryPct: null } }
-  const reserves = snapshot?.reserves?.['sol-usdy-usdc'] ?? {}
+  const reserves = snapshot?.reserves?.[marketId] ?? {}
   const snapshotPrice = (token) => Number(reserves[token.token_id]?.price) > 0 ? Number(reserves[token.token_id].price) : token.price
   const limits = {
     fundingPriceUsd: snapshotPrice(liability),
@@ -1330,7 +1335,7 @@ export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage
   if (!feeAccount) return {
     ...buildLoopPreview({ fundingAmount, leverage, strategy: strategyView, ...limits }),
     quoteStatus: 'fee-account-unavailable',
-    quoteError: 'The USDY fee account is not configured.',
+    quoteError: `The ${collateral.name} fee account is not configured.`,
   }
   if (!rpc) return {
     ...buildLoopPreview({ fundingAmount, leverage, strategy: strategyView, ...limits }),
@@ -1338,7 +1343,7 @@ export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage
     quoteError: 'Backend RPC is not configured.',
   }
 
-  const live = getLive({ id: 'sol-usdy-usdc' })
+  const live = getLive({ id: marketId })
   const market = live.market
   const collReserve = reserveOf(market, collateral)
   const debtReserve = reserveOf(market, liability)
@@ -1436,7 +1441,7 @@ export async function buildReadOnlyLoopPreview({ wallet, fundingAmount, leverage
   if (typeof onApplicationContext === 'function' && wallet) {
     await onApplicationContext({
       wallet,
-      marketId: 'sol-usdy-usdc',
+      marketId,
       fundingAmount: String(fundingAmount),
       fundingBaseUnits,
       leverage: Number(leverage),

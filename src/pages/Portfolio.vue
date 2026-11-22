@@ -14,11 +14,10 @@ const router = useRouter()
 const view = ref('deposits')
 const on = computed(() => !!state.address)
 const loopPositions = computed(() => state.loopPositions ?? [])
-const LOOP_RESERVES = computed(() => state.reserves['sol-usdy-usdc'] ?? {}) // the loop runs on this market only
 const loopTotals = computed(() => loopPortfolioTotals(
   loopPositions.value,
-  Object.fromEntries(Object.keys(LOOP_RESERVES.value).map((id) => [id, priceOf(id)])),
-  LOOP_RESERVES.value,
+  Object.fromEntries(loopPositions.value.flatMap((p) => [p.collateral.tokenId, p.liability.tokenId]).map((id) => [id, priceOf(id)])),
+  state.reserves,
 ))
 
 const vaultDeposits = computed(() =>

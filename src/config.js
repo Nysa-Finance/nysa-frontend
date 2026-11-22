@@ -10,9 +10,6 @@ export const TOS_URL = 'https://nysa-finance.gitbook.io/nysa/protocol-info/term-
 export const WALLETCONNECT_PROJECT_ID = 'fe76c05c2791f7d71839bb257f55afb5'
 // off for everyone until it is released
 export const LOOP_ENABLED = false
-// Nysa's frozen lookup table of the accounts every loop uses (scripts/create-loop-lut.js): without it a loop open is
-// over Solana's transaction size limit.
-export const LOOP_LOOKUP_TABLE = 'BUu4Txt3UbRAEF5rFu3x1VMTUHuJr4ChAoGpWMwcwVVx'
 export const explorer = (addr) => `https://solscan.io/account/${addr}`
 export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 
@@ -52,6 +49,24 @@ export const LIVE = [
     dueDiligence,
   },
 ]
+
+// One entry per loop (Kamino Multiply): USDC funds it and buys `collateral`, `debt` is borrowed against it.
+// Adding a loop: its market in LIVE (the server reads its reserves), the tokens in TOKENS, a frozen lookup table from
+// scripts/create-loop-lut.js (without it an open is over Solana's transaction size limit), then the mainnet-fork
+// check of open and close. A route through a DEX not in server/program-policy.js is refused.
+// ponytail: one loop per market, the API names a loop by its market; key it by loop id when a market needs two.
+export const LOOPS = [
+  {
+    id: 'usdy', market: 'sol-usdy-usdc', collateral: 'svm-usdy', debt: 'svm-usdc',
+    maxLeverage: 9, // Kamino lends up to 90% LTV on USDY (10x); 9x leaves room for swap costs
+    lookupTable: 'BUu4Txt3UbRAEF5rFu3x1VMTUHuJr4ChAoGpWMwcwVVx',
+    priceYield: true, // earns through its price rising, not Kamino's supply APR (server/main.js)
+    fullName: 'Ondo US Dollar Yield',
+    blurb: "USDY is Ondo's tokenized note backed by short-term US Treasuries: its price rises as it earns.",
+  },
+]
+export const loopById = (id) => LOOPS.find((l) => l.id === id)
+export const loopByMarket = (marketId) => LOOPS.find((l) => l.market === marketId)
 
 // Kamino markets a vault may allocate to that Nysa doesn't curate (no page here), for the vault's exposure.
 export const OTHER_MARKETS = [

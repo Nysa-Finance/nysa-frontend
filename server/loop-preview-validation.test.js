@@ -37,7 +37,7 @@ const marketSnapshot = {
     'svm-usdc': { price: 1, maxLtv: 90, liqLtv: 95, oracleTs: 1_798_000_000, maxAge: 60 },
   } },
 }
-const snapshotRisk = loopMarketRiskFromSnapshot(marketSnapshot)
+const snapshotRisk = loopMarketRiskFromSnapshot(marketSnapshot, 'sol-usdy-usdc')
 assert.equal(loopMarketRiskStillCurrent(marketRisk, snapshotRisk, marketSnapshot.blockTime), true,
   'fresh snapshot oracle values and governance limits remain bound to the preview')
 assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.10' }, marketSnapshot.blockTime), false,

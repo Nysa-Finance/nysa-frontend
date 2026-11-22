@@ -1,8 +1,9 @@
-// One-off: creates Nysa's loop address lookup table, then freezes it so nobody (its creator included) can change it.
-// Without it a loop open is 1,432 bytes, over Solana's 1,232-byte limit. It holds the accounts every loop open and
-// close uses whoever the wallet is (the list below, read off the transactions on a mainnet fork); wallet accounts and
-// the swap's tick arrays stay out. Put the printed address in src/config.js (LOOP_LOOKUP_TABLE).
-// Run: node scripts/create-loop-lut.js --rpc=<url> --keypair=<funded keypair JSON> [--dry-run]
+// One-off per loop: creates its address lookup table, then freezes it so nobody (its creator included) can change it.
+// Without it a loop open is 1,432 bytes, over Solana's 1,232-byte limit. It holds the accounts every open and close of
+// that loop uses whoever the wallet is (COMMON plus the loop's list below, read off its transactions on a mainnet
+// fork); wallet accounts and the swap's tick arrays stay out. Put the printed address in the loop's `lookupTable`
+// (LOOPS in src/config.js).
+// Run: node scripts/create-loop-lut.js --loop=<id> --rpc=<url> --keypair=<funded keypair JSON> [--dry-run]
 // The keypair pays the rent (about 0.007 SOL, kept by the frozen table) and fees; it holds no other power afterwards.
 import { readFile } from 'node:fs/promises'
 import {
@@ -14,7 +15,7 @@ import {
   fetchAddressLookupTable, getCreateLookupTableInstructionAsync, getExtendLookupTableInstruction, getFreezeLookupTableInstruction,
 } from '@solana-program/address-lookup-table'
 
-const LOOP_LUT_ADDRESSES = [
+const COMMON = [
   // Programs and sysvars
   'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD', // Kamino Lend
   'FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr', // Kamino Farms
@@ -27,6 +28,8 @@ const LOOP_LUT_ADDRESSES = [
   '11111111111111111111111111111111', // System
   'Sysvar1nstructions1111111111111111111111111',
   'SysvarRent111111111111111111111111111111111',
+]
+const LOOP_ACCOUNTS = { usdy: [
   // Mints
   'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6', // USDY
   'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
@@ -47,7 +50,7 @@ const LOOP_LUT_ADDRESSES = [
   'AGXrswVDRoUf62UX9voTXv6TCGw6fBUEwDpyUd9YdZfD',
   '7jLEfNKea3UUrRUbxVMjZQc8vLohAUaZ7vo3akpnWW8V',
   '2vKEGgEzrDa3zGAdszdwmpygEYSTJvYVhPpp6WBY55eS',
-]
+] }
 
 async function send(rpc, signer, instructions) {
   const { value: blockhash } = await rpc.getLatestBlockhash({ commitment: 'confirmed' }).send()
@@ -71,6 +74,8 @@ async function send(rpc, signer, instructions) {
 
 async function main() {
   const args = Object.fromEntries(process.argv.slice(2).map((a) => a.replace(/^--/, '').split('=')).map(([k, ...v]) => [k, v.join('=') || true]))
+  if (!LOOP_ACCOUNTS[args.loop]) throw new Error(`Use --loop=<${Object.keys(LOOP_ACCOUNTS).join('|')}>.`)
+  const LOOP_LUT_ADDRESSES = [...COMMON, ...LOOP_ACCOUNTS[args.loop]]
   if (args['dry-run']) { console.log(LOOP_LUT_ADDRESSES.join('\n')); return }
   if (!args.rpc || !args.keypair) throw new Error('Use --rpc=<url> --keypair=<funded keypair JSON> (or --dry-run).')
   const rpc = createSolanaRpc(args.rpc)
@@ -89,7 +94,7 @@ async function main() {
   const frozen = data.authority?.__option === 'None'
   const complete = LOOP_LUT_ADDRESSES.every((a) => data.addresses.includes(a))
   if (!frozen || !complete) throw new Error(`Table ${table} is not as expected (frozen ${frozen}, complete ${complete}).`)
-  console.log(`LOOP_LOOKUP_TABLE=${table} (${data.addresses.length} addresses, frozen)`)
+  console.log(`lookupTable: '${table}' (${data.addresses.length} addresses, frozen)`)
 }
 
 main().catch((error) => { console.error(error.message); process.exit(1) })

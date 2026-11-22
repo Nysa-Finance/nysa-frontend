@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { VanillaObligation, ObligationTypeTag, PROGRAM_ID, getObligationType, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress, some } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, TOKENS, VAULTS, tokensOf } from '../src/config.js'
+import { LIVE, TOKENS, VAULTS, loopByMarket, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
 import { getLive, getVault, reserveOf, farms, num } from './market.js'
 import { LOOP_POSITION_MARKET_IDS } from './strategy.js'
@@ -22,9 +22,8 @@ export const obligationType = () => new VanillaObligation(PROGRAM_ID)
 export async function readWalletObligations({ wallet, marketConfig, market, vanillaObligationType = obligationType() } = {}) {
   if (typeof wallet !== 'string' || !wallet || !marketConfig || !market) throw new TypeError('Wallet, market configuration and market are required.')
   const owner = address(wallet)
-  const multiplyPairs = LOOP_POSITION_MARKET_IDS.includes(marketConfig.id)
-    ? marketConfig.pairs.filter((pair) => pair.collateral === 'svm-usdy' && pair.liability === 'svm-usdc')
-    : []
+  const loop = LOOP_POSITION_MARKET_IDS.includes(marketConfig.id) ? loopByMarket(marketConfig.id) : null
+  const multiplyPairs = loop ? marketConfig.pairs.filter((pair) => pair.collateral === loop.collateral && pair.liability === loop.debt) : []
   const loopPositionReadStatus = multiplyPairs.length ? { [marketConfig.id]: 'verified' } : {}
   const reads = await Promise.allSettled([
     market.getObligationByWallet(owner, vanillaObligationType),

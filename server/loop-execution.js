@@ -1,5 +1,6 @@
 import { getTransactionDecoder, isAddress } from '@solana/kit'
 import { createSwapIntentStore, TransactionIntentError } from './tx-intent.js'
+import { loopByMarket } from '../src/config.js'
 
 const MAX_TX_BYTES = 1232
 const ACTIONS = new Set(['loop-open', 'loop-close', 'loop-setup'])
@@ -83,7 +84,7 @@ export function createLoopExecutionService({
     const { kind, wallet, market } = body ?? {}
     if (!ACTIONS.has(kind)) invalid('Unsupported loop action.')
     if (typeof wallet !== 'string' || !isAddress(wallet)) invalid('Invalid wallet address.')
-    if (market !== 'sol-usdy-usdc') invalid('Unknown loop strategy.')
+    if (!loopByMarket(market)) invalid('Unknown loop strategy.')
     if (kind === 'loop-setup') return { kind, wallet, market, preview: null, position: null, previewAcknowledgementValid: false }
     let preview = null
     let position = null
@@ -135,6 +136,7 @@ export function createLoopExecutionService({
       instructions: built.instructions,
       lookupTables: built.lookupTables ?? [],
       built,
+      market: context.market,
     })
     if (typeof compiled?.tx !== 'string' || !(compiled.messageBytes instanceof Uint8Array)
       || !Number.isSafeInteger(compiled.size) || compiled.size <= 0 || compiled.size > MAX_TX_BYTES) {
@@ -190,7 +192,7 @@ export function createLoopExecutionService({
     const metadata = intent.metadata ?? {}
     if (!ACTIONS.has(metadata.kind)) throw new LoopExecutionError('Transaction intent is not authorized for a loop action.')
     if (metadata.kind === 'loop-setup') {
-      if (metadata.market !== 'sol-usdy-usdc' || await setupRequired({ wallet, market: metadata.market }) !== true) {
+      if (!loopByMarket(metadata.market) || await setupRequired({ wallet, market: metadata.market }) !== true) {
         throw new LoopExecutionError('Kamino metadata setup is no longer required; rebuild the setup action.', { status: 503 })
       }
       if (await authorizeSetup({ intent, wallet, market: metadata.market }) !== true) {

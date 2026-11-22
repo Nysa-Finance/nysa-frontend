@@ -396,6 +396,7 @@ const leverageApplicationRoute = {
   addressesByLookupTableAddress: { [routeLookupTable]: [wallet] },
 }
 const openApplication = await loop.buildAtomicMultiplyOpenApplication({
+  mints: { collateral: usdy, debt: usdc },
   wallet,
   sdkInputs: { ...openInput, owner: 'owner' },
   callbacks: compositionCallbacks,
@@ -432,6 +433,7 @@ const staleSdkQuote = await staleCompositionCallbacks.quoter({
 }, [])
 const exactCompositionNow = Date.now() + 1000
 const composedAmountApplication = await loop.buildAtomicMultiplyOpenApplication({
+  mints: { collateral: usdy, debt: usdc },
   wallet, sdkInputs: { ...openInput, owner: 'owner' }, callbacks: staleCompositionCallbacks,
   validateRoute: async () => {}, now: exactCompositionNow,
   builder: async () => {
@@ -471,6 +473,7 @@ const sdkFlashRepay = (borrowInstructionIndex) => flashRepayReserveLiquidity({ l
 }, [], flashProgram)
 const sdkEconomicInstruction = { ...instruction, programAddress: address('SysvarC1ock11111111111111111111111111111111') }
 const setupComposition = await loop.buildAtomicMultiplyOpenApplication({
+  mints: { collateral: usdy, debt: usdc },
   wallet, sdkInputs: { ...openInput, owner: 'owner' }, callbacks: compositionCallbacks,
   validateRoute: async () => {},
   builder: async () => [{
@@ -487,11 +490,13 @@ const composedRepay = setupComposition.instructions.find((ix) => Buffer.from(ix.
 assert.equal(composedBorrowIndex, 2, 'SDK compute-budget and token-account setup precede the flash borrow')
 assert.equal(composedRepay.data[16], composedBorrowIndex, 'SDK flash repay borrowInstructionIndex remains valid after instruction normalization')
 await assert.rejects(loop.buildAtomicMultiplyOpenApplication({
+  mints: { collateral: usdy, debt: usdc },
   wallet, sdkInputs: openInput, callbacks: compositionCallbacks,
   validateRoute: async () => {},
   builder: async () => [{ ixs: [instruction] }, { ixs: [instruction] }],
 }), /one Kamino SDK transaction|single atomic/i)
 const closeApplication = await loop.buildAtomicMultiplyFullCloseApplication({
+  mints: { collateral: usdy, debt: usdc },
   sdkInputs: { owner: 'owner', obligation: {}, deposited: new Decimal(135), borrowed: new Decimal(60), isClosingPosition: true },
   callbacks: compositionCallbacks,
   validateRoute: async () => {},
@@ -570,7 +575,7 @@ const simulationBuilt = {
     { account: 'owner-usdy', mint: usdy },
   ],
   simulationContext: {
-    kind: 'loop-open', wallet,
+    kind: 'loop-open', wallet, collateralMint: usdy, debtMint: usdc,
     collateralMintFactor: '1000000', liabilityMintFactor: '1000000',
     fundingBaseUnits: '100000000',
     authorizedPosition: {
@@ -641,7 +646,7 @@ assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: si
 
 const simulationCloseBuilt = {
   ...simulationBuilt,
-  simulationContext: { kind: 'loop-close', wallet },
+  simulationContext: { kind: 'loop-close', wallet, collateralMint: usdy, debtMint: usdc },
 }
 const validCloseSimulation = {
   ok: true, positionOwner: wallet, remainingDebtBaseUnits: '0', positionCollateralAmount: '0',
