@@ -17,6 +17,8 @@ export const txUrl = (sig) => `https://solscan.io/tx/${sig}`
 export const TOKENS = {
   'svm-usdy': { token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.svg', decimals: 6, price: 1.09, rwa: true, mint: 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6' },
   'svm-otfy': { token_id: 'svm-otfy', name: 'oTFY', icon: '/tokens/otfy.png', decimals: 9, price: 1.03, rwa: true, mint: 'BwB3tNH92jKw6naNGDYDbDwRo8bvYxZVvZjRZRcoWR2h' },
+  'svm-nopal': { token_id: 'svm-nopal', name: 'nOPAL', icon: '/tokens/nopal.svg', decimals: 6, price: 1.12, rwa: true, mint: 'GArhnnDj3GYhmQeApKVXaRv4TQFwhPcs3SNF6FXsTeXq' },
+  'svm-susdai': { token_id: 'svm-susdai', name: 'sUSDai', icon: '/tokens/susdai.svg', decimals: 6, price: 1.13, rwa: true, mint: 'sUSDai6Y3GxysDEtA9BVcEFTaog6UZpYUVxJiMhAKYE' },
   'svm-usdc': { token_id: 'svm-usdc', name: 'USDC', icon: '/tokens/usdc.webp', decimals: 6, price: 1, mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
 }
 
@@ -69,6 +71,8 @@ export const loopByMarket = (marketId) => LOOPS.find((l) => l.market === marketI
 // Kamino markets a vault may allocate to that Nysa doesn't curate (no page here), for the vault's exposure.
 export const OTHER_MARKETS = [
   { kaminoMarket: '3hd61ZpG35tBwrmDvdmYVJoazC2mjJxHb6rEYEWs4QhH', name: 'Obligate Market', collateral: ['svm-otfy'] },
+  { kaminoMarket: 'HMNm3ZrAvG4zKVv5zpMDA6DKduc612156RUsdAAZf4TC', name: 'Plume Vaults Market', collateral: ['svm-nopal'] },
+  { kaminoMarket: 'BVJ1FvFfYuLbGX4qDNezqU6z2N3p8M2XNeGzabm86BzE', name: 'sUSDai Market', collateral: ['svm-susdai'] },
 ]
 
 // Name, token, allocations and exposure are read on-chain (server/vault.js).
