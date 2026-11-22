@@ -373,7 +373,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         </div>
         <div class="n-quick">
           <button v-for="p in [25, 50, 75]" :key="p" :disabled="!state.address" @click="setPct(p)">{{ p }}%</button>
-          <button :disabled="!state.address" @click="setPct(100)">MAX</button>
+          <button :disabled="!state.address" @click="setPct(100)">Max</button>
         </div>
 
         <div class="n-label borrow-l">Borrow asset</div>
@@ -539,7 +539,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .close { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 18px; }
 .close .why { margin: 0; text-align: left; }
 .fee-note { margin: 0; padding: 6px 0; color: var(--n-text-3); font-size: 12px; font-weight: 300; }
-.close .n-btn-grad:disabled { opacity: .35; cursor: not-allowed; transform: none; box-shadow: none; }
+.close .n-btn-grad:disabled { opacity: .4; cursor: not-allowed; filter: none; box-shadow: none; }
 .mode-banner { margin-top: 22px; }
 .position.picked { border-color: var(--n-pink); }
 @media (prefers-reduced-motion: reduce) { .bar .mark { transition: none; } }

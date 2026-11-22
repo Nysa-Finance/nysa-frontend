@@ -163,7 +163,7 @@ async function submitRepay() {
       <div class="n-label">Amount</div>
       <input v-model="repayAmt" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
       <div class="n-quick" style="margin-bottom: 18px">
-        <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on || debt <= 0" @click="quickRepay(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
+        <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on || debt <= 0" @click="quickRepay(p)">{{ p === 100 ? 'Max' : p + '%' }}</button>
       </div>
       <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(num(repayAmt) * loanPrice) }}</span></div>
       <p v-if="repayAll && canRepay" class="n-note" style="margin-bottom: 16px">Repaying in full. The exact debt is settled on-chain so no dust is left behind.</p>

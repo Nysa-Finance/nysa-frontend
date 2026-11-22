@@ -80,7 +80,7 @@ async function submit() {
     <div class="n-label">Amount</div>
     <input v-model="amount" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
     <div class="n-quick" style="margin-bottom: 14px">
-      <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
+      <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'Max' : p + '%' }}</button>
     </div>
     <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(value) }}</span></div>
     <p v-if="withdrawAll && !warning" class="n-note" style="margin-bottom: 16px">Withdrawing in full. The exact balance is settled on-chain so no dust is left behind.</p>

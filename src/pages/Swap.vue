@@ -154,7 +154,7 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
       <div class="row small">
         <span>Available: {{ balanceOf(input) == null ? '-' : fmt(input, balanceOf(input)) }}</span>
         <span class="n-quick">
-          <button :disabled="busy || balanceOf(input) == null" @click="fill(2n)">Half</button>
+          <button :disabled="busy || balanceOf(input) == null" @click="fill(2n)">50%</button>
           <button :disabled="busy || balanceOf(input) == null" @click="fill(1n)">Max</button>
         </span>
       </div>

@@ -13,6 +13,6 @@
 .nf-title { font-weight: 600; font-size: 34px; margin-top: 8px; }
 .nf-title .serif { color: var(--m1); }
 .nf-sub { color: var(--n-text-3); font-size: 15px; margin-top: 12px; }
-.nf-btn { margin-top: 28px; font-weight: 600; font-size: 14px; color: #fff; background: var(--grad); padding: 13px 24px; border-radius: 999px; transition: transform .15s, box-shadow .2s; }
-.nf-btn:hover { transform: translateY(-1px); box-shadow: 0 12px 30px -8px #ec008c99; }
+.nf-btn { margin-top: 28px; font-weight: 600; font-size: 14px; color: #fff; background: var(--grad); padding: 13px 24px; border-radius: 999px; transition: filter .15s, box-shadow .2s; }
+.nf-btn:hover { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }
 </style>
