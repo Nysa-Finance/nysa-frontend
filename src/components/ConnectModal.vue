@@ -35,7 +35,6 @@ onUnmounted(() => removeEventListener('keydown', onKey))
         </button>
       </div>
       <p class="cm-sub">Connect a Solana wallet to continue.</p>
-      <div class="cm-tabs single"><button class="cm-tab on">Solana</button></div>
       <div class="cm-list">
         <button v-for="w in state.wallets" :key="w.name" class="cm-wallet" :disabled="!!busy" @click="connect(w)">
           <span v-if="w.name === MWA" class="cm-wallet-img cm-pair"><img src="/wallets/phantom.svg" alt="" /><img src="/wallets/solflare.svg" alt="" /></span>
@@ -70,9 +69,6 @@ onUnmounted(() => removeEventListener('keydown', onKey))
 .cm-x:hover { color: var(--ink); background: var(--paper-2); }
 .cm-x svg { width: 22px; height: 22px; }
 .cm-sub { color: var(--mute); font-size: 13.5px; margin: 8px 0 16px; }
-.cm-tabs { display: grid; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-2); margin-bottom: 14px; }
-.cm-tab { border-radius: 9px; padding: 9px 0; font-family: var(--display); font-weight: 600; font-size: 13.5px; color: var(--mute); }
-.cm-tab.on { background: #fff; color: var(--ink); box-shadow: 0 1px 3px #0a0a0a14; }
 .cm-list { display: flex; flex-direction: column; gap: 10px; }
 .cm-wallet { display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-2); font-family: var(--display); transition: border-color .15s, background .15s, transform .1s; }
 .cm-wallet:hover:not(:disabled) { border-color: var(--m1); background: #fff; transform: translateY(-1px); }

@@ -44,6 +44,7 @@ assert.deepEqual(selectedLeverage.carry.assumptions, {
   liabilityBorrowSource: 'Kamino reserve borrow APR',
   collateralSupplyAprPct: 4.5,
   collateralNativeApyPct: null,
+  collateralNativeApySource: null,
   liabilityBorrowAprPct: 3,
   leverage: 1.2,
 })

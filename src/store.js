@@ -110,6 +110,7 @@ export const state = reactive({
   blockedWallet: null,
   localFork: false, // on a local fork wallets only sign and the backend sends: a wallet would send to mainnet
   swapVisible: false, // SWAP_WALLETS beta: the server decides who can swap
+  feeBps: null, // Nysa's swap fee (NYSA_FEE_BPS), from /api/swap-readiness
   loopVisible: false, // LOOP_WALLETS: the loop shows to those wallets only while it is off for everyone
 })
 
@@ -220,7 +221,8 @@ function listenMarket() {
 const UNREACHABLE = [502, 503, 504]
 async function api(path, init) {
   let res = await fetch(path, init)
-  if (UNREACHABLE.includes(res.status) && path !== '/api/tx/send') {
+  // Sends spend a one-time authorization: a second try only finds it used and hides the first answer.
+  if (UNREACHABLE.includes(res.status) && !['/api/tx/send', '/api/swap-send', '/api/loop-send'].includes(path)) {
     await new Promise((r) => setTimeout(r, 2500))
     res = await fetch(path, init)
   }
@@ -285,6 +287,7 @@ function setAccount(w, acc) {
 async function loadSwapVisibility() {
   const addr = state.address
   const r = await api(`/api/swap-readiness${addr ? `?wallet=${addr}` : ''}`).catch(() => null)
+  if (Number.isSafeInteger(r?.feeBps)) state.feeBps = r.feeBps
   if (state.address === addr) { state.swapVisible = r?.visible === true; state.loopVisible = r?.loopVisible === true }
 }
 
@@ -1103,7 +1106,8 @@ async function reconcilePendingSwap() {
 }
 
 async function reconcilePendingLendingFlow() {
-  if (reconcilingLending) return
+  // The action running in this page confirms its own transaction and shows its own result; this is for one left over.
+  if (reconcilingLending || state.lendingActionBusy) return
   const pending = persistedLendingPending()
   if (!['signed-pending', 'submitted', 'relay-unknown', 'setup-confirmed'].includes(pending?.status)
     || !pending.signature || state.address !== pending.wallet || account?.address !== pending.wallet) return

@@ -14,8 +14,12 @@ const carry = {
 }
 assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z' }, now), true,
   'metadata refresh may advance the snapshot time while economics remain unchanged and fresh')
-assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', assumptions: { ...carry.assumptions, collateralSupplyAprPct: 0.6 } }, now), false,
-  'changed carry source assumptions invalidate the preview')
+assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', estimatedCarryPct: '-0.7', assumptions: { ...carry.assumptions, liabilityBorrowAprPct: 2.9 } }, now), true,
+  'rates drifting between snapshots keep the preview')
+assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', estimatedCarryPct: '-0.4', assumptions: { ...carry.assumptions, liabilityBorrowAprPct: 2.3 } }, now), false,
+  'a carry moving more than 0.25 points invalidates the preview')
+assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', assumptions: { ...carry.assumptions, leverage: 1.2 } }, now), false,
+  'changed carry sources invalidate the preview')
 assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:01:11.000Z' }, now), false,
   'a refreshed snapshot beyond the bounded freshness window invalidates the preview')
 assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:11.000Z' }, now), false,
@@ -38,6 +42,8 @@ assert.equal(loopMarketRiskStillCurrent(marketRisk, snapshotRisk, marketSnapshot
   'fresh snapshot oracle values and governance limits remain bound to the preview')
 assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.10' }, marketSnapshot.blockTime), false,
   'changed oracle price invalidates relay authorization')
+assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.0905' }, marketSnapshot.blockTime), true,
+  'an oracle update under 0.1% keeps the preview valid')
 assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, maxBorrowLtvPct: 80 }, marketSnapshot.blockTime), false,
   'changed governance LTV invalidates relay authorization')
 assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralOracleTimestamp: 1_798_000_000 - 61 }, marketSnapshot.blockTime), false,
