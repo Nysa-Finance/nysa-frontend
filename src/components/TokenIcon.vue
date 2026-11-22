@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 defineProps({ token: Object, size: String, stack: Boolean })
-const COLORS = { USDC: '#2775CA', USDT: '#26A17B', USDY: '#122A5F', WETH: '#8A92B2', WBTC: '#F09242', oTFY: '#000000' }
+const COLORS = { USDC: '#2775CA', USDT: '#26A17B', USDY: '#122A5F', WETH: '#8A92B2', WBTC: '#F09242', oTFY: '#000000', nOPAL: '#fff', sUSDai: '#fff' }
 const broken = ref(false)
 </script>
 
