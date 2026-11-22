@@ -105,7 +105,7 @@ async function submit() {
         :disabled="!on || !info?.liquidatable || info?.fullOnly" />
       <div class="lq-row">
         <span>Wallet: {{ on ? `${amt(balance, 2)} ${debt.name}` : '—' }}</span>
-        <button v-if="info && !info.fullOnly" class="lq-max" :disabled="!on || !info.liquidatable || max <= 0" @click="amount = String(max)">MAX</button>
+        <span v-if="info && !info.fullOnly" class="n-quick"><button :disabled="!on || !info.liquidatable || max <= 0" @click="amount = String(max)">Max</button></span>
       </div>
       <p v-if="info?.fullOnly" class="n-note">This loan is small, so Kamino requires it to be repaid in full in one liquidation.</p>
 
@@ -138,8 +138,7 @@ async function submit() {
 .lq-box { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--n-line); border-radius: 4px; background: #000; }
 .n-label { margin-bottom: -6px; }
 .lq-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--n-text-3); margin-top: -4px; }
-.lq-max { font-size: 11.5px; font-weight: 600; color: var(--n-pink); }
-.lq-max:disabled { opacity: .35; cursor: not-allowed; }
+.lq-row .n-quick button { padding: 3px 12px; }
 .lq-hint { font-size: 12px; color: var(--n-text-4); line-height: 1.6; }
 .mono { font-family: var(--mono); }
 </style>

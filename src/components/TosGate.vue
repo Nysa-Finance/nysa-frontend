@@ -39,7 +39,7 @@ const agreed = ref(false)
 .tos__check { display: flex; align-items: flex-start; gap: 10px; text-align: left; font-size: 13px; color: #fffc; margin-bottom: 24px; }
 .tos__check input { margin-top: 3px; flex-shrink: 0; }
 .tos__check a { color: #fff; text-decoration: underline; }
-.tos__btn { width: 100%; font-weight: 600; font-size: 14px; color: #fff; background: var(--grad); padding: 13px 18px; border-radius: 999px; transition: transform .15s, box-shadow .2s, opacity .2s; }
-.tos__btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 30px -8px #ec008cb3; }
+.tos__btn { width: 100%; font-weight: 600; font-size: 14px; color: #fff; background: var(--grad); padding: 13px 18px; border-radius: 999px; transition: filter .15s, box-shadow .2s, opacity .2s; }
+.tos__btn:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }
 .tos__btn:disabled { opacity: .4; cursor: not-allowed; }
 </style>

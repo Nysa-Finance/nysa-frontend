@@ -62,7 +62,7 @@ async function submit() {
     <div class="n-label">Amount ({{ token.name }})</div>
     <input v-model="amount" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
     <div class="n-quick" style="margin-bottom: 14px">
-      <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'MAX' : p + '%' }}</button>
+      <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'Max' : p + '%' }}</button>
     </div>
     <div style="margin-bottom: 4px" />
     <p v-if="all && !warning" class="n-note" style="margin-bottom: 16px">Withdrawing in full: every share is redeemed.</p>

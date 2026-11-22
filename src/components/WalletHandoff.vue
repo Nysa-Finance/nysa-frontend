@@ -94,6 +94,6 @@ async function checkLocalExpiry() {
 @media (prefers-reduced-motion: reduce) { .ho-spin { animation: none; } }
 .ho-actions { margin-top: 12px; display: flex; align-items: center; gap: 16px; }
 .ho-btn { font-weight: 600; color: #fff; background: var(--grad); padding: 10px 18px; border-radius: 999px; }
-.ho-btn:disabled, .ho-link:disabled { opacity: .45; cursor: not-allowed; }
+.ho-btn:disabled, .ho-link:disabled { opacity: .4; cursor: not-allowed; }
 .ho-link { color: var(--n-text-3); font-size: 13px; background: none; border: 0; padding: 0; cursor: pointer; }
 </style>
