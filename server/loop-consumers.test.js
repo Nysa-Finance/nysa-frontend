@@ -96,15 +96,15 @@ assert.equal(selectedLoopCloseReadiness(genericCloseReadiness, first, wallet, { 
   'a cached position does not enable close when the latest owner-scoped Multiply read failed')
 assert.equal(selectedLoopCloseReadiness({ executionEnabled: false, unavailableReasons: [{ code: 'route', message: 'Unsafe exit route.' }] }, first, wallet, verifiedLoopPositionRead).executionEnabled, false,
   'position selection does not remove route safety blockers')
-assert.equal(loopPositionFullyClosed([], first.id, verifiedLoopPositionRead), true, 'a verified absent obligation confirms full close')
-assert.equal(loopPositionFullyClosed([], first.id, { 'sol-usdy-usdc': 'unavailable' }), false,
+assert.equal(loopPositionFullyClosed([], first.id, verifiedLoopPositionRead, 'sol-usdy-usdc'), true, 'a verified absent obligation confirms full close')
+assert.equal(loopPositionFullyClosed([], first.id, { 'sol-usdy-usdc': 'unavailable' }, 'sol-usdy-usdc'), false,
   'an absent position after a failed owner-scoped read is unknown, not closed')
 assert.equal(loopPositionFullyClosed([{ ...first,
   collateral: { ...first.collateral, amount: '0', amountBaseUnits: '0' },
   liability: { ...first.liability, amount: '0', amountBaseUnits: '0' },
   obligation: { ...first.obligation, balances: { deposits: [], borrows: [] } },
-}], first.id, verifiedLoopPositionRead), true)
-assert.equal(loopPositionFullyClosed([first], first.id, verifiedLoopPositionRead), false, 'confirmed signature alone does not confirm zero debt')
+}], first.id, verifiedLoopPositionRead, 'sol-usdy-usdc'), true)
+assert.equal(loopPositionFullyClosed([first], first.id, verifiedLoopPositionRead, 'sol-usdy-usdc'), false, 'confirmed signature alone does not confirm zero debt')
 assert.equal(loopPositionFullyClosed([{ ...first, liability: { ...first.liability, amount: '0', amountBaseUnits: '0' } }], first.id, verifiedLoopPositionRead), false,
   'residual obligation collateral keeps full-close reconciliation pending')
 assert.equal(loopPositionFullyClosed([{ ...first, liability: { amount: '0', amountBaseUnits: null } }], first.id, verifiedLoopPositionRead), false,

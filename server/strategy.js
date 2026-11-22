@@ -1,10 +1,10 @@
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, LOOPS, TOKENS, loopByMarket } from '../src/config.js'
 import { calculateCarryPct, carryNeedsAcknowledgement } from '../src/loop-policy.js'
 
-export const LOOP_ALLOWED_MARKET_IDS = Object.freeze(['sol-usdy-usdc'])
+export const LOOP_ALLOWED_MARKET_IDS = Object.freeze(LOOPS.map((loop) => loop.market))
 // Keep reading configured Multiply PDAs even if entry allowlisting or allocation changes, so full-close management
 // can still identify existing Nysa positions.
-export const LOOP_POSITION_MARKET_IDS = Object.freeze(['sol-usdy-usdc'])
+export const LOOP_POSITION_MARKET_IDS = Object.freeze(LOOPS.map((loop) => loop.market))
 export const LOOP_ACK_POLICY_VERSION = 'nysa-loop-ack-v1'
 const SNAPSHOT_MAX_AGE_MS = 60_000
 
@@ -58,7 +58,7 @@ function allocationExists(vaults, market, collateral, liability) {
   return Object.values(vaults ?? {}).some((vault) => (vault?.allocations ?? []).some((allocation) =>
     allocation.market === market.kaminoMarket
       // Nysa's vault is USDC-denominated, so its allocation points at the market's USDC reserve; the allocation's
-      // collateral list establishes that this loan reserve serves the USDY collateral pair.
+      // collateral list establishes that this loan reserve serves the loop's collateral pair.
       && allocation.reserve === market.reserves?.[liability.token_id]
       && (allocation.collateral ?? []).includes(collateral.token_id)
       && finite(allocation.invested)
@@ -69,7 +69,7 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
   const collateral = reserves?.[pair.collateral]
   const liability = reserves?.[pair.liability]
   const supplyAprPct = collateral?.supplyAPR
-  const nativeApyPct = finite(collateral?.nativeApy) ? collateral.nativeApy : null // the token's own yield (USDY's price)
+  const nativeApyPct = finite(collateral?.nativeApy) ? collateral.nativeApy : null // the token's own yield (its price rising, e.g. USDY)
   const borrowAprPct = liability?.borrowAPR
   const asOf = finite(snapshotUpdatedAt) && snapshotUpdatedAt > 0 ? new Date(snapshotUpdatedAt).toISOString() : null
   const assumptions = {
@@ -102,7 +102,7 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
 }
 
 export function evaluateLoopStrategy({
-  marketId = 'sol-usdy-usdc',
+  marketId = LOOPS[0].market,
   market = LIVE.find((candidate) => candidate.id === marketId),
   allowedMarketIds = LOOP_ALLOWED_MARKET_IDS,
   vaults = {},
@@ -121,11 +121,12 @@ export function evaluateLoopStrategy({
   if (!active) unavailableReasons.push(reason('market-inactive', 'The selected Nysa market is not active.'))
   if (!Array.isArray(allowedMarketIds) || !allowedMarketIds.includes(marketId)) unavailableReasons.push(reason('market-not-allowlisted', 'The selected market is not allowlisted for router or loop entry.'))
   if (active && Array.isArray(market.pairs)) {
-    const pair = market.pairs.find((candidate) => candidate.collateral === 'svm-usdy' && candidate.liability === 'svm-usdc')
+    const loop = loopByMarket(marketId)
+    const pair = market.pairs.find((candidate) => candidate.collateral === loop?.collateral && candidate.liability === loop?.debt)
     const collateral = pair ? TOKENS[pair.collateral] : null
     const liability = pair ? TOKENS[pair.liability] : null
     if (!pair || !collateral || !liability || !allocationExists(vaults, market, collateral, liability)) {
-      unavailableReasons.push(reason('no-actual-allocation', 'No configured Nysa vault has a nonzero actual allocation to USDY collateral in this market.'))
+      unavailableReasons.push(reason('no-actual-allocation', `No configured Nysa vault has a nonzero actual allocation to ${collateral?.name ?? 'the loop'} collateral in this market.`))
     }
     if (!finite(snapshotUpdatedAt) || snapshotUpdatedAt <= 0 || now - snapshotUpdatedAt > SNAPSHOT_MAX_AGE_MS) {
       unavailableReasons.push(reason('market-data-stale', 'Fresh market data is unavailable.'))

@@ -1,4 +1,7 @@
+import { loopByMarket } from './config.js'
+
 // Multiply positions stay separate from the vanilla and vault totals: no token-key collisions.
+// `rates` by market id, then token id (a token borrowed in two markets has two rates).
 export function loopPortfolioTotals(positions = [], prices = {}, rates = {}) {
   const seen = new Set()
   let suppliedUsd = 0
@@ -18,13 +21,13 @@ export function loopPortfolioTotals(positions = [], prices = {}, rates = {}) {
     if (Number.isFinite(collateralAmount) && collateralAmount >= 0 && Number.isFinite(collateralPrice) && collateralPrice >= 0) {
       const value = collateralAmount * collateralPrice
       suppliedUsd += value
-      const supplyApr = Number(rates[position.collateral?.tokenId]?.supplyAPR)
+      const supplyApr = Number(rates[position.market?.id]?.[position.collateral?.tokenId]?.supplyAPR)
       if (Number.isFinite(supplyApr)) netAprUsd += value * supplyApr
     }
     if (Number.isFinite(liabilityAmount) && liabilityAmount >= 0 && Number.isFinite(liabilityPrice) && liabilityPrice >= 0) {
       const value = liabilityAmount * liabilityPrice
       borrowedUsd += value
-      const borrowApr = Number(rates[position.liability?.tokenId]?.borrowAPR)
+      const borrowApr = Number(rates[position.market?.id]?.[position.liability?.tokenId]?.borrowAPR)
       if (Number.isFinite(borrowApr)) netAprUsd -= value * borrowApr
     }
     const factor = Number(position.healthFactor)
@@ -49,10 +52,10 @@ export function portfolioHealthFactor(loanHealthFactors = [], loopTotals = {}) {
 export function selectedLoopCloseReadiness(readiness, position, wallet, loopPositionReadStatus) {
   if (!readiness) return null
   const identityVerified = typeof wallet === 'string' && position?.wallet === wallet
-    && position?.market?.id === 'sol-usdy-usdc' && position?.obligation?.type === 'multiply'
+    && !!loopByMarket(position?.market?.id) && position?.obligation?.type === 'multiply'
     && typeof position?.obligation?.address === 'string' && position.obligation.address.length > 0
     && typeof position.id === 'string' && /^multiply:[a-f0-9]{64}$/.test(position.id)
-    && loopPositionReadStatus?.['sol-usdy-usdc'] === 'verified'
+    && loopPositionReadStatus?.[position.market.id] === 'verified'
   const exactRawAmount = (value) => typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value)
   const balances = position?.obligation?.balances
   const balancesVerified = Array.isArray(balances?.deposits) && balances.deposits.every((item) =>
@@ -71,15 +74,15 @@ export function selectedLoopCloseReadiness(readiness, position, wallet, loopPosi
     code: 'loop-position-balances-unverified', message: 'The complete Multiply reserve balances could not be verified.',
   })
   if (identityVerified && balancesVerified && !noUnsupportedReserves) unavailableReasons.push({
-    code: 'loop-position-extra-reserves', message: 'This Multiply position has active reserves outside the supported USDY/USDC pair.',
+    code: 'loop-position-extra-reserves', message: 'This Multiply position has active reserves outside its loop pair.',
   })
   return { ...readiness, unavailableReasons, executionEnabled: verified && unavailableReasons.length === 0 }
 }
 
 // A full close is complete only when the identified obligation is absent or has no debt or collateral.
-export function loopPositionFullyClosed(positions, positionId, loopPositionReadStatus) {
+export function loopPositionFullyClosed(positions, positionId, loopPositionReadStatus, market) {
   if (typeof positionId !== 'string' || !positionId) return false
-  if (loopPositionReadStatus?.['sol-usdy-usdc'] !== 'verified') return false
+  if (loopPositionReadStatus?.[market] !== 'verified') return false
   const position = (positions ?? []).find((item) => item?.id === positionId)
   if (!position) return true
   const isExactRawZero = (value) => typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value)

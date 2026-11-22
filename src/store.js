@@ -1136,7 +1136,7 @@ async function reconcilePendingLendingFlow() {
     }
     if (pending.params?.loopAction && pending.kind === 'loop-close') {
       const accountSnapshot = await loadAccount(true)
-      if (!accountSnapshot || !loopPositionFullyClosed(accountSnapshot.loopPositions, pending.params.positionId, accountSnapshot.loopPositionReadStatus)) {
+      if (!accountSnapshot || !loopPositionFullyClosed(accountSnapshot.loopPositions, pending.params.positionId, accountSnapshot.loopPositionReadStatus, pending.params.market)) {
         state.handoff = {
           status: 'error', label: labelOf(pending.params), signature: pending.signature,
           error: 'The close signature is confirmed, but the selected position still has debt or collateral. Nysa will keep reconciling it before allowing another action.',
@@ -1445,7 +1445,7 @@ export async function sendLoopAction(kind, { market, amount, leverage, previewId
     const signature = await runAction(params, {
       verifyConfirmed: kind === 'loop-close' ? async () => {
         const accountSnapshot = await loadAccount(true)
-        return !!accountSnapshot && loopPositionFullyClosed(accountSnapshot.loopPositions, positionId, accountSnapshot.loopPositionReadStatus)
+        return !!accountSnapshot && loopPositionFullyClosed(accountSnapshot.loopPositions, positionId, accountSnapshot.loopPositionReadStatus, market)
       } : null,
     })
     event(kind === 'loop-open' ? 'Multiply loop opened' : 'Multiply loop fully closed', { market })
@@ -1458,7 +1458,7 @@ export async function sendLoopAction(kind, { market, amount, leverage, previewId
   }
 }
 
-export async function sendLoopSetup({ market = 'sol-usdy-usdc' } = {}) {
+export async function sendLoopSetup({ market } = {}) {
   const walletAddress = account?.address
   if (!walletAddress) throw new Error('Connect a Solana wallet before initializing Kamino metadata.')
   const params = { wallet: walletAddress, kind: 'loop-setup', market, loopAction: true }

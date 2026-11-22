@@ -16,7 +16,7 @@ import { isSanctioned, screeningReady, screeningStatus, startScreening } from '.
 import { read, POINTS, HISTORY } from './storage.js'
 import { priceApy } from '../src/logic.js'
 import { DEFAULT_LOOP_LIMITS } from '../src/loop-policy.js'
-import { LIVE, LOOP_ENABLED, LOOP_LOOKUP_TABLE, TOKENS, VAULTS, marketById, vaultById } from '../src/config.js'
+import { LIVE, LOOP_ENABLED, LOOPS, TOKENS, VAULTS, loopByMarket, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { LoopPreviewError, LOOP_PREVIEW_TTL_MS, LOOP_SIGNING_WINDOW_MS, buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
 import { buildSwap, configuredFeeAccountForMint, FEE_BPS, swapFeeAccountsConfigured, SwapError } from './swap.js'
@@ -190,25 +190,36 @@ const LOOP_MAX_FUNDING = Number(process.env.LOOP_MAX_FUNDING) > 0 ? Number(proce
 const overLoopCap = (amount) => LOOP_MAX_FUNDING != null && Number(amount) > LOOP_MAX_FUNDING
 const LOOP_CAP_ERROR = () => `Loops are capped at ${LOOP_MAX_FUNDING} USDC during the beta.`
 
-// USDY earns through its price (Ondo's rate), not Kamino's supply APR, so the loop's carry adds it: the annualized rise
-// of the oracle price the snapshot records. Until a week of prices exists, USDY_APY (Ondo's published rate) if set;
-// otherwise it is left out of the carry.
-const USDY_APY = Number.isFinite(Number(process.env.USDY_APY)) && process.env.USDY_APY ? Number(process.env.USDY_APY) : null
-let usdyApy = USDY_APY == null ? null : { apy: USDY_APY, source: 'env' }
-async function loadUsdyApy() {
+// A `priceYield` collateral (USDY) earns through its price, not Kamino's supply APR, so the loop's carry adds it: the
+// annualized rise of the oracle price the snapshot records. Until a week of prices exists, <TOKEN>_APY (e.g. USDY_APY,
+// the issuer's published rate) if set; otherwise it is left out of the carry.
+const envApy = (loop) => {
+  const value = process.env[`${TOKENS[loop.collateral].name.toUpperCase()}_APY`]
+  return value && Number.isFinite(Number(value)) ? { apy: Number(value), source: 'env' } : null
+}
+const priceYields = new Map(LOOPS.filter((loop) => loop.priceYield).map((loop) => [loop.market, envApy(loop)]))
+async function loadPriceYields() {
   try {
-    const measured = priceApy(JSON.parse((await read(HISTORY)) ?? '{}').tokens?.[marketById('sol-usdy-usdc').reserves['svm-usdy']]?.points ?? [])
-    usdyApy = measured != null ? { apy: measured, source: 'price' } : USDY_APY == null ? null : { apy: USDY_APY, source: 'env' }
-  } catch (error) { console.warn('[loop] USDY yield unavailable', error?.message) }
+    const history = JSON.parse((await read(HISTORY)) ?? '{}')
+    for (const loop of LOOPS.filter((item) => item.priceYield)) {
+      const measured = priceApy(history.tokens?.[marketById(loop.market).reserves[loop.collateral]]?.points ?? [])
+      priceYields.set(loop.market, measured != null ? { apy: measured, source: 'price' } : envApy(loop))
+    }
+  } catch (error) { console.warn('[loop] price yield unavailable', error?.message) }
 }
-if (loopOn) { loadUsdyApy(); setInterval(loadUsdyApy, 3_600_000).unref() }
-const loopReserves = (snapshot) => {
-  const reserves = snapshot?.reserves?.['sol-usdy-usdc'] ?? {}
-  return reserves['svm-usdy'] ? { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], nativeApy: usdyApy?.apy ?? null, nativeApySource: usdyApy?.source ?? null } } : reserves
+if (loopOn) { loadPriceYields(); setInterval(loadPriceYields, 3_600_000).unref() }
+const loopReserves = (snapshot, marketId) => {
+  const reserves = snapshot?.reserves?.[marketId] ?? {}
+  const { collateral } = loopByMarket(marketId)
+  const yieldOf = priceYields.get(marketId)
+  return reserves[collateral] ? { ...reserves, [collateral]: { ...reserves[collateral], nativeApy: yieldOf?.apy ?? null, nativeApySource: yieldOf?.source ?? null } } : reserves
 }
+const loopFeeAccountsConfigured = (marketId) => !!configuredFeeAccountForMint(TOKENS[loopByMarket(marketId).collateral].mint)
+  && !!configuredFeeAccountForMint(TOKENS[loopByMarket(marketId).debt].mint)
+  && !!process.env.SWAP_FEE_TREASURY_AUTHORITY
 
 // Loop exits use the same route/program/fee/fork gates as swaps, but do not depend on new-entry allocation policy.
-function currentLoopRouteReadiness() {
+function currentLoopRouteReadiness(marketId) {
   const snapshot = getSnapshot()
   const snapshotFresh = Number.isFinite(snapshot?.updatedAt) && snapshot.updatedAt > 0
     && Date.now() >= snapshot.updatedAt && Date.now() - snapshot.updatedAt <= 60_000
@@ -216,9 +227,7 @@ function currentLoopRouteReadiness() {
   const forkProof = localExecution || loopBeta
   const routeReadiness = swapReadiness({
     providerConfigured: !!process.env.JUPITER_API_KEY || localExecution,
-    feeAccountsConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
-      && !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
-      && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
+    feeAccountsConfigured: loopFeeAccountsConfigured(marketId),
     marketDataAvailable: snapshotFresh,
     marketAvailabilityReasons: [
       ...(snapshotFresh ? [] : [{ code: 'market-data-stale', message: 'Fresh market data is unavailable for a safe loop transaction.' }]),
@@ -229,19 +238,18 @@ function currentLoopRouteReadiness() {
   return routeReadiness
 }
 
-function loopStrategyForAction(snapshot, leverage = 1.5) {
+function loopStrategyForAction(snapshot, marketId, leverage = 1.5) {
   const localExecution = localForkProgramEvidenceReady()
   return evaluateLoopStrategy({
-    market: marketById('sol-usdy-usdc'),
+    marketId,
+    market: marketById(marketId),
     allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
     vaults: snapshot?.vaults ?? {},
-    reserves: loopReserves(snapshot),
+    reserves: loopReserves(snapshot, marketId),
     snapshotUpdatedAt: snapshot?.updatedAt ?? 0,
     providerConfigured: true, // keyless access remains quote-only; route execution is separately denied below.
     productionProviderConfigured: !!process.env.JUPITER_API_KEY || localExecution,
-    treasuryConfigured: !!configuredFeeAccountForMint(TOKENS['svm-usdy'].mint)
-      && !!configuredFeeAccountForMint(TOKENS['svm-usdc'].mint)
-      && !!process.env.SWAP_FEE_TREASURY_AUTHORITY,
+    treasuryConfigured: loopFeeAccountsConfigured(marketId),
     riskApproval: localExecution ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
       : loopBeta ? { owner: 'LOOP_WALLETS private beta', approvedAt: new Date(0).toISOString() }
         : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
@@ -257,8 +265,8 @@ function currentLoopActionReadiness(body, { previewAcknowledgementValid = false,
   const snapshot = getSnapshot()
   return evaluateLoopActionReadiness({
     action: body.kind,
-    strategy: body.kind === 'loop-open' ? loopStrategyForAction(snapshot, Number(body.leverage)) : null,
-    routeReadiness: currentLoopRouteReadiness(),
+    strategy: body.kind === 'loop-open' ? loopStrategyForAction(snapshot, body.market, Number(body.leverage)) : null,
+    routeReadiness: currentLoopRouteReadiness(body.market),
     positionId: body.positionId,
     positionVerified,
     builderAvailable: true,
@@ -338,13 +346,13 @@ function activeLoopPreview(id) {
 const loopExecution = createLoopExecutionService({
   readiness: async ({ action, request, preview, position, previewAcknowledgementValid }) => {
     const snapshot = action === 'loop-open' ? await refreshMarketForExecution() : null
-    const strategy = action === 'loop-open' ? loopStrategyForAction(snapshot, Number(preview.leverage)) : null
+    const strategy = action === 'loop-open' ? loopStrategyForAction(snapshot, request.market, Number(preview.leverage)) : null
     const currentCarry = strategy?.carry
     const previewCarry = preview?.carry
     const now = Date.now()
     const snapshotFresh = Number.isFinite(snapshot?.updatedAt) && snapshot.updatedAt > 0
       && now >= snapshot.updatedAt && now - snapshot.updatedAt <= LOOP_PREVIEW_MAX_AGE_MS
-    const currentMarketRisk = loopMarketRiskFromSnapshot(snapshot)
+    const currentMarketRisk = loopMarketRiskFromSnapshot(snapshot, request.market)
     if (action === 'loop-open' && (!snapshotFresh
       || !loopCarryStillCurrent(previewCarry, currentCarry, now)
       || !loopMarketRiskStillCurrent(preview?.sdk?.marketRisk, currentMarketRisk, Number(snapshot?.blockTime)))) {
@@ -362,8 +370,8 @@ const loopExecution = createLoopExecutionService({
     const account = await getAccount(wallet, true)
     return account.loopPositions.find((position) => position.id === positionId) ?? null
   },
-  metadataReady: async ({ wallet }) => !(await loopMetadataStatus({ wallet })).required,
-  setupRequired: async ({ wallet }) => (await loopMetadataStatus({ wallet })).required,
+  metadataReady: async ({ wallet, market }) => !(await loopMetadataStatus({ wallet, market })).required,
+  setupRequired: async ({ wallet, market }) => (await loopMetadataStatus({ wallet, market })).required,
   buildOpen: ({ wallet, request, preview }) => buildLoopOpenApplication({ wallet, amount: request.amount, leverage: request.leverage, preview, validateRoute: validateSwapRouteForCurrentNetwork }),
   buildClose: ({ wallet, position }) => buildLoopCloseApplication({ wallet, position,
     validateRoute: validateSwapRouteForCurrentNetwork,
@@ -371,21 +379,21 @@ const loopExecution = createLoopExecutionService({
     localForkRpcUrl: RPC_URL,
     localRouteProgramVerifier: verifyLocalForkRoute,
   }),
-  buildSetup: ({ wallet }) => buildLoopMetadataSetupApplication({ wallet }),
-  compile: ({ lookupTables = [], ...rest }) => compileAtomicTransaction({ ...rest, lookupTables: LOOP_LOOKUP_TABLE ? [...lookupTables, LOOP_LOOKUP_TABLE] : lookupTables }),
+  buildSetup: ({ wallet, market }) => buildLoopMetadataSetupApplication({ wallet, market }),
+  compile: ({ lookupTables = [], market, ...rest }) => compileAtomicTransaction({ ...rest, lookupTables: [...lookupTables, loopByMarket(market).lookupTable].filter(Boolean) }),
   simulate: simulateLoopApplication,
   verifySimulation: async ({ kind, ...context }) => kind === 'loop-setup'
     ? verifyLoopMetadataSetupSimulation(context)
     : verifyLoopApplicationSimulation({ kind, ...context }),
   intentStore: loopIntentStore,
   authorize: async ({ intent }) => {
-    const ready = currentLoopRouteReadiness().executionEnabled
+    const ready = currentLoopRouteReadiness(intent?.metadata?.market).executionEnabled
     if (localForkDappEnabled) return ready && await localIntentAuthorized(intent)
     return swapIntentStillAuthorized(intent, { executionEnabled: ready, approvedPrograms: LOOP_PROGRAMS })
   },
   authorizeSetup: async ({ intent }) => intent?.metadata?.kind === 'loop-setup'
     && (!localForkDappEnabled || isLocalForkWallet(intent?.wallet, { rpcUrl: RPC_URL }))
-    && intent.metadata.market === 'sol-usdy-usdc'
+    && !!loopByMarket(intent.metadata.market)
     && intent.metadata.programIds?.length === 1
     && String(intent.metadata.programIds[0]) === String(KAMINO_LENDING_PROGRAM_ID)
     && (intent.metadata.routeLabels ?? []).length === 0,
@@ -474,13 +482,16 @@ const routes = [
     }
   }],
   ['GET', /^\/api\/loop-strategies$/, (req, res) => {
-    const strategy = loopStrategyForAction(getSnapshot())
-    const routeReadiness = currentLoopRouteReadiness()
-    const actions = {
-      open: evaluateLoopActionReadiness({ action: 'loop-open', strategy, routeReadiness, builderAvailable: true }),
-      fullClose: evaluateLoopActionReadiness({ action: 'loop-close', routeReadiness, builderAvailable: true }),
-    }
-    return send(res, 200, { strategies: [strategy], actions, readOnly: true, maxFunding: LOOP_MAX_FUNDING,
+    const snapshot = getSnapshot()
+    const strategies = LOOPS.map(({ market }) => {
+      const strategy = loopStrategyForAction(snapshot, market)
+      const routeReadiness = currentLoopRouteReadiness(market)
+      return { ...strategy, actions: {
+        open: evaluateLoopActionReadiness({ action: 'loop-open', strategy, routeReadiness, builderAvailable: true }),
+        fullClose: evaluateLoopActionReadiness({ action: 'loop-close', routeReadiness, builderAvailable: true }),
+      } }
+    })
+    return send(res, 200, { strategies, readOnly: true, maxFunding: LOOP_MAX_FUNDING,
       executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
   }],
   ['GET', /^\/api\/loop-setup-status$/, async (req, res) => {
@@ -489,7 +500,8 @@ const routes = [
     if (!wallet || !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
     if (!loopOpenTo(wallet)) return send(res, 403, LOOP_NOT_ENABLED)
     if (blocked(res, wallet, { failClosed: true })) return
-    try { return send(res, 200, { ...(await loopMetadataStatus({ wallet })), readOnly: true }) }
+    // Kamino's UserMetadata is one per wallet, whichever market reads it.
+    try { return send(res, 200, { ...(await loopMetadataStatus({ wallet, market: LOOPS[0].market })), readOnly: true }) }
     catch (error) {
       console.warn('[loop] metadata status unavailable', error?.message)
       return send(res, 503, { error: 'Kamino metadata setup status is unavailable.' })
@@ -498,21 +510,21 @@ const routes = [
   ['POST', /^\/api\/loop-preview$/, async (req, res) => {
     if (limited(req, 'loop-preview', 20)) return send(res, 429, { error: 'Too many requests' })
     const body = await jsonBody(req)
-    if ((body.marketId ?? 'sol-usdy-usdc') !== 'sol-usdy-usdc') throw new UserError('Unknown loop strategy')
+    if (!loopByMarket(body.marketId)) throw new UserError('Unknown loop strategy')
     if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
     if (!loopOpenTo(body.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
     if (overLoopCap(body.fundingAmount)) throw new UserError(LOOP_CAP_ERROR())
     if (typeof body.fundingAmount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(body.fundingAmount)) throw new UserError('Invalid funding amount')
     if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage) throw new UserError('Funding amount or leverage is outside the preview range')
     const snapshot = getSnapshot()
-    const strategy = loopStrategyForAction(snapshot, Number(body.leverage))
+    const strategy = loopStrategyForAction(snapshot, body.marketId, Number(body.leverage))
     const previewId = randomUUID()
     let applicationContext = null
     try {
       return await runWithRequestAbortSignal(req, res, async (signal) => {
         try {
           const preview = await buildReadOnlyLoopPreview({
-            wallet: body.wallet, fundingAmount: body.fundingAmount, leverage: Number(body.leverage), snapshot, strategy, signal,
+            marketId: body.marketId, wallet: body.wallet, fundingAmount: body.fundingAmount, leverage: Number(body.leverage), snapshot, strategy, signal,
             localForkSimulation: localForkDappEnabled && isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL }),
             localForkRpcUrl: RPC_URL,
             localRouteProgramVerifier: verifyLocalForkRoute,
@@ -520,14 +532,14 @@ const routes = [
           })
           if (signal.aborted || res.destroyed) return
           const actionReadiness = evaluateLoopActionReadiness({
-            action: 'loop-open', strategy, routeReadiness: currentLoopRouteReadiness(), builderAvailable: true,
+            action: 'loop-open', strategy, routeReadiness: currentLoopRouteReadiness(body.marketId), builderAvailable: true,
             previewAcknowledgementValid: false,
           })
           if (localForkDappEnabled && !isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL })) {
             actionReadiness.executionEnabled = false
             actionReadiness.unavailableReasons.push({ code: 'local-fork-wallet-not-allowlisted', message: 'Connect a generated LOCAL_FORK_ACCOUNT_n wallet to execute on this local Surfpool profile.' })
           }
-          const metadataStatus = body.wallet ? await loopMetadataStatus({ wallet: body.wallet }) : { required: false }
+          const metadataStatus = body.wallet ? await loopMetadataStatus({ wallet: body.wallet, market: body.marketId }) : { required: false }
           if (metadataStatus.required) {
             actionReadiness.executionEnabled = false
             actionReadiness.unavailableReasons.push({ code: 'kamino-metadata-setup-required', message: 'Initialize the one-time Kamino UserMetadata account before opening a loop.' })
@@ -540,7 +552,7 @@ const routes = [
               ...preview,
               id: previewId,
               wallet: body.wallet,
-              marketId: 'sol-usdy-usdc',
+              marketId: body.marketId,
               fundingAmount: body.fundingAmount,
               leverage: Number(body.leverage),
               expiresAt,
@@ -550,14 +562,14 @@ const routes = [
             for (const [id, item] of loopPreviews) if (Date.now() >= item.expiresAt) loopPreviews.delete(id)
           }
           return send(res, 200, { ...preview, previewId, actionReadiness, metadataSetupRequired: metadataStatus.required,
-            strategyId: 'sol-usdy-usdc', readOnly: true,
+            strategyId: body.marketId, readOnly: true,
             executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
         } catch (error) {
           if (signal.aborted || res.destroyed) return
           console.warn('[loop] preview unavailable', error?.message)
           return send(res, 200, {
             previewId,
-            strategyId: 'sol-usdy-usdc',
+            strategyId: body.marketId,
             readOnly: true,
             executionEnabled: false,
             available: false,
@@ -604,7 +616,7 @@ const routes = [
       if (localForkDappEnabled && !isLocalForkWallet(b.wallet, { rpcUrl: RPC_URL })) {
         return send(res, 503, { error: 'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.' })
       }
-      if (b.market !== 'sol-usdy-usdc') throw new UserError('Unknown loop strategy')
+      if (!loopByMarket(b.market)) throw new UserError('Unknown loop strategy')
       if (b.kind === 'loop-open' && (typeof b.amount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(b.amount)
         || !Number.isFinite(Number(b.amount)) || Number(b.amount) <= 0
         || !Number.isFinite(Number(b.leverage)) || Number(b.leverage) <= 1 || Number(b.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage)) {
@@ -744,7 +756,7 @@ const routes = [
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js). '/', '/lend' and '/market/:id' are old links it redirects.
-const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(loopOn ? ['/loop', '/loop/usdy'] : []), '/analytics', '/liquidations', '/dashboard'])
+const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(loopOn ? ['/loop', ...LOOPS.map((loop) => `/loop/${loop.id}`)] : []), '/analytics', '/liquidations', '/dashboard'])
 const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
   || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
   || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])

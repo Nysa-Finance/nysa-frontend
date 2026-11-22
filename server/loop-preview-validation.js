@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { TOKENS } from '../src/config.js'
+import { loopByMarket } from '../src/config.js'
 
 export const LOOP_PREVIEW_MAX_AGE_MS = 150_000 // a preview lives 90s, and its snapshot may be older than the preview
 
@@ -42,9 +42,10 @@ export function loopCarryStillCurrent(previewCarry, currentCarry, now = Date.now
     && now - currentAt <= LOOP_PREVIEW_MAX_AGE_MS
 }
 
-export function loopMarketRiskFromSnapshot(snapshot) {
-  const collateral = snapshot?.reserves?.['sol-usdy-usdc']?.[TOKENS['svm-usdy'].token_id]
-  const liability = snapshot?.reserves?.['sol-usdy-usdc']?.[TOKENS['svm-usdc'].token_id]
+export function loopMarketRiskFromSnapshot(snapshot, marketId) {
+  const loop = loopByMarket(marketId)
+  const collateral = snapshot?.reserves?.[marketId]?.[loop?.collateral]
+  const liability = snapshot?.reserves?.[marketId]?.[loop?.debt]
   if (!collateral || !liability) return null
   return {
     collateralPriceUsd: collateral.price,

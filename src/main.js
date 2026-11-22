@@ -3,7 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { startAnalytics } from './analytics.js'
 import { applySeo } from './seo.js'
 import App from './App.vue'
-import { VAULTS } from './config.js'
+import { LOOPS, VAULTS } from './config.js'
 // Fonts from our own origin (no Google Fonts request): only the weights the UI uses, latin subset.
 import '@fontsource/poppins/latin-300.css'
 import '@fontsource/poppins/latin-400.css'
@@ -30,7 +30,7 @@ const router = createRouter({
     { path: '/borrow/:id', name: 'market-detail', component: () => import('./pages/MarketDetail.vue') },
     { path: '/portfolio', name: 'portfolio', component: () => import('./pages/Portfolio.vue') },
     { path: '/swap', name: 'swap', component: () => import('./pages/Swap.vue') },
-    { path: '/loop/:asset(usdy)?', name: 'loop', component: () => import('./pages/Loop.vue') }, // a 404 page unless the wallet is in LOOP_WALLETS
+    { path: `/loop/:asset(${LOOPS.map((l) => l.id).join('|')})?`, name: 'loop', component: () => import('./pages/Loop.vue') }, // a 404 page unless the wallet is in LOOP_WALLETS
     // Old links: Lend is now Earn (the vault); a market page is now its borrow page.
     { path: '/lend', redirect: { name: 'earn' } },
     { path: '/market/:id', redirect: (to) => (to.query.mode === 'lend' && VAULTS[0] ? { name: 'vault', params: { id: VAULTS[0].id } } : { name: 'market-detail', params: to.params, query: to.query }) },

@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sendLoopAction, sendLoopSetup, state, priceOf, useTx } from '../store.js'
-import { LOOP_ENABLED, TOKENS } from '../config.js'
+import { LOOP_ENABLED, LOOPS, TOKENS, loopById, loopByMarket, marketById, tok } from '../config.js'
 import { amt, pct, usd, usdFull, num, floorTo, hfText, cleanAmount } from '../logic.js'
 import { formatBaseUnits } from '../swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
@@ -11,12 +11,17 @@ import TokenIcon from '../components/TokenIcon.vue'
 import TxProgress from '../components/TxProgress.vue'
 import NotFound from './NotFound.vue'
 
-const usdc = TOKENS['svm-usdc']
-const usdy = TOKENS['svm-usdy']
-const MAX_LEV = 9 // USDY borrows up to 90% LTV (10x); 9x leaves room for swap costs
-const fundingAmount = ref('') // loops are funded in USDC: it buys USDY together with the borrowed USDC
-watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, usdc.decimals) })
-const leverage = ref(MAX_LEV)
+const route = useRoute()
+const router = useRouter()
+// /loop lists the loops (or your positions), /loop/<id> opens one. One component, so the progress sheet survives the move.
+const asset = computed(() => route.params.asset || null)
+const loop = computed(() => loopById(asset.value) ?? LOOPS[0]) // the open form's loop
+const coll = computed(() => tok(loop.value.collateral))
+const debt = computed(() => tok(loop.value.debt)) // also what funds the loop: with the borrowed debt it buys the collateral
+const fundingAmount = ref('')
+watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, debt.value.decimals) })
+const leverage = ref(loop.value.maxLeverage)
+watch(loop, (l) => { leverage.value = l.maxLeverage })
 const strategy = ref(null)
 const preview = ref(null)
 const loading = ref(false)
@@ -34,14 +39,11 @@ const setupError = ref(null)
 const previewBinding = ref(null)
 let previewRequestSequence = 0
 let setupStatusSequence = 0
-const route = useRoute()
-const router = useRouter()
-// /loop lists the loops (or your positions), /loop/usdy opens one. One component, so the progress sheet survives the move.
-const asset = computed(() => route.params.asset || null)
 const tab = ref(route.query.position ? 'positions' : 'loops')
 watch(() => route.query.position, (p) => { if (p) tab.value = 'positions' })
-const openAsset = () => router.push({ name: 'loop', params: { asset: 'usdy' } })
+const openAsset = (l) => router.push({ name: 'loop', params: { asset: l.id } })
 const strategies = computed(() => strategy.value?.strategies ?? [])
+const strategyOf = (l) => strategies.value.find((item) => item.id === l?.market)
 const executionMode = computed(() => preview.value?.executionMode ?? strategy.value?.executionMode ?? null)
 const localForkMode = computed(() => executionMode.value === 'surfpool-local')
 const fees = computed(() => preview.value?.fees ?? [])
@@ -56,7 +58,7 @@ const previewIsCurrent = computed(() => !!preview.value && !!previewBinding.valu
   && loopPreviewRequestMatches({ request: previewBinding.value, current: currentPreviewRequest(),
     requestId: previewBinding.value.requestId, currentRequestId: previewRequestSequence }))
 const openReadiness = computed(() => {
-  const readiness = preview.value?.actionReadiness ?? strategy.value?.actions?.open ?? null
+  const readiness = preview.value?.actionReadiness ?? strategyOf(loop.value)?.actions?.open ?? null
   const unavailableReasons = (readiness?.unavailableReasons ?? []).filter((reason) => !(carryAcknowledged.value
     && ['carry-acknowledgement-required', 'preview-acknowledgement-invalid'].includes(reason.code)))
   const carryIsAcknowledged = !preview.value?.carry?.requiresAcknowledgement || carryAcknowledged.value
@@ -65,7 +67,7 @@ const openReadiness = computed(() => {
 const entryBlockers = computed(() => {
   const reasons = preview.value
     ? [...(preview.value.unavailableReasons ?? []), ...(openReadiness.value?.unavailableReasons ?? [])]
-    : [...(strategies.value[0]?.unavailableReasons ?? []), ...(strategy.value?.actions?.open?.unavailableReasons ?? [])]
+    : [...(strategyOf(loop.value)?.unavailableReasons ?? []), ...(strategyOf(loop.value)?.actions?.open?.unavailableReasons ?? [])]
   const acknowledgementReasons = ['carry-acknowledgement-required', 'preview-acknowledgement-invalid']
   const visibleReasons = preview.value ? reasons : reasons.filter((reason) => !acknowledgementReasons.includes(reason.code))
   const filtered = visibleReasons.filter((reason) => !(carryAcknowledged.value && acknowledgementReasons.includes(reason.code)))
@@ -85,7 +87,7 @@ function invalidatePreview() {
   previewError.value = null
   scheduleQuote()
 }
-watch([fundingAmount, leverage], invalidatePreview)
+watch([fundingAmount, leverage, loop], invalidatePreview)
 const ticker = setInterval(() => {
   clock.value = Date.now()
   if (asset.value && document.visibilityState === 'visible' && !acting.value && !loading.value && previewIsCurrent.value
@@ -129,7 +131,7 @@ async function initializeKaminoMetadata() {
   if (!state.address || !setupRequired.value || acting.value) return
   const wallet = state.address
   setupError.value = null
-  if (await run([{ label: 'Set up Kamino account', run: () => sendLoopSetup({ market: 'sol-usdy-usdc' }) }]) && state.address === wallet) {
+  if (await run([{ label: 'Set up Kamino account', run: () => sendLoopSetup({ market: loop.value.market }) }]) && state.address === wallet) {
     setupRequired.value = false
     await loadSetupStatus()
     invalidatePreview()
@@ -146,7 +148,7 @@ async function runPreview() {
     const response = await fetch('/api/loop-preview', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ marketId: 'sol-usdy-usdc', fundingAmount: request.fundingAmount, leverage: request.leverage, wallet: request.wallet }),
+      body: JSON.stringify({ marketId: loop.value.market, fundingAmount: request.fundingAmount, leverage: request.leverage, wallet: request.wallet }),
     })
     const body = await response.json()
     if (!response.ok) throw new Error(body.error ?? 'Could not build the preview.')
@@ -194,6 +196,7 @@ async function loopAction(label, attempt) {
 // The build reuses the preview's swap quote, which must be seconds old: a fresh quote first, then the build at once.
 async function openLoop() {
   if (!openReadiness.value?.executionEnabled) return
+  const l = loop.value, c = coll.value, d = debt.value
   const before = new Set(positions.value.map((p) => p.id))
   const ok = await loopAction('Open loop', async () => {
     await runPreview()
@@ -203,7 +206,7 @@ async function openLoop() {
       throw new Error(previewError.value ?? 'This loop can\'t be opened right now. Try again in a moment.')
     }
     return sendLoopAction('loop-open', {
-      market: 'sol-usdy-usdc', amount: request.fundingAmount, leverage: request.leverage,
+      market: l.market, amount: request.fundingAmount, leverage: request.leverage,
       previewId: actionPreview.previewId,
       acknowledgementKey: actionPreview.carry?.requiresAcknowledgement ? actionPreview.carry.acknowledgementKey : undefined,
     })
@@ -213,7 +216,7 @@ async function openLoop() {
   if (opened) {
     const v = positionView(opened)
     highlight.value = opened.id
-    tx.note = `${amt(v.coll, 2)} USDY collateral, ${amt(Number(opened.liability.amount), 2)} USDC debt, ${v.leverage ? lev(v.leverage) : ''} leverage. Liquidation if USDY falls to $${v.liqPrice?.toFixed(4)}.`
+    tx.note = `${amt(v.coll, 2)} ${c.name} collateral, ${amt(Number(opened.liability.amount), 2)} ${d.name} debt, ${v.leverage ? lev(v.leverage) : ''} leverage. Liquidation if ${c.name} falls to $${v.liqPrice?.toFixed(4)}.`
   }
   fundingAmount.value = ''
   tab.value = 'positions'
@@ -222,56 +225,63 @@ async function openLoop() {
 
 async function closeLoop(position) {
   if (!positionView(position).readiness?.executionEnabled) return
-  const before = state.balances['svm-usdc'] ?? 0
-  const ok = await loopAction('Close loop', () => sendLoopAction('loop-close', { market: 'sol-usdy-usdc', positionId: position.id }))
-  if (ok) tx.note = `${amt(Math.max(0, (state.balances['svm-usdc'] ?? 0) - before), 2)} USDC returned to your wallet.`
+  const d = tok(position.liability.tokenId)
+  const before = state.balances[d.token_id] ?? 0
+  const ok = await loopAction('Close loop', () => sendLoopAction('loop-close', { market: position.market.id, positionId: position.id }))
+  if (ok) tx.note = `${amt(Math.max(0, (state.balances[d.token_id] ?? 0) - before), 2)} ${d.name} returned to your wallet.`
 }
 
-const feeLabel = (fee) => `${formatBaseUnits(BigInt(fee.amountBaseUnits), fee.mint === usdc.mint ? usdc.decimals : usdy.decimals)} ${fee.mint === usdc.mint ? usdc.name : usdy.name}`
+const feeLabel = (fee) => { const t = Object.values(TOKENS).find((x) => x.mint === fee.mint); return `${formatBaseUnits(BigInt(fee.amountBaseUnits), t.decimals)} ${t.name}` }
 const lev = (value) => `${Number(value).toFixed(2).replace(/0$/, '')}×`
 
 // Estimates for the chosen leverage, before any quote: the summary moves with the slider; a preview replaces the token
 // amounts with the quoted ones.
-const rates = computed(() => {
-  const a = strategies.value[0]?.carry?.assumptions ?? {}
+const ratesOf = (l) => {
+  const a = strategyOf(l)?.carry?.assumptions ?? {}
   const supply = Number(a.collateralSupplyAprPct ?? 0), native = a.collateralNativeApyPct, borrow = a.liabilityBorrowAprPct
   return { hold: supply + Number(native ?? 0), native: native ?? null, nativeSource: a.collateralNativeApySource, borrow: borrow ?? null }
+}
+const rates = computed(() => ratesOf(loop.value))
+const netApyOf = (l, L) => { const r = ratesOf(l); return r.borrow == null ? null : r.hold * L - r.borrow * (L - 1) }
+const netApyAt = (L) => netApyOf(loop.value, L)
+const reserve = (l, id) => state.reserves[l.market]?.[id]
+const marketOf = (l) => ({
+  deposited: reserve(l, l.collateral)?.supplyUsd,
+  liquidity: reserve(l, l.debt) ? reserve(l, l.debt).availableLiquidity * reserve(l, l.debt).price : undefined,
 })
-const netApyAt = (L) => (rates.value.borrow == null ? null : rates.value.hold * L - rates.value.borrow * (L - 1))
-const reserve = (id) => state.reserves['sol-usdy-usdc']?.[id]
-const market = computed(() => ({
-  deposited: reserve('svm-usdy')?.supplyUsd,
-  liquidity: reserve('svm-usdc') ? reserve('svm-usdc').availableLiquidity * reserve('svm-usdc').price : undefined,
-}))
-const liqLtv = computed(() => reserve('svm-usdy')?.liqLtv ?? 95)
-const usdyPrice = computed(() => priceOf('svm-usdy'))
+const market = computed(() => marketOf(loop.value))
+const liqLtvOf = (l) => reserve(l, l.collateral)?.liqLtv ?? marketById(l.market).pairs.find((p) => p.collateral === l.collateral)?.liqLtv
+const liqLtv = computed(() => liqLtvOf(loop.value))
+const collPrice = computed(() => priceOf(loop.value.collateral))
 const amount = computed(() => num(fundingAmount.value))
-// Your USDC is the equity: with the borrowed USDC it buys `leverage` times its value in USDY.
+// Your funding is the equity: with the borrowed debt it buys `leverage` times its value in collateral.
 const est = computed(() => {
   const L = Number(leverage.value), ltv = (L - 1) / L
   const quoted = previewIsCurrent.value && preview.value?.exposure?.source === 'kamino-sdk-net-route' ? preview.value.exposure : null
-  const equityUsd = amount.value * priceOf('svm-usdc')
-  const debt = quoted ? Number(quoted.debtAmount) : (equityUsd * (L - 1)) / priceOf('svm-usdc')
+  const debtPrice = priceOf(loop.value.debt)
+  const equityUsd = amount.value * debtPrice
+  const debtAmount = quoted ? Number(quoted.debtAmount) : (equityUsd * (L - 1)) / debtPrice
   return {
-    collateral: quoted ? Number(quoted.collateralAmount) : (equityUsd * L) / usdyPrice.value,
-    debt,
-    swap: amount.value + debt,
+    collateral: quoted ? Number(quoted.collateralAmount) : (equityUsd * L) / collPrice.value,
+    debt: debtAmount,
+    swap: amount.value + debtAmount,
     ltv: ltv * 100,
     hf: (liqLtv.value / 100) / ltv,
-    liqPrice: (usdyPrice.value * ltv) / (liqLtv.value / 100),
+    liqPrice: (collPrice.value * ltv) / (liqLtv.value / 100),
     netApy: netApyAt(L),
   }
 })
 const health = (hf) => (hf >= 1.8 ? ['ok', 'Safe'] : hf >= 1.3 ? ['warn', 'Medium'] : ['bad', 'Risky'])
-const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances['svm-usdc'] ?? 0) * p) / 100, usdc.decimals)) }
+const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances[debt.value.token_id] ?? 0) * p) / 100, debt.value.decimals)) }
 
 const quoted = computed(() => previewIsCurrent.value && !!preview.value)
 // The preview needs only an amount; opening also needs the Kamino setup and no blocker.
 const status = computed(() => {
   if (!state.address) return 'Connect a wallet to open a loop.'
-  if (positions.value.length) return 'You already have an open loop. Close it to open a new one.'
+  // Kamino keeps one Multiply position per wallet and pair
+  if (positions.value.some((p) => p.market.id === loop.value.market)) return 'You already have an open loop. Close it to open a new one.'
   if (!(amount.value > 0)) return 'Enter an amount.'
-  if (amount.value > (state.balances['svm-usdc'] ?? 0)) return `You only hold ${amt(state.balances['svm-usdc'] ?? 0)} USDC.`
+  if (amount.value > (state.balances[debt.value.token_id] ?? 0)) return `You only hold ${amt(state.balances[debt.value.token_id] ?? 0)} ${debt.value.name}.`
   if (strategy.value?.maxFunding && amount.value > strategy.value.maxFunding) return `Loops are capped at ${strategy.value.maxFunding} USDC during the beta.`
   if (setupLoading.value) return 'Checking Kamino setup…'
   if (setupRequired.value) return 'Complete the one-time Kamino setup to open it.'
@@ -283,16 +293,17 @@ const canAct = computed(() => !acting.value && !status.value && !!openReadiness.
 const quoteAge = computed(() => (quotedAt.value && quoted.value ? Math.max(0, Math.round((clock.value - quotedAt.value) / 1000)) : null))
 
 const positionView = (position) => {
+  const l = loopByMarket(position.market.id), r = ratesOf(l)
   const coll = Number(position.collateral.amount), debt = Number(position.liability.amount)
-  const collUsd = coll * usdyPrice.value, debtUsd = debt * priceOf('svm-usdc'), net = collUsd - debtUsd
+  const collUsd = coll * priceOf(position.collateral.tokenId), debtUsd = debt * priceOf(position.liability.tokenId), net = collUsd - debtUsd
   return {
     net, coll,
     leverage: net > 0 ? collUsd / net : null,
-    netApy: net > 0 && rates.value.borrow != null ? (rates.value.hold * collUsd - rates.value.borrow * debtUsd) / net : null,
-    liqPrice: coll > 0 ? debtUsd / (coll * (liqLtv.value / 100)) : null,
+    netApy: net > 0 && r.borrow != null ? (r.hold * collUsd - r.borrow * debtUsd) / net : null,
+    liqPrice: coll > 0 ? debtUsd / (coll * (liqLtvOf(l) / 100)) : null,
     hf: Number(position.healthFactor),
     ltv: collUsd > 0 ? (debtUsd / collUsd) * 100 : 0,
-    readiness: selectedLoopCloseReadiness(strategy.value?.actions?.fullClose ?? null, position, state.address, state.loopPositionReadStatus),
+    readiness: selectedLoopCloseReadiness(strategyOf(l)?.actions?.fullClose ?? null, position, state.address, state.loopPositionReadStatus),
   }
 }
 onMounted(() => { loadStrategies(); loadSetupStatus() })
@@ -313,13 +324,13 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
     <div v-if="tab === 'loops'" class="loops">
       <div class="n-thead lp-grid"><div>Asset</div><div>Max Net APY</div><div>Max leverage</div><div>Liq. available</div><div>Deposited</div><div>Borrow</div></div>
-      <div class="n-tr click lp-grid lp-row" role="link" tabindex="0" @click="openAsset" @keydown.enter="openAsset">
-        <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="usdy" /><span class="asset-name"><b>USDY</b><small>Ondo US Dollar Yield</small></span></div>
-        <div class="n-cell n-num up" data-label="Max Net APY">{{ netApyAt(MAX_LEV) == null ? '—' : pct(netApyAt(MAX_LEV)) }}</div>
-        <div class="n-cell n-num" data-label="Max leverage">{{ lev(MAX_LEV) }}</div>
-        <div class="n-cell n-num" data-label="Liq. available">{{ usd(market.liquidity) }}</div>
-        <div class="n-cell n-num" data-label="Deposited">{{ usd(market.deposited) }}</div>
-        <div class="n-cell" data-label="Borrow"><TokenIcon :token="usdc" size="sm" /></div>
+      <div v-for="l in LOOPS" :key="l.id" class="n-tr click lp-grid lp-row" role="link" tabindex="0" @click="openAsset(l)" @keydown.enter="openAsset(l)">
+        <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="tok(l.collateral)" /><span class="asset-name"><b>{{ tok(l.collateral).name }}</b><small>{{ l.fullName }}</small></span></div>
+        <div class="n-cell n-num up" data-label="Max Net APY">{{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}</div>
+        <div class="n-cell n-num" data-label="Max leverage">{{ lev(l.maxLeverage) }}</div>
+        <div class="n-cell n-num" data-label="Liq. available">{{ usd(marketOf(l).liquidity) }}</div>
+        <div class="n-cell n-num" data-label="Deposited">{{ usd(marketOf(l).deposited) }}</div>
+        <div class="n-cell" data-label="Borrow"><TokenIcon :token="tok(l.debt)" size="sm" /></div>
       </div>
     </div>
 
@@ -327,7 +338,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
       <div v-if="!positions.length" class="n-table"><div class="n-empty">No open loops yet. <button class="link" @click="tab = 'loops'">Explore loops</button></div></div>
       <section v-for="position in positions" :key="position.id" class="n-panel position" :class="{ picked: route.query.position === position.id || highlight === position.id }">
         <div class="panel-h">
-          <span class="pair"><TokenIcon :token="usdy" size="sm" />USDY / <TokenIcon :token="usdc" size="sm" />USDC</span>
+          <span class="pair"><TokenIcon :token="tok(position.collateral.tokenId)" size="sm" />{{ tok(position.collateral.tokenId).name }} / <TokenIcon :token="tok(position.liability.tokenId)" size="sm" />{{ tok(position.liability.tokenId).name }}</span>
         </div>
         <div class="n-stats pos-stats">
           <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(positionView(position).net) }}</div></div>
@@ -349,16 +360,16 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
     <div class="detail">
       <div class="d-head">
         <div class="title-row">
-          <TokenIcon :token="usdy" />
-          <h1 class="n-h1">USDY Loop</h1>
-          <span class="n-chip">RWA Loop</span>
-          <span class="n-chip">USDY Ondo Market</span>
-          <span class="oracle">USDY oracle price <b>${{ usdyPrice.toFixed(4) }}</b></span>
+          <TokenIcon :token="coll" />
+          <h1 class="n-h1">{{ coll.name }} Loop</h1>
+          <span v-if="coll.rwa" class="n-chip">RWA Loop</span>
+          <span class="n-chip">{{ marketById(loop.market).name }}</span>
+          <span class="oracle">{{ coll.name }} oracle price <b>${{ collPrice.toFixed(4) }}</b></span>
         </div>
-        <p class="n-sub blurb">USDY is Ondo's tokenized note backed by short-term US Treasuries: its price rises as it earns. A loop turns your USDC into USDY on Kamino and borrows USDC against it to buy more, in one transaction.</p>
+        <p class="n-sub blurb">{{ loop.blurb }} A loop turns your {{ debt.name }} into {{ coll.name }} on Kamino and borrows {{ debt.name }} against it to buy more, in one transaction.</p>
         <div class="n-stats d-stats">
-          <div class="n-stat"><div class="k">Max Net APY</div><div class="v up">{{ netApyAt(MAX_LEV) == null ? '—' : pct(netApyAt(MAX_LEV)) }}</div></div>
-          <div class="n-stat"><div class="k">Max leverage</div><div class="v">{{ lev(MAX_LEV) }}</div></div>
+          <div class="n-stat"><div class="k">Max Net APY</div><div class="v up">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
+          <div class="n-stat"><div class="k">Max leverage</div><div class="v">{{ lev(loop.maxLeverage) }}</div></div>
           <div class="n-stat"><div class="k">Total supplied</div><div class="v">{{ usd(market.deposited) }}</div></div>
           <div class="n-stat"><div class="k">Liquidity available</div><div class="v">{{ usd(market.liquidity) }}</div></div>
         </div>
@@ -366,10 +377,10 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
       <aside class="n-panel d-side">
         <h2 class="side-h">Open position</h2>
-        <div class="n-label row"><span>Deposit</span><span class="hint">In wallet: {{ state.address ? `${amt(state.balances['svm-usdc'] ?? 0)} USDC` : '—' }}</span></div>
+        <div class="n-label row"><span>Deposit</span><span class="hint">In wallet: {{ state.address ? `${amt(state.balances[debt.token_id] ?? 0)} ${debt.name}` : '—' }}</span></div>
         <div class="input-unit">
-          <input v-model="fundingAmount" class="n-input" inputmode="decimal" autocomplete="off" placeholder="0.00" aria-label="USDC amount" />
-          <span class="unit"><TokenIcon :token="usdc" size="sm" />USDC</span>
+          <input v-model="fundingAmount" class="n-input" inputmode="decimal" autocomplete="off" placeholder="0.00" :aria-label="`${debt.name} amount`" />
+          <span class="unit"><TokenIcon :token="debt" size="sm" />{{ debt.name }}</span>
         </div>
         <div class="n-quick">
           <button v-for="p in [25, 50, 75]" :key="p" :disabled="!state.address" @click="setPct(p)">{{ p }}%</button>
@@ -377,17 +388,17 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         </div>
 
         <div class="n-label borrow-l">Borrow asset</div>
-        <div class="borrow-asset"><span class="pair"><TokenIcon :token="usdc" size="sm" />USDC</span><span class="rate">{{ rates.borrow == null ? '—' : `${pct(rates.borrow)} APY` }}</span></div>
+        <div class="borrow-asset"><span class="pair"><TokenIcon :token="debt" size="sm" />{{ debt.name }}</span><span class="rate">{{ rates.borrow == null ? '—' : `${pct(rates.borrow)} APY` }}</span></div>
 
         <div class="lev">
           <div class="n-label row"><span>Leverage</span><b>{{ lev(leverage) }}</b></div>
-          <input v-model.number="leverage" class="slider" type="range" min="1.1" :max="MAX_LEV" step="0.01" aria-label="Leverage" />
-          <div class="ticks"><span>1.1×</span><span>{{ lev(MAX_LEV) }}</span></div>
+          <input v-model.number="leverage" class="slider" type="range" min="1.1" :max="loop.maxLeverage" step="0.01" aria-label="Leverage" />
+          <div class="ticks"><span>1.1×</span><span>{{ lev(loop.maxLeverage) }}</span></div>
         </div>
 
         <div class="ba" aria-label="Position after the loop">
-          <div class="ba-row"><span class="k">Collateral</span><span class="to">{{ amt(est.collateral, 2) }} USDY</span></div>
-          <div class="ba-row"><span class="k">Debt</span><span class="to">{{ amt(est.debt, 2) }} USDC</span></div>
+          <div class="ba-row"><span class="k">Collateral</span><span class="to">{{ amt(est.collateral, 2) }} {{ coll.name }}</span></div>
+          <div class="ba-row"><span class="k">Debt</span><span class="to">{{ amt(est.debt, 2) }} {{ debt.name }}</span></div>
           <div class="ba-row"><span class="k">Net APY</span><span class="to" :class="{ neg: est.netApy < 0 }">{{ est.netApy == null ? '—' : pct(est.netApy) }}</span></div>
           <div class="ba-row"><span class="k">Liquidation price</span><span class="to">${{ est.liqPrice.toFixed(4) }}</span></div>
         </div>
@@ -413,14 +424,14 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
       <section class="n-panel d-body">
         <h2 class="side-h">How this loop earns</h2>
         <div class="rows first">
-          <div class="n-kv"><span class="k">USDY yield × {{ Number(leverage).toFixed(2) }}</span><span class="v">{{ pct(rates.hold * leverage) }}</span></div>
-          <div class="n-kv"><span class="k">USDC borrow × {{ (leverage - 1).toFixed(2) }}</span><span class="v neg">{{ rates.borrow == null ? '—' : `−${pct(rates.borrow * (leverage - 1))}` }}</span></div>
+          <div class="n-kv"><span class="k">{{ coll.name }} yield × {{ Number(leverage).toFixed(2) }}</span><span class="v">{{ pct(rates.hold * leverage) }}</span></div>
+          <div class="n-kv"><span class="k">{{ debt.name }} borrow × {{ (leverage - 1).toFixed(2) }}</span><span class="v neg">{{ rates.borrow == null ? '—' : `−${pct(rates.borrow * (leverage - 1))}` }}</span></div>
           <div class="n-kv total"><span class="k">Net APY</span><span class="v" :class="est.netApy < 0 ? 'neg' : 'up'">{{ est.netApy == null ? '—' : pct(est.netApy) }}</span></div>
-          <p v-if="est.netApy != null && rates.native != null" class="vs">vs {{ pct(rates.hold) }} holding USDY</p>
-          <p v-else-if="rates.native == null" class="vs">USDY's own yield isn't included yet: it needs a week of recorded prices.</p>
+          <p v-if="est.netApy != null && (rates.native != null || !loop.priceYield)" class="vs">vs {{ pct(rates.hold) }} holding {{ coll.name }}</p>
+          <p v-else-if="loop.priceYield && rates.native == null" class="vs">{{ coll.name }}'s own yield isn't included yet: it needs a week of recorded prices.</p>
         </div>
         <div class="rows">
-          <div class="n-kv"><span class="k">Liquidation price</span><span class="v">${{ est.liqPrice.toFixed(4) }} <small>USDY −{{ ((1 - est.liqPrice / usdyPrice) * 100).toFixed(0) }}%</small></span></div>
+          <div class="n-kv"><span class="k">Liquidation price</span><span class="v">${{ est.liqPrice.toFixed(4) }} <small>{{ coll.name }} −{{ ((1 - est.liqPrice / collPrice) * 100).toFixed(0) }}%</small></span></div>
           <div class="n-kv"><span class="k">Health</span><span class="n-chip" :class="health(est.hf)[0]">{{ health(est.hf)[1] }}</span></div>
           <div class="bar" aria-hidden="true"><span class="lim" :style="{ left: `${liqLtv}%` }"></span><span class="mark" :style="{ left: `${est.ltv}%` }"></span></div>
           <div class="bar-l"><span>LTV {{ pct(est.ltv, 1) }}</span><span>liquidation {{ pct(liqLtv, 0) }}</span></div>
@@ -435,9 +446,9 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
           <div class="n-kv"><span class="k">Health factor</span><span class="v">{{ hfText(est.hf) }}</span></div>
           <div class="n-kv"><span class="k">Max slippage</span><span class="v">0.5%</span></div>
           <div v-for="fee in quoted ? fees.filter((f) => f.bps) : []" :key="fee.action" class="n-kv"><span class="k">Nysa fee</span><span class="v">{{ feeLabel(fee) }}</span></div>
-          <div class="n-kv"><span class="k">USDY yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (${rates.nativeSource === 'env' ? 'Ondo rate' : '30-day price'})` }}</span></div>
-          <div class="n-kv"><span class="k">Closing</span><span class="v">returns USDC</span></div>
-          <div class="n-kv"><span class="k">Rates as of</span><span class="v">{{ strategies[0]?.carry?.asOf ? new Date(strategies[0].carry.asOf).toLocaleString() : '—' }}</span></div>
+          <div v-if="loop.priceYield" class="n-kv"><span class="k">{{ coll.name }} yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (${rates.nativeSource === 'env' ? 'published rate' : '30-day price'})` }}</span></div>
+          <div class="n-kv"><span class="k">Closing</span><span class="v">returns {{ debt.name }}</span></div>
+          <div class="n-kv"><span class="k">Rates as of</span><span class="v">{{ strategyOf(loop)?.carry?.asOf ? new Date(strategyOf(loop).carry.asOf).toLocaleString() : '—' }}</span></div>
         </details>
       </section>
     </div>
