@@ -67,20 +67,24 @@ export function composeAtomicOpenInstructions(acquisitionInstructions, sdkOpenIn
   const economic = allInstructions.filter((instruction) =>
     String(instruction?.programAddress) !== COMPUTE_BUDGET_PROGRAM && !isAssociatedTokenCreate(instruction))
   const composed = [...computeBudget, ...setup, ...economic]
-  const finalFlash = flashInstructionIndexes(composed)
-  if (sdkFlash.borrowIndexes.length) {
-    if (finalFlash.borrowIndexes.length !== 1 || finalFlash.repayIndexes.length !== 1) {
-      throw new Error('Composed Multiply open lost its flash borrow or repay instruction.')
-    }
-    const borrowInstructionIndex = finalFlash.borrowIndexes[0]
-    const repayInstructionIndex = finalFlash.repayIndexes[0]
-    if (borrowInstructionIndex >= repayInstructionIndex || borrowInstructionIndex > 255) {
-      throw new Error('Composed Multiply open has an invalid flash-loan instruction order.')
-    }
-    const repay = composed[repayInstructionIndex]
-    const data = Uint8Array.from(repay.data)
-    data[16] = borrowInstructionIndex
-    composed[repayInstructionIndex] = { ...repay, data }
+  if (sdkFlash.borrowIndexes.length && (flashInstructionIndexes(composed).borrowIndexes.length !== 1 || flashInstructionIndexes(composed).repayIndexes.length !== 1)) {
+    throw new Error('Composed Multiply open lost its flash borrow or repay instruction.')
   }
-  return composed
+  return pointFlashRepayAtBorrow(composed)
+}
+
+// Kamino's flash repay names its borrow by instruction index, so it is re-pointed on the final list, after anything is
+// added in front (the compute-budget instructions compile adds). Lists without exactly one flash loan pass unchanged.
+export function pointFlashRepayAtBorrow(instructions) {
+  const { borrowIndexes, repayIndexes } = flashInstructionIndexes(instructions)
+  if (borrowIndexes.length !== 1 || repayIndexes.length !== 1) return instructions
+  const [borrowInstructionIndex] = borrowIndexes, [repayInstructionIndex] = repayIndexes
+  if (borrowInstructionIndex >= repayInstructionIndex || borrowInstructionIndex > 255) {
+    throw new Error('Composed Multiply open has an invalid flash-loan instruction order.')
+  }
+  const out = [...instructions]
+  const data = Uint8Array.from(out[repayInstructionIndex].data)
+  data[16] = borrowInstructionIndex
+  out[repayInstructionIndex] = { ...out[repayInstructionIndex], data }
+  return out
 }

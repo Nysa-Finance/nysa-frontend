@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js'
 import { TOKENS } from '../src/config.js'
 
-export const LOOP_PREVIEW_MAX_AGE_MS = 60_000
+export const LOOP_PREVIEW_MAX_AGE_MS = 150_000 // a preview lives 90s, and its snapshot may be older than the preview
 
 const decimal = (value) => {
   if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '') return null
@@ -22,11 +22,16 @@ function carryTimestamp(value) {
   return Date.parse(value)
 }
 
-// Carry survives snapshot refreshes only while its economics/source identity stay equal and both reads stay fresh.
+// Rates move with every snapshot (the USDC borrow APR follows utilization), so the carry survives a refresh while its
+// sources stay the same, it moves by at most 0.25 percentage points, its acknowledgement need is unchanged and both
+// reads stay fresh.
+const RATE_FIELDS = ['collateralSupplyAprPct', 'collateralNativeApyPct', 'liabilityBorrowAprPct']
+const sources = (assumptions) => assumptions && Object.fromEntries(Object.entries(assumptions).filter(([key]) => !RATE_FIELDS.includes(key)))
 export function loopCarryStillCurrent(previewCarry, currentCarry, now = Date.now()) {
   if (!previewCarry || !currentCarry || !Number.isFinite(now)) return false
-  if (JSON.stringify(canonical(previewCarry.assumptions ?? null)) !== JSON.stringify(canonical(currentCarry.assumptions ?? null))
-    || previewCarry.estimatedCarryPct !== currentCarry.estimatedCarryPct
+  const previewPct = decimal(previewCarry.estimatedCarryPct), currentPct = decimal(currentCarry.estimatedCarryPct)
+  if (JSON.stringify(canonical(sources(previewCarry.assumptions ?? null))) !== JSON.stringify(canonical(sources(currentCarry.assumptions ?? null)))
+    || !previewPct || !currentPct || previewPct.minus(currentPct).abs().gt(0.25)
     || (previewCarry.requiresAcknowledgement === true) !== (currentCarry.requiresAcknowledgement === true)) return false
   const previewAt = carryTimestamp(previewCarry.asOf)
   const currentAt = carryTimestamp(currentCarry.asOf)
@@ -72,8 +77,9 @@ export function loopMarketRiskStillCurrent(previewRisk, currentRisk, nowSeconds)
     const currentValue = decimal(currentRisk[field])
     if (!previewValue || !currentValue) return false
     if (field.endsWith('PriceUsd')) {
-      const tolerance = Math.max(1, Math.abs(previewValue.toNumber()), Math.abs(currentValue.toNumber())) * Number.EPSILON * 4
-      if (previewValue.minus(currentValue).abs().gt(tolerance)) return false
+      // Oracles update every ~30s, so a preview rarely meets an identical price at build. Up to 0.1% is accepted: the
+      // build rechecks LTV, slippage and the swap's minimum output against current prices anyway.
+      if (previewValue.minus(currentValue).abs().gt(previewValue.abs().mul(0.001))) return false
     } else if (!previewValue.eq(currentValue)) return false
   }
   if (!decimal(currentRisk.collateralPriceUsd)?.gt(0) || !decimal(currentRisk.liabilityPriceUsd)?.gt(0)) return false

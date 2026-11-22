@@ -12,8 +12,13 @@ services:
       SWAP_FEE_ACCOUNT_USDC: ${SWAP_FEE_ACCOUNT_USDC:-}
       SWAP_FEE_ACCOUNT_USDY: ${SWAP_FEE_ACCOUNT_USDY:-}
       SWAP_FEE_TREASURY_AUTHORITY: ${SWAP_FEE_TREASURY_AUTHORITY:-}
+      NYSA_FEE_BPS: ${NYSA_FEE_BPS:-} # Nysa's swap fee in bps; empty = no fee
       SWAP_WALLETS: ${SWAP_WALLETS:-} # private beta: only these wallets can swap
-      LOOP_WALLETS: ${LOOP_WALLETS:-} # only these wallets see the Loop page while it is off for everyone
+      LOOP_WALLETS: ${LOOP_WALLETS:-} # loop beta: only these wallets see and open loops while it is off for everyone
+      LOOP_MAX_FUNDING: ${LOOP_MAX_FUNDING:-} # USDY cap per loop during the beta
+      USDY_APY: ${USDY_APY:-} # Ondo's rate, used until a week of USDY prices is recorded
+      NYSA_LOOP_RISK_OWNER: ${NYSA_LOOP_RISK_OWNER:-} # sign-off required to release the loop to everyone
+      NYSA_LOOP_RISK_APPROVED_AT: ${NYSA_LOOP_RISK_APPROVED_AT:-}
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
@@ -47,7 +52,7 @@ services:
     logging: *logs
 
   tunnel:
-    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    image: cloudflare/cloudflared:2026.11.0@sha256:b94b96edf2c9c4360f8879c8580cfaa99077f19c849ec595ca2f711b27d4f344
     command: tunnel --no-autoupdate run # public hostname -> http://caddy:80 is set in the Cloudflare dashboard
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}

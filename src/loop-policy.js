@@ -2,9 +2,11 @@ import Decimal from 'decimal.js'
 
 const D = Decimal.clone({ precision: 40, rounding: Decimal.ROUND_HALF_UP })
 export const DEFAULT_LOOP_LIMITS = Object.freeze({
-  maxLeverage: 1.5,
-  maxBorrowLtvRatio: 0.5,
-  liquidationLtvRatio: 0.4,
+  // Swap and borrow costs push the real leverage a bit above the 9x target, so the hard cap is 10x and the LTV
+  // cap (Kamino's own max borrow LTV: 90% on USDY) is the binding limit.
+  maxLeverage: 10,
+  maxBorrowLtvRatio: 1,
+  liquidationLtvRatio: 0.95,
   maxSlippageBps: 50,
   maxPriceImpactPct: 1,
   maxQuoteAgeSeconds: 15,
@@ -33,7 +35,7 @@ export function loopExposure(fundingAmount, targetLeverage) {
   const equity = decimalText(fundingAmount, 'funding amount')
   const leverage = decimalText(targetLeverage, 'leverage')
   if (equity.isZero()) throw new RangeError('Invalid funding amount: must be positive')
-  if (leverage.lte(1) || leverage.gt(DEFAULT_LOOP_LIMITS.maxLeverage)) throw new RangeError('Invalid leverage: must be above 1 and at most 1.5')
+  if (leverage.lte(1) || leverage.gt(DEFAULT_LOOP_LIMITS.maxLeverage)) throw new RangeError(`Invalid leverage: must be above 1 and at most ${DEFAULT_LOOP_LIMITS.maxLeverage}`)
   const grossCollateral = equity.mul(leverage)
   const debt = grossCollateral.minus(equity)
   const projectedLtv = debt.div(grossCollateral).mul(100)

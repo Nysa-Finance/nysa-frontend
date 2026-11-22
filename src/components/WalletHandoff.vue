@@ -7,24 +7,29 @@ import TxProgress from './TxProgress.vue'
 const pendingAction = computed(() => {
   const pending = state.lendingPending
   if (!pending?.signature || !['signed-pending', 'submitted', 'relay-unknown'].includes(pending.status)) return null
+  // While this page runs the action its own progress sheet shows it; the card is for one left from earlier (a reload).
+  if (state.lendingActionBusy && pending.status !== 'relay-unknown') return null
   const labels = {
     'loop-open': 'Open loop', 'loop-close': 'Full close', 'loop-setup': 'Initialize Kamino metadata',
     deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards',
     liquidate: 'Liquidate', 'vault-deposit': 'Deposit', 'vault-withdraw': 'Withdraw',
   }
   let message = pending.status === 'relay-unknown'
-    ? 'The relay outcome is unknown. Nysa will keep checking this saved signature before allowing another action.'
+    ? 'The send outcome is unknown. Nysa keeps checking this signature before allowing another action.'
     : pending.status === 'signed-pending'
-      ? 'The signed transaction is saved and waiting for reconciliation. Do not submit it again.'
-      : 'Waiting for transaction confirmation. Nysa will reconcile this signature before allowing another action.'
+      ? 'Sending your signed transaction…'
+      : 'Waiting for the network to confirm it…'
+  let tone = pending.status === 'relay-unknown' ? 'warn' : 'busy'
   if (state.handoff?.status === 'error' && state.handoff.signature === pending.signature) {
     message = state.handoff.error
+    tone = 'error'
   }
   return {
     label: labels[pending.kind] ?? pending.params?.kind ?? 'Transaction',
     signature: pending.signature,
     canCheckLocalExpiry: pending.status === 'relay-unknown' && typeof pending.signedTransactionBase64 === 'string',
     message,
+    tone,
     walletMismatch: state.address !== pending.wallet,
   }
 })
@@ -54,9 +59,9 @@ async function checkLocalExpiry() {
         <button class="ho-link" :disabled="!state.lendingBuildCancelable" @click="cancelLendingBuildReservation">Cancel build reservation</button>
       </div>
     </div>
-    <div v-if="pendingAction" class="ho error" role="status" data-testid="durable-pending-action">
-      <div class="ho-label">{{ pendingAction.label }} pending</div>
-      <div class="ho-msg">{{ pendingAction.message }}</div>
+    <div v-if="pendingAction" class="ho" :class="pendingAction.tone" role="status" data-testid="durable-pending-action">
+      <div class="ho-label">{{ pendingAction.label }}{{ pendingAction.tone === 'busy' ? '' : ' pending' }}</div>
+      <div class="ho-msg"><span v-if="pendingAction.tone === 'busy'" class="ho-spin" aria-hidden="true" />{{ pendingAction.message }}</div>
       <div v-if="pendingAction.walletMismatch" class="ho-msg">Reconnect the wallet that signed this transaction to continue reconciliation.</div>
       <div class="ho-actions">
         <a class="ho-link" :href="txUrl(pendingAction.signature)" target="_blank" rel="noopener noreferrer">View transaction ↗</a>
@@ -83,6 +88,10 @@ async function checkLocalExpiry() {
 .ho-label { font-weight: 600; font-size: 14px; color: #fff; }
 .ho-msg { margin-top: 4px; display: flex; align-items: center; gap: 8px; }
 .ho.error .ho-msg { color: var(--n-red); }
+.ho.warn { border-color: #e8b33966; }
+.ho.warn .ho-msg { color: var(--n-amber); }
+.ho-spin { width: 12px; height: 12px; flex: 0 0 auto; border: 2px solid var(--n-line-2); border-top-color: var(--n-pink); border-radius: 50%; animation: spin .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ho-spin { animation: none; } }
 .ho-actions { margin-top: 12px; display: flex; align-items: center; gap: 16px; }
 .ho-btn { font-weight: 600; color: #fff; background: var(--grad); padding: 10px 18px; border-radius: 999px; }
 .ho-btn:disabled, .ho-link:disabled { opacity: .45; cursor: not-allowed; }

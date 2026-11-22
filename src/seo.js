@@ -10,7 +10,7 @@ const PAGES = {
   borrow: ['Borrow · Nysa', 'Borrow USDC against tokenized real-world assets like Ondo USDY on Solana.'],
   portfolio: ['Portfolio · Nysa', 'Your deposits, loans and health factor across Nysa markets.'],
   swap: ['Buy Collateral · Nysa', 'Buy or sell the collateral assets of Nysa markets at the best Jupiter route.'],
-  loop: ['Loop · Nysa', 'Preview a USDY and USDC Multiply strategy with fee-aware route quotes and live risk limits.'],
+  loop: ['Loops · Nysa', 'Loop USDY with USDC in one transaction: deposit USDC, borrow USDC against USDY on Kamino, close back to USDC.'],
   analytics: ['Analytics · Nysa', 'Live protocol metrics, oracle health and open positions of the Nysa markets, read on-chain.'],
   liquidations: ['Liquidations · Nysa', 'Loans close to liquidation and every liquidation in the Nysa markets, read on-chain from Kamino Lend.'],
   'not-found': ['Page not found · Nysa', DEFAULT],

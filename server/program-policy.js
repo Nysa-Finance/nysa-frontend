@@ -7,6 +7,17 @@ export const APPROVED_PROGRAMS = new Set([
   'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL', // Associated Token Account
 ])
 
+// A loop transaction calls these on top of its swap route (Kamino's flash loan, deposit, borrow and farm refresh; token
+// accounts; Orca's v2 swap passes the Memo program). The relay checks a signed loop against this list, not the swap one.
+export const LOOP_PROGRAMS = new Set([
+  ...APPROVED_PROGRAMS,
+  'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD', // Kamino Lend
+  'FarmsPZpWu9i7Kky8tPN37rs2TpmMrAZrC7S7vJa91Hr', // Kamino Farms
+  'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', // SPL Token
+  '11111111111111111111111111111111', // System
+  'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr', // Memo
+])
+
 // Provider labels are not program identities: each admitted route label maps to its exact program.
 // `Whirlpool` was resolved from the owner of a live USDY/USDC route pool account.
 export const ROUTE_PROGRAM_IDS_BY_LABEL = Object.freeze({

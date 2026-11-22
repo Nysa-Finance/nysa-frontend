@@ -17,4 +17,14 @@ assert.equal(evaluateProgramPolicy([jupiter], ['Whirlpool'], { Whirlpool: [whirl
   'a mapped DEX program must be present in the route program set')
 assert.equal(evaluateProgramPolicy([unknown], [], {}, new Set([unknown])).approved, true, 'the approved list is injectable for tests')
 
+// A loop's programs pass the loop list, not the swap one (the relay refused every signed loop with the swap list).
+{
+  const { LOOP_PROGRAMS } = await import('./program-policy.js')
+  const loop = ['ComputeBudget111111111111111111111111111111', 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL',
+    'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD', 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', jupiter, whirlpool]
+  assert.equal(evaluateProgramPolicy(loop, ['Whirlpool'], { Whirlpool: [whirlpool] }).approved, false)
+  assert.equal(evaluateProgramPolicy(loop, ['Whirlpool'], { Whirlpool: [whirlpool] }, LOOP_PROGRAMS).approved, true)
+  assert.equal(evaluateProgramPolicy([...loop, unknown], ['Whirlpool'], { Whirlpool: [whirlpool] }, LOOP_PROGRAMS).approved, false)
+}
+
 console.log('program policy ok')

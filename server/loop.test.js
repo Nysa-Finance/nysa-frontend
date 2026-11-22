@@ -50,7 +50,7 @@ assert.equal(openBuilt[0].ixs[0].kind, 'sdk-leverage-ix')
 assert.equal(sdkCalls.at(-1).quoter, compositionCallbacks.quoter)
 assert.equal(sdkCalls.at(-1).swapper, compositionCallbacks.swapper)
 assert.equal(sdkCalls.at(-1).obligationTypeTagOverride, 1, 'loop open always derives a separate Multiply obligation')
-assert.throws(() => loop.buildMultiplyOpenIxs({ ...openInput, targetLeverage: new Decimal('1.51') }, compositionCallbacks, sdkBuilder), /leverage/i)
+assert.throws(() => loop.buildMultiplyOpenIxs({ ...openInput, targetLeverage: new Decimal('10.01') }, compositionCallbacks, sdkBuilder), /leverage/i)
 assert.throws(() => loop.buildMultiplyOpenIxs({ ...openInput, obligation: { refreshedStats: { userTotalDeposit: new Decimal(1) } } }, compositionCallbacks, sdkBuilder), /top.?up|existing/i)
 assert.throws(() => loop.buildMultiplyFullCloseIxs({ isClosingPosition: false }, compositionCallbacks, sdkBuilder), /full close/i)
 const closeBuilt = await loop.buildMultiplyFullCloseIxs({
@@ -267,7 +267,6 @@ const quote = await callbacks.quoter(inputs, [])
 assert.equal(quote.priceAInB.toString(), '1.0989')
 assert.equal(quote.quoteResponse.outputAmountBaseUnits, '1098900')
 const previewRoute = quote.quoteResponse
-assert.equal(buildRequests[0].feeBps, 10)
 assert.equal(buildRequests[0].slippageBps, 49) // preserves a small execution margin under the SDK's 50-bps sizing buffer.
 assert.equal(buildRequests[0].feeAccount, feeAccount)
 assert.equal(buildRequests[0].feeAccountMint, usdy)
@@ -587,16 +586,19 @@ const validOpenSimulation = {
   positionCollateralBaseUnits: '150000000', positionCollateralCTokenBaseUnits: '90000000', positionDebtBaseUnits: '50000000',
   tokenDeltas: [
     { account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '100' },
-    { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '0' },
-    { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '-100000000' },
+    { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '-100000000' },
+    { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '0' },
   ],
 }
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: validOpenSimulation }), true,
   'an open simulation must match the approved preview and its projected leverage/LTV bounds')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
-  tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy' ? { ...item, deltaBaseUnits: '-99999999' } : item),
-} }), true, 'a verified USDY swap surplus may reduce the wallet debit without exceeding authorized funding')
+  tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy' ? { ...item, deltaBaseUnits: '12' } : item),
+} }), true, 'a USDY swap surplus may land in the wallet')
+assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
+  ...validOpenSimulation, tokenDeltas: validOpenSimulation.tokenDeltas.filter((item) => item.account !== 'owner-usdy'),
+} }), true, 'an untouched USDY account has no delta entry and reads as unchanged')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
   tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'treasury-usdy'
@@ -630,12 +632,12 @@ assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: si
 } }), false, 'a simulated open with higher debt is outside the signed preview')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation, tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdc' ? { ...item, deltaBaseUnits: '-100000001' } : item),
-} }), false, 'an open may not debit the wallet USDC account')
+} }), false, 'the transaction may not debit more USDC than the user approved')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
   tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy'
-    ? { ...item, deltaBaseUnits: '-100000001' } : item),
-} }), false, 'the transaction may not debit more USDY than the user approved')
+    ? { ...item, deltaBaseUnits: '-1' } : item),
+} }), false, 'an open may not take USDY from the wallet')
 
 const simulationCloseBuilt = {
   ...simulationBuilt,
@@ -720,7 +722,7 @@ const preview = buildLoopPreview({
 })
 assert.equal(preview.exposure.grossCollateral, '1500')
 assert.equal(preview.exposure.debt, '500')
-assert.equal(preview.limits.projectedLtvPct, 38)
+assert.equal(preview.limits.projectedLtvPct, 90)
 assert.equal(preview.risk.projectedLtvPct, '33.33333333333333333333333333333333333333')
 assert.equal(preview.fees.length, 1)
 assert.equal(preview.available, false)
@@ -734,17 +736,17 @@ const adverseRoutePreview = buildLoopPreview({
   feePricesUsd: { [usdc]: 1, [usdy]: 0.8 },
   sdkPosition: {
     collateralMint: usdy, collateralDecimals: 6, collateralAmount: '135', collateralPriceUsd: '0.8',
-    liabilityMint: usdc, liabilityDecimals: 6, debtBorrowAmount: '60', borrowFeeRatio: '0.01', liabilityPriceUsd: '1',
+    liabilityMint: usdc, liabilityDecimals: 6, debtBorrowAmount: '97', borrowFeeRatio: '0.01', liabilityPriceUsd: '1',
     flashBorrowAmount: '35', flashFeeRatio: '0.001',
   },
 })
 assert.equal(adverseRoutePreview.exposure.grossCollateral, '108')
-assert.equal(adverseRoutePreview.exposure.debt, '60.6')
-assert.equal(adverseRoutePreview.exposure.projectedLtvPct, '56.11111111111111111111111111111111111111')
+assert.equal(adverseRoutePreview.exposure.debt, '97.97')
+assert.equal(adverseRoutePreview.exposure.projectedLtvPct, '90.71296296296296296296296296296296296296')
 assert.equal(adverseRoutePreview.risk.liquidationLtvPct, 95)
 assert.ok(Number(adverseRoutePreview.risk.healthFactor) < 2)
 assert.ok(adverseRoutePreview.risk.violations.includes('projected-ltv-cap'))
-assert.equal(adverseRoutePreview.costs.find((cost) => cost.action === 'borrow-origination-fee').usd, 0.6)
+assert.equal(adverseRoutePreview.costs.find((cost) => cost.action === 'borrow-origination-fee').usd, 0.97)
 assert.equal(adverseRoutePreview.costs.find((cost) => cost.action === 'flash-loan-fee').usd, 0.028)
 assert.ok(adverseRoutePreview.knownCostsTotalUsd > 0.62)
 
@@ -807,3 +809,25 @@ const changedAcknowledgementPreviews = [
 for (const changed of changedAcknowledgementPreviews) assert.notEqual(changed.carry.acknowledgementKey, finalAcknowledgementPreview.carry.acknowledgementKey)
 
 console.log('loop preview ok')
+
+// The flash repay names its borrow by index: after compile puts its compute-budget instructions in front, it must
+// point at the borrow's new position (Kamino error 6033 InvalidFlashRepay otherwise).
+{
+  const { pointFlashRepayAtBorrow } = await import('./loop-composition.js')
+  const { PROGRAM_ID } = await import('@kamino-finance/klend-sdk')
+  const ix = (program, bytes) => ({ programAddress: program, accounts: [], data: Uint8Array.from(bytes) })
+  const borrow = ix(PROGRAM_ID, [135, 231, 52, 167, 7, 52, 212, 193])
+  const repay = ix(PROGRAM_ID, [185, 117, 0, 203, 96, 245, 180, 186, ...Array(8).fill(0), 0])
+  const budget = ix('ComputeBudget111111111111111111111111111111', [2])
+  const out = pointFlashRepayAtBorrow([budget, budget, borrow, ix('11111111111111111111111111111111', [1]), repay])
+  assert.equal(out[4].data[16], 2)
+  assert.equal(repay.data[16], 0) // the input is not mutated
+}
+
+// Interest accrues between preview and simulation: the debt may read a base unit or so more, never far off.
+{
+  const { debtWithinAccrual } = await import('./loop.js')
+  assert.equal(debtWithinAccrual('11290830', '11290829'), true)
+  assert.equal(debtWithinAccrual('11291900', '11290829'), true) // 0.01% of 11.29 USDC is 1,129 base units
+  assert.equal(debtWithinAccrual('11293000', '11290829'), false)
+}

@@ -125,9 +125,10 @@ const changedCarryBuilt = await changedCarryRelay.service.build({
   kind: 'loop-open', wallet, market: 'sol-usdy-usdc', amount: '100', leverage: 1.5, previewId: carryPreview.id,
   acknowledgementKey: carryPreview.carry.acknowledgementKey,
 })
-relayCurrentCarry = { ...relayCurrentCarry, assumptions: { ...relayCurrentCarry.assumptions, collateralSupplyAprPct: 0.6 } }
+relayCurrentCarry = { ...relayCurrentCarry, estimatedCarryPct: String(Number(relayCurrentCarry.estimatedCarryPct) + 1),
+  assumptions: { ...relayCurrentCarry.assumptions, collateralSupplyAprPct: 1.5 } }
 await assert.rejects(changedCarryRelay.service.send({ tx: 'signed', wallet, intentId: changedCarryBuilt.intentId }), /carry assumptions changed/i,
-  'changed carry APR remains blocked at relay even though metadata refresh timestamps are tolerated')
+  'a carry moving past its tolerance stays blocked at relay even though metadata refresh timestamps are tolerated')
 
 const boundRisk = {
   collateralPriceUsd: '1.09', liabilityPriceUsd: '1', maxBorrowLtvPct: 90, liquidationLtvPct: 95,

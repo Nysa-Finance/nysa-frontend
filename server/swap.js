@@ -6,7 +6,15 @@ import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
 import { rpc } from './rpc.js'
 
-const FEE_BPS = 10
+// Nysa's swap fee in basis points (NYSA_FEE_BPS). Empty or 0 = no fee: no fee account is passed to Jupiter and no
+// fee checks run. Capped at 100 (1%).
+export function feeBpsFromEnv(value) {
+  if (value == null || String(value).trim() === '') return 0
+  const bps = Number(value)
+  if (!Number.isSafeInteger(bps) || bps < 0 || bps > 100) throw new Error('NYSA_FEE_BPS must be an integer from 0 to 100.')
+  return bps
+}
+export const FEE_BPS = feeBpsFromEnv(process.env.NYSA_FEE_BPS)
 const MAX_SLIPPAGE_BPS = 50
 const MAX_ROUTE_LEGS = 32
 const KEYLESS_PROVIDER_INTERVAL_MS = 2_100
@@ -87,13 +95,15 @@ async function readFeeTokenAccount(feeAccount) {
 
 export const feeAccountEnv = (token) => `SWAP_FEE_ACCOUNT_${token.name.toUpperCase().replace(/[^A-Z0-9]/g, '_')}`
 
+// With no fee there is nothing to configure: every pair token resolves, with no account.
 export function configuredFeeAccountForMint(mint) {
   const token = Object.values(TOKENS).find((candidate) => candidate.mint === mint)
+  if (token && !FEE_BPS) return { account: null, mint }
   const account = token ? process.env[feeAccountEnv(token)] : null
   return account ? { account, mint } : null
 }
 
-export const swapFeeAccountsConfigured = () =>
+export const swapFeeAccountsConfigured = () => !FEE_BPS ||
   swapTokens.every((t) => configuredFeeAccountForMint(t.mint)) && !!process.env.SWAP_FEE_TREASURY_AUTHORITY
 
 const safeAddress = (value, label) => {
@@ -195,25 +205,38 @@ function verifiedBlockhash(body) {
 }
 
 function validateFee(body, { inputMint, outputMint, inputAmount, feeAccountMint, routePlan }) {
+  if (!FEE_BPS) {
+    // No fee: the route must spend the whole input and its output must be the reported output.
+    const routeOutput = sumRouteAmount(routePlan, 'outAmount', outputMint)
+    if (sumRouteAmount(routePlan, 'inAmount', inputMint) !== BigInt(inputAmount)
+      || routeOutput !== BigInt(positiveIntegerString(body.outAmount, 'provider output amount'))
+      || (body.platformFee != null && String(body.platformFee.amount ?? '0') !== '0')) {
+      throw new SwapError('Swap provider route takes a fee Nysa did not request.')
+    }
+    return {
+      fee: { bps: 0, mint: null, basisMint: null, basisAmountBaseUnits: String(routeOutput), amountBaseUnits: '0', providerReported: false, routeDeltaVerified: true },
+      providerReported: false,
+    }
+  }
   const basisAmount = feeAccountMint === inputMint
     ? BigInt(inputAmount)
     : sumRouteAmount(routePlan, 'outAmount', outputMint)
   const expectedAmount = calculateSwapFeeBaseUnits(basisAmount, FEE_BPS)
-  if (expectedAmount <= 0n) throw new SwapError('Swap amount is too small to collect the 10-bps fee in base units.')
+  if (expectedAmount <= 0n) throw new SwapError('Swap amount is too small to collect the Nysa fee in base units.')
 
   const routeInput = sumRouteAmount(routePlan, 'inAmount', inputMint)
   const routeOutput = sumRouteAmount(routePlan, 'outAmount', outputMint)
   const input = BigInt(inputAmount)
   const reportedOutput = positiveIntegerString(body.outAmount, 'provider output amount')
   const routeDelta = feeAccountMint === inputMint ? input - routeInput : routeOutput - BigInt(reportedOutput)
-  if (routeDelta !== expectedAmount) throw new SwapError('Swap provider route amounts do not match the expected 10-bps fee.')
+  if (routeDelta !== expectedAmount) throw new SwapError('Swap provider route amounts do not match the expected Nysa fee.')
   if (feeAccountMint === inputMint && routeOutput !== BigInt(reportedOutput)) throw new SwapError('Swap provider net output does not match the route output.')
   const fee = body.platformFee
   const providerMetadata = fee != null
   if (providerMetadata) {
     if (typeof fee !== 'object' || fee.feeBps !== FEE_BPS || fee.feeMint !== feeAccountMint
       || positiveIntegerString(fee.amount, 'provider fee amount') !== String(expectedAmount)) {
-      throw new SwapError('Swap provider fee does not match Nysa’s 10-bps policy or configured fee-account mint.')
+      throw new SwapError('Swap provider fee does not match Nysa’s fee policy or configured fee-account mint.')
     }
   }
   return {
@@ -255,13 +278,13 @@ export async function buildSwap({
   safeAddress(inputMint, 'input mint')
   safeAddress(outputMint, 'output mint')
   safeAddress(wallet, 'wallet address')
-  safeAddress(feeAccount, 'fee account')
+  if (FEE_BPS) safeAddress(feeAccount, 'fee account')
   if (inputMint === outputMint) throw new SwapError('Swap input and output mints must be different.')
   const supportedPair = LIVE.some((market) => market.pairs?.some((pair) =>
     new Set([TOKENS[pair.collateral]?.mint, TOKENS[pair.liability]?.mint]).has(inputMint)
       && new Set([TOKENS[pair.collateral]?.mint, TOKENS[pair.liability]?.mint]).has(outputMint)))
   if (!supportedPair) throw new SwapError('Unsupported swap mint pair.')
-  if (feeAccountMint !== inputMint && feeAccountMint !== outputMint) throw new SwapError('Fee account mint must match the input or output mint.')
+  if (FEE_BPS && feeAccountMint !== inputMint && feeAccountMint !== outputMint) throw new SwapError('Fee account mint must match the input or output mint.')
   const inputAmount = positiveIntegerString(inputAmountBaseUnits, 'input amount')
   if (!Number.isSafeInteger(slippageBps) || slippageBps < 0 || slippageBps > MAX_SLIPPAGE_BPS) throw new SwapError('Slippage exceeds Nysa’s 50-bps limit.')
   if (typeof fetcher !== 'function') throw new SwapError('Swap provider is not configured.')
@@ -269,7 +292,7 @@ export async function buildSwap({
   const endpoint = new URL('/swap/v2/build', apiBaseUrl)
   endpoint.search = new URLSearchParams({
     inputMint, outputMint, amount: inputAmount, taker: wallet,
-    platformFeeBps: String(FEE_BPS), feeAccount, slippageBps: String(slippageBps), transactionVersion: '0',
+    ...(FEE_BPS ? { platformFeeBps: String(FEE_BPS), feeAccount } : {}), slippageBps: String(slippageBps), transactionVersion: '0',
   }).toString()
   const headers = providerApiKey ? { 'x-api-key': providerApiKey } : {}
   const timeoutSignal = AbortSignal.timeout(10_000)
@@ -304,14 +327,14 @@ export async function buildSwap({
   const fee = validateFee(body, { inputMint, outputMint, inputAmount, feeAccountMint, routePlan })
   const route = routePrograms(routePlan, routeProgramIdsByLabel)
   let feeAccountInfo = null
-  if (typeof feeAccountVerifier === 'function') {
+  if (FEE_BPS && typeof feeAccountVerifier === 'function') {
     try { feeAccountInfo = await feeAccountVerifier(feeAccount) } catch { feeAccountInfo = null }
   }
   if (feeAccountInfo && (!TOKEN_PROGRAMS.has(String(feeAccountInfo.tokenProgram)) || feeAccountInfo.initialized !== true
     || feeAccountInfo.mint !== feeAccountMint || (feeAccountAuthority && feeAccountInfo.authority !== feeAccountAuthority))) {
     throw new SwapError('Configured fee account does not match its token mint or treasury authority.')
   }
-  const feeAccountMintVerified = !!feeAccountInfo && feeAccountInfo.mint === feeAccountMint
+  const feeAccountMintVerified = !FEE_BPS || !!feeAccountInfo && feeAccountInfo.mint === feeAccountMint
     && !!feeAccountAuthority && feeAccountInfo.authority === feeAccountAuthority
     && feeAccountInfo.initialized === true && TOKEN_PROGRAMS.has(String(feeAccountInfo.tokenProgram))
   const provider = providerInstructions(body)
@@ -337,8 +360,8 @@ export async function buildSwap({
     slippageBps,
     priceImpactPct: impact * 100,
     fee: fee.fee,
-    feeAccount,
-    feeAccountMint,
+    feeAccount: FEE_BPS ? feeAccount : null,
+    feeAccountMint: FEE_BPS ? feeAccountMint : null,
     feeVerified,
     feeAccountMintVerified,
     feeBalanceDeltaVerified,
