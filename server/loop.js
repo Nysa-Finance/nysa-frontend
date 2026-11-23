@@ -221,7 +221,7 @@ function canonicalize(value) {
 
 export function createLoopAcknowledgementKey({ strategy, fundingAmount, leverage, leverageQuote, preview, sdkPosition, policyVersion = LOOP_ACK_POLICY_VERSION }) {
   if (!strategy?.carry?.requiresAcknowledgement || !sdkPosition || !leverageQuote) return null
-  const fundingBaseUnits = parseBaseUnits(String(fundingAmount), TOKENS['svm-usdc'].decimals).toString()
+  const fundingBaseUnits = parseBaseUnits(String(fundingAmount), TOKENS[loopByMarket(strategy.id)?.collateral ?? 'svm-usdc'].decimals).toString()
   const signedPreview = {
     policyVersion,
     marketId: strategy.id,
@@ -983,12 +983,12 @@ export async function buildLoopOpenApplication({
     }
   }
   const multiplyObligationAddress = await multiplyType.toPda(address(fresh.marketConfig.kaminoMarket), fresh.owner)
-  // The loop is funded in the debt token: Kamino swaps it, with the borrowed debt, into the collateral.
-  const fundingBaseUnits = parseBaseUnits(String(amount), fresh.liability.decimals).toString()
+  // The loop is funded in the collateral itself: only the borrowed debt is swapped into more collateral.
+  const fundingBaseUnits = parseBaseUnits(String(amount), fresh.collateral.decimals).toString()
   if (fundingBaseUnits !== application.fundingBaseUnits) {
     throw new LoopPreviewError('Funding amount changed after preview; build a fresh preview before opening.')
   }
-  const funding = new Decimal(fundingBaseUnits).div(new Decimal(10).pow(fresh.liability.decimals))
+  const funding = new Decimal(fundingBaseUnits).div(new Decimal(10).pow(fresh.collateral.decimals))
   const collateralPrice = positiveDecimal(freshRisk.collateralPriceUsd, 'collateral oracle price')
   const liabilityPrice = positiveDecimal(freshRisk.liabilityPriceUsd, 'debt oracle price')
   const sdkInputs = {
@@ -1004,7 +1004,7 @@ export async function buildLoopOpenApplication({
     currentLedgerInstant: fresh.currentLedgerInstant,
     targetLeverage: new Decimal(String(leverage)),
     flashBorrowType,
-    selectedTokenMint: address(fresh.liability.mint),
+    selectedTokenMint: address(fresh.collateral.mint),
     obligationTypeTagOverride: ObligationTypeTag.Multiply,
     scopeRefreshIx: [],
     budgetAndPriorityFeeIxs: [],
@@ -1144,7 +1144,7 @@ export async function buildLoopCloseApplication({
     priceCollToDebt: collateralPrice.div(liabilityPrice),
     slippagePct: sdkSlippagePctFromBps(50),
     isClosingPosition: true,
-    selectedTokenMint: address(fresh.liability.mint), // everything is swapped to the debt token: the debt is repaid, the rest returns to the wallet
+    selectedTokenMint: address(fresh.collateral.mint), // only the collateral that repays the debt is swapped; the rest returns to the wallet as collateral
     budgetAndPriorityFeeIxs: [],
     scopeRefreshIx: [],
     quoteBufferBps: new Decimal(0),
@@ -1253,20 +1253,21 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
   const feeDeltas = simulation.tokenDeltas.filter((delta) => feeAccounts.has(`${delta.account}:${delta.mint}`))
   try { verifyAtomicLoopFeeDeltas(built.feeEvents, feeDeltas) } catch { return false }
   if (kind === 'loop-open') {
-    const fundingAccount = built.ownerTokenAccounts.find((item) => item.mint === context.debtMint)
-    const collateralAccount = built.ownerTokenAccounts.find((item) => item.mint === context.collateralMint)
+    // Funded in the collateral: the wallet's collateral account pays it, the debt account is never charged.
+    const fundingAccount = built.ownerTokenAccounts.find((item) => item.mint === context.collateralMint)
+    const debtAccount = built.ownerTokenAccounts.find((item) => item.mint === context.debtMint)
     // An unchanged account has no delta entry: read it as 0.
     const deltaOf = (account, mint) => simulation.tokenDeltas.find((item) => item.account === account?.account && item.mint === mint)?.deltaBaseUnits ?? '0'
-    const fundingDelta = deltaOf(fundingAccount, context.debtMint)
-    const collateralDelta = deltaOf(collateralAccount, context.collateralMint)
+    const fundingDelta = deltaOf(fundingAccount, context.collateralMint)
+    const debtDelta = deltaOf(debtAccount, context.debtMint)
     const authorized = context.authorizedPosition
-    if (!authorized || !fundingAccount || !collateralAccount
-      || !/^-?\d+$/.test(String(fundingDelta)) || !/^-?\d+$/.test(String(collateralDelta))) return false
+    if (!authorized || !fundingAccount || !debtAccount
+      || !/^-?\d+$/.test(String(fundingDelta)) || !/^-?\d+$/.test(String(debtDelta))) return false
     try {
       const fundingBaseUnits = BigInt(context.fundingBaseUnits)
       const fundingChange = BigInt(fundingDelta)
-      // The wallet pays at most the approved funding; the swap can leave a small collateral surplus in the wallet, never take any.
-      if (fundingBaseUnits <= 0n || fundingChange > 0n || -fundingChange > fundingBaseUnits || BigInt(collateralDelta) < 0n) return false
+      // The wallet pays at most the approved funding (a swap surplus may come back); no debt token is ever taken.
+      if (fundingBaseUnits <= 0n || -fundingChange > fundingBaseUnits || BigInt(debtDelta) < 0n) return false
     } catch { return false }
     try {
       if (!/^\d+$/.test(String(simulation.positionCollateralBaseUnits))
@@ -1309,7 +1310,7 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
       && new Decimal(String(simulation.positionCollateralAmount ?? '-1')).isZero()
       && allCollateralZero && allDebtZero
       && ownerDeltas.every((item) => /^-?\d+$/.test(item.deltaBaseUnits) && BigInt(item.deltaBaseUnits) >= 0n)
-      && ownerDeltas.some((item) => item.mint === context.debtMint && BigInt(item.deltaBaseUnits) > 0n)
+      && ownerDeltas.some((item) => item.mint === context.collateralMint && BigInt(item.deltaBaseUnits) > 0n)
   }
   return false
 }
@@ -1321,13 +1322,13 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
   if (!loop) throw new LoopPreviewError('Unknown loop strategy.')
   const collateral = TOKENS[loop.collateral]
   const liability = TOKENS[loop.debt]
-  const fundingBaseUnits = parseBaseUnits(String(fundingAmount), liability.decimals).toString()
+  const fundingBaseUnits = parseBaseUnits(String(fundingAmount), collateral.decimals).toString() // funded in the collateral
   const feeAccount = configuredFeeAccountForMint(collateral.mint)
   const strategyView = strategy ?? { enabled: false, unavailableReasons: [], carry: { estimatedCarryPct: null } }
   const reserves = snapshot?.reserves?.[marketId] ?? {}
   const snapshotPrice = (token) => Number(reserves[token.token_id]?.price) > 0 ? Number(reserves[token.token_id].price) : token.price
   const limits = {
-    fundingPriceUsd: snapshotPrice(liability),
+    fundingPriceUsd: snapshotPrice(collateral),
     collateralPriceUsd: snapshotPrice(collateral),
     maxBorrowLtvPct: reserves[collateral.token_id]?.maxLtv,
     liquidationLtvPct: reserves[collateral.token_id]?.liqLtv,
@@ -1357,7 +1358,7 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
     }
     return validateProviderSwapInstructions(request, { ...built, programPolicy: { approved: true, unreviewed: [] } })
   }
-  const funding = new Decimal(fundingBaseUnits).div(new Decimal(10).pow(liability.decimals))
+  const funding = new Decimal(fundingBaseUnits).div(new Decimal(10).pow(collateral.decimals))
   const callbacks = createKaminoSwapCallbacks({ wallet: taker, slippageBps: 49, signal,
     localForkSimulation, localForkRpcUrl, localRouteProgramVerifier, validateRoute: validatePreviewRoute })
   const sdkQuote = await quoteMultiplyOpenAtFinalAmount({
@@ -1372,7 +1373,7 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
     referrer: none(),
     currentLedgerInstant: live.now,
     targetLeverage: new Decimal(String(leverage)),
-    selectedTokenMint: address(liability.mint),
+    selectedTokenMint: address(collateral.mint),
     obligationTypeTagOverride: ObligationTypeTag.Multiply,
     scopeRefreshIx: [],
     budgetAndPriorityFeeIxs: [],
@@ -1407,7 +1408,7 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
       fundingAmount,
       leverage,
       strategy: strategyView,
-      fundingPriceUsd: marketRisk.liabilityPriceUsd,
+      fundingPriceUsd: marketRisk.collateralPriceUsd,
       collateralPriceUsd: marketRisk.collateralPriceUsd,
       ...freshLimits,
       riskInputs,

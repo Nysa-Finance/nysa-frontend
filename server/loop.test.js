@@ -591,19 +591,19 @@ const validOpenSimulation = {
   positionCollateralBaseUnits: '150000000', positionCollateralCTokenBaseUnits: '90000000', positionDebtBaseUnits: '50000000',
   tokenDeltas: [
     { account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '100' },
-    { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '-100000000' },
-    { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '0' },
+    { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '0' },
+    { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '-100000000' }, // funded in the collateral
   ],
 }
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: validOpenSimulation }), true,
   'an open simulation must match the approved preview and its projected leverage/LTV bounds')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
-  tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy' ? { ...item, deltaBaseUnits: '12' } : item),
-} }), true, 'a USDY swap surplus may land in the wallet')
+  tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy' ? { ...item, deltaBaseUnits: '-99999988' } : item),
+} }), true, 'a USDY swap surplus may come back to the wallet')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
-  ...validOpenSimulation, tokenDeltas: validOpenSimulation.tokenDeltas.filter((item) => item.account !== 'owner-usdy'),
-} }), true, 'an untouched USDY account has no delta entry and reads as unchanged')
+  ...validOpenSimulation, tokenDeltas: validOpenSimulation.tokenDeltas.filter((item) => item.account !== 'owner-usdc'),
+} }), true, 'an untouched USDC account has no delta entry and reads as unchanged')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
   tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'treasury-usdy'
@@ -636,13 +636,13 @@ assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: si
   ...validOpenSimulation, positionDebtAmount: '60', positionDebtBaseUnits: '60000000',
 } }), false, 'a simulated open with higher debt is outside the signed preview')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
-  ...validOpenSimulation, tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdc' ? { ...item, deltaBaseUnits: '-100000001' } : item),
-} }), false, 'the transaction may not debit more USDC than the user approved')
+  ...validOpenSimulation, tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy' ? { ...item, deltaBaseUnits: '-100000001' } : item),
+} }), false, 'the transaction may not debit more USDY than the user approved')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-open', built: simulationBuilt, simulation: {
   ...validOpenSimulation,
-  tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy'
+  tokenDeltas: validOpenSimulation.tokenDeltas.map((item) => item.account === 'owner-usdc'
     ? { ...item, deltaBaseUnits: '-1' } : item),
-} }), false, 'an open may not take USDY from the wallet')
+} }), false, 'an open may not take USDC from the wallet')
 
 const simulationCloseBuilt = {
   ...simulationBuilt,
@@ -653,11 +653,14 @@ const validCloseSimulation = {
   obligationBalances: { deposits: [], borrows: [] },
   tokenDeltas: [
     { account: 'treasury-usdy', mint: usdy, deltaBaseUnits: '100' },
-    { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '30000000' },
-    { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '0' },
+    { account: 'owner-usdc', mint: usdc, deltaBaseUnits: '0' },
+    { account: 'owner-usdy', mint: usdy, deltaBaseUnits: '30000000' }, // the collateral left after repaying comes back
   ],
 }
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-close', built: simulationCloseBuilt, simulation: validCloseSimulation }), true)
+assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-close', built: simulationCloseBuilt, simulation: {
+  ...validCloseSimulation, tokenDeltas: validCloseSimulation.tokenDeltas.map((item) => item.account === 'owner-usdy' ? { ...item, deltaBaseUnits: '0' } : item),
+} }), false, 'full close must return the remaining collateral to the wallet')
 assert.equal(loop.verifyLoopApplicationSimulation({ kind: 'loop-close', built: simulationCloseBuilt, simulation: {
   ...validCloseSimulation,
   obligationBalances: { deposits: [{ reserve: 'extra-reserve', cTokenBaseUnits: '1', amountBaseUnits: '1' }], borrows: [] },
