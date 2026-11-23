@@ -1,4 +1,5 @@
 <script setup>
+import Boost from '../components/Boost.vue'
 // Lending goes through the Earn vaults: ?mode=withdraw is for collateral, or USDC lent here directly before Earn.
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
@@ -79,7 +80,7 @@ function openDd() {
               <div class="n-cell n-num" data-label="Deposits">{{ usd(r(t.token_id)?.supplyUsd) }}</div>
               <div class="n-cell n-num" data-label="Borrowed">{{ m.loans.includes(t.token_id) ? usd(r(t.token_id)?.borrowUsd) : '—' }}</div>
               <div class="n-cell n-num" data-label="Utilization">{{ pct(r(t.token_id)?.utilization, 1) }}</div>
-              <div class="n-cell n-accent n-num" data-label="Deposit APY">{{ pct((r(t.token_id)?.supplyAPR ?? 0) + rewardAprOf(m, t.token_id)) }}<span v-if="rewardAprOf(m, t.token_id) > 0" class="n-boost" :title="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)" :aria-label="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)">⚡</span></div>
+              <div class="n-cell n-accent n-num" data-label="Deposit APY">{{ pct((r(t.token_id)?.supplyAPR ?? 0) + rewardAprOf(m, t.token_id)) }}<Boost v-if="rewardAprOf(m, t.token_id) > 0" :title="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)" /></div>
               <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r(t.token_id)?.borrowAPR) }}</div>
             </div>
           </div>

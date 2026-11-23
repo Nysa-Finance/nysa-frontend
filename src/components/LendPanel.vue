@@ -1,4 +1,5 @@
 <script setup>
+import Boost from './Boost.vue'
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, rewardAprOf, sendKaminoAction, useTx } from '../store.js'
 import { pct, amt, usdFull, num, cleanAmount, floorTo, coversAll, underLimit } from '../logic.js'
@@ -70,7 +71,7 @@ async function submit() {
     <div class="n-kv" style="margin-bottom: 10px"><span class="k">Deposit APY</span><span class="v accent">{{ pct(row?.reserve.supplyAPR) }}</span></div>
     <template v-if="rewardAprOf(market, token.token_id) > 0">
       <div class="n-kv" style="margin-bottom: 10px"><span class="k">{{ state.rewards[market.id][token.token_id].rewards.map((x) => x.symbol).join(' + ') }} rewards APR</span><span class="v" style="color: var(--n-green)">+{{ pct(rewardAprOf(market, token.token_id)) }}</span></div>
-      <div class="n-kv" style="margin-bottom: 10px"><span class="k">⚡ Boosted APY</span><span class="v accent">{{ pct((row?.reserve.supplyAPR ?? 0) + rewardAprOf(market, token.token_id)) }}</span></div>
+      <div class="n-kv" style="margin-bottom: 10px"><span class="k"><Boost /> Boosted APY</span><span class="v accent">{{ pct((row?.reserve.supplyAPR ?? 0) + rewardAprOf(market, token.token_id)) }}</span></div>
     </template>
     <div class="n-kv" style="margin-bottom: 10px"><span class="k">Your deposits</span><span class="v">{{ on ? `${amt(supplied)} ${token.name}` : '—' }}</span></div>
     <div class="n-kv" style="margin-bottom: 20px">

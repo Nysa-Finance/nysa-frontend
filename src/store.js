@@ -139,9 +139,9 @@ export const reserveOf = (m, id) => state.reserves[m.id]?.[id]
 export const priceOf = (id) => Object.values(state.reserves).find((r) => r[id])?.[id].price ?? tok(id).price
 export const rewardAprOf = (m, id) => state.rewards[m.id]?.[id]?.apr ?? 0
 export const boostNote = (m, id, supplyApy) =>
-  `${pct(supplyApy)} supply APY + ${pct(rewardAprOf(m, id))} ${state.rewards[m.id]?.[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
+  `${pct(supplyApy)} deposit APY + ${pct(rewardAprOf(m, id))} ${state.rewards[m.id]?.[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
 
-export const vaultApyNote = (v) => `${pct(v.supplyApy)} supply APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
+export const vaultApyNote = (v) => `${pct(v.supplyApy)} deposit APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
 
 // Governance changes risk parameters (Market Updates), so the live on-chain values win over config.js.
 export function riskOf(m, pair) {

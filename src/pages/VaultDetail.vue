@@ -1,4 +1,5 @@
 <script setup>
+import Boost from '../components/Boost.vue'
 import { event } from '../analytics.js'
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -60,7 +61,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
           <p class="n-sub blurb">{{ v.description }}</p>
           <div v-if="live?.rewards" class="n-banner reward split">
             <div>
-              <div class="n-banner-t">⚡ Boosted: +{{ pct(live.rewardsApy) }} APY in {{ live.rewards.symbol }} rewards, auto-compounded into your deposit.</div>
+              <div class="n-banner-t"><Boost /> Boosted: +{{ pct(live.rewardsApy) }} APY in {{ live.rewards.symbol }} rewards, auto-compounded into your deposit.</div>
             </div>
           </div>
           <div v-if="v.farmPoints" class="n-banner split">
@@ -73,7 +74,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
           <div id="side-mobile" /><!-- phones: the deposit panel moves here, above the numbers -->
           <div class="n-stats stat-3 head-stats">
             <div class="n-stat"><div class="k">Total deposits</div><div class="v"><span v-if="live">{{ usd(live.totalUsd) }}</span><span v-else class="n-skel" /></div></div>
-            <div class="n-stat"><div class="k">APY</div><div class="v accent"><span v-if="live">{{ pct(live.apy) }}<span v-if="live.rewardsApy" class="n-boost" :title="vaultApyNote(live)" :aria-label="vaultApyNote(live)">⚡</span></span><span v-else class="n-skel" /></div></div>
+            <div class="n-stat"><div class="k">APY</div><div class="v accent"><span v-if="live">{{ pct(live.apy) }}<Boost v-if="live.rewardsApy" :title="vaultApyNote(live)" /></span><span v-else class="n-skel" /></div></div>
             <div class="n-stat"><div class="k">Utilization</div><div class="v"><span v-if="live">{{ pct(live.utilization) }}</span><span v-else class="n-skel" /></div><div class="s">of the vault's deposits are lent out</div></div>
           </div>
         </div>

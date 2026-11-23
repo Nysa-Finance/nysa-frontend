@@ -1,4 +1,5 @@
 <script setup>
+import Boost from './Boost.vue'
 import { ref, computed, watch } from 'vue'
 import { state, sendVaultAction, useTx, vaultApyNote as apyNote } from '../store.js'
 import { tok } from '../config.js'
@@ -52,7 +53,7 @@ async function submit() {
     </div>
     <div class="n-kv" style="margin-bottom: 10px">
       <span class="k">Vault APY</span>
-      <span class="v accent">{{ live ? pct(live.apy) : '—' }}<span v-if="live?.rewardsApy" class="n-boost" :title="apyNote(live)" :aria-label="apyNote(live)">⚡</span></span>
+      <span class="v accent">{{ live ? pct(live.apy) : '—' }}<Boost v-if="live?.rewardsApy" :title="apyNote(live)" /></span>
     </div>
     <div class="n-kv" style="margin-bottom: 10px"><span class="k">Your deposit</span><span class="v">{{ on ? `${amt(position)} ${token.name}` : '—' }}</span></div>
     <div class="n-kv" style="margin-bottom: 20px">
