@@ -7,6 +7,7 @@ import {
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
 import { fetchAddressLookupTable } from '@solana-program/address-lookup-table'
+import { TOKENS } from '../src/config.js'
 import { ataOf } from './account.js'
 import { rpc } from './rpc.js'
 import { parseSwapQuoteRequest, publicSwapQuote, SWAP_QUOTE_MAX_AGE_MS } from './swap-routes.js'
@@ -19,6 +20,9 @@ const SYSTEM_PROGRAM = '11111111111111111111111111111111'
 const RENT_SYSVAR = 'SysvarRent111111111111111111111111111111111'
 const TOKEN_PROGRAMS = new Set([String(TOKEN_PROGRAM_ADDRESS), String(TOKEN_2022_PROGRAM_ADDRESS)])
 const ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
+// Token-2022 only for the mints config.js marks `token2022` (sUSDai, whose transfer hook is unset). A hook would add
+// accounts to WhirlpoolSwapV2, which its fixed account count refuses.
+const tokenProgramOf = (mint) => (Object.values(TOKENS).some((t) => t.mint === String(mint) && t.token2022) ? TOKEN_2022_PROGRAM_ADDRESS : TOKEN_PROGRAM_ADDRESS)
 const COMPUTE_BUDGET_PROGRAM = 'ComputeBudget111111111111111111111111111111'
 const JUPITER_V6_PROGRAM = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'
 const JUPITER_V6_EVENT_AUTHORITY = 'D8cy77BBepLMngZx6ZukaTff5hCt1HrWyKk3Hnd9oitf'
@@ -247,22 +251,19 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, deri
   if (instruction.accounts.length !== ORCA_ROUTE_V2_ACCOUNT_COUNT + f) {
     throw new SwapExecutionError(`Jupiter V6 WhirlpoolSwapV2 route_v2 must contain exactly ${ORCA_ROUTE_V2_ACCOUNT_COUNT + f} accounts with no trailing metadata.`)
   }
-  const ata = async (mint) => deriveAta(address(request.wallet), address(mint), TOKEN_PROGRAM_ADDRESS)
-  // Only classic SPL Token mints: Token-2022 extensions and transfer hooks need their own verified CPI contract.
+  const ata = async (mint) => deriveAta(address(request.wallet), address(mint), tokenProgramOf(mint))
   routeMeta(instruction, 0, request.wallet, AccountRole.READONLY_SIGNER, 'user authority')
   routeMeta(instruction, 1, await ata(request.inputMint), AccountRole.WRITABLE, 'user source token account')
   routeMeta(instruction, 2, await ata(request.outputMint), AccountRole.WRITABLE, 'user destination token account')
   routeMeta(instruction, 3, request.inputMint, AccountRole.READONLY, 'source mint')
   routeMeta(instruction, 4, request.outputMint, AccountRole.READONLY, 'destination mint')
-  routeMeta(instruction, 5, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'source token program')
-  routeMeta(instruction, 6, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'destination token program')
+  routeMeta(instruction, 5, tokenProgramOf(request.inputMint), AccountRole.READONLY, 'source token program')
+  routeMeta(instruction, 6, tokenProgramOf(request.outputMint), AccountRole.READONLY, 'destination token program')
   routeMeta(instruction, 7, JUPITER_V6_DESTINATION_TOKEN_ACCOUNT_PLACEHOLDER, AccountRole.READONLY, 'optional destination account placeholder')
   routeMeta(instruction, 8, JUPITER_V6_EVENT_AUTHORITY, AccountRole.READONLY, 'event authority')
   routeMeta(instruction, 9, JUPITER_V6_PROGRAM, AccountRole.READONLY, 'Jupiter program account')
   if (f) routeMeta(instruction, 10, built.feeAccount, AccountRole.WRITABLE, 'platform fee account')
   routeMeta(instruction, 10 + f, WHIRLPOOL_PROGRAM, AccountRole.READONLY, 'Orca program')
-  routeMeta(instruction, 11 + f, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca token program A')
-  routeMeta(instruction, 12 + f, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'Orca token program B')
   routeMeta(instruction, 13 + f, SPL_MEMO_PROGRAM, AccountRole.READONLY, 'Orca memo program')
   routeMeta(instruction, 14 + f, request.wallet, AccountRole.READONLY, 'Orca token authority')
   routeMeta(instruction, 15 + f, built.routePlan[0].swapInfo.ammKey, AccountRole.WRITABLE, 'Orca pool')
@@ -272,6 +273,8 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, deri
   if (decoded.routeSteps[0].aToB !== aIsInput) throw new SwapExecutionError('WhirlpoolSwapV2 direction does not match the source and destination mints.')
   routeMeta(instruction, 16 + f, mintA, AccountRole.READONLY, 'Orca mint A')
   routeMeta(instruction, 17 + f, mintB, AccountRole.READONLY, 'Orca mint B')
+  routeMeta(instruction, 11 + f, tokenProgramOf(mintA), AccountRole.READONLY, 'Orca token program A')
+  routeMeta(instruction, 12 + f, tokenProgramOf(mintB), AccountRole.READONLY, 'Orca token program B')
   routeMeta(instruction, 18 + f, await ata(mintA), AccountRole.WRITABLE, 'Orca user token account A')
   routeMeta(instruction, 20 + f, await ata(mintB), AccountRole.WRITABLE, 'Orca user token account B')
   for (const [index, label] of [[19, 'vault A'], [21, 'vault B'], [22, 'tick array 0'], [23, 'tick array 1'], [24, 'tick array 2'], [25, 'oracle']]) {
@@ -694,8 +697,8 @@ export async function compileSwapTransaction({ request, built, rpcClient = rpc, 
 export async function simulateSwapTransaction({ request, built, compiled, rpcClient = rpc } = {}) {
   if (!rpcClient) throw new SwapExecutionError('Solana RPC is unavailable.')
   const owner = address(request.wallet)
-  const inputAta = await ataOf(owner, address(request.inputMint), TOKEN_PROGRAM_ADDRESS)
-  const outputAta = await ataOf(owner, address(request.outputMint), TOKEN_PROGRAM_ADDRESS)
+  const inputAta = await ataOf(owner, address(request.inputMint), tokenProgramOf(request.inputMint))
+  const outputAta = await ataOf(owner, address(request.outputMint), tokenProgramOf(request.outputMint))
   const feeAta = FEE_BPS ? address(built.feeAccount) : null
   const writableRouteAccounts = built.instructions.flatMap((instruction) => instruction.accounts
     .filter((meta) => meta.role === AccountRole.WRITABLE || meta.role === AccountRole.WRITABLE_SIGNER)

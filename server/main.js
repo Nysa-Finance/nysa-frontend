@@ -16,7 +16,7 @@ import { isSanctioned, screeningReady, screeningStatus, startScreening } from '.
 import { read, POINTS, HISTORY } from './storage.js'
 import { priceApy } from '../src/logic.js'
 import { DEFAULT_LOOP_LIMITS } from '../src/loop-policy.js'
-import { LIVE, LOOP_ENABLED, LOOPS, TOKENS, VAULTS, loopByMarket, marketById, vaultById } from '../src/config.js'
+import { LIVE, LOOP_ENABLED, LOOPS, TOKENS, VAULTS, loopByMarket, loopMarket, marketById, vaultById } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import { LoopPreviewError, LOOP_PREVIEW_TTL_MS, LOOP_SIGNING_WINDOW_MS, buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
 import { buildSwap, configuredFeeAccountForMint, FEE_BPS, swapFeeAccountsConfigured, SwapError } from './swap.js'
@@ -202,7 +202,7 @@ async function loadPriceYields() {
   try {
     const history = JSON.parse((await read(HISTORY)) ?? '{}')
     for (const loop of LOOPS.filter((item) => item.priceYield)) {
-      const measured = priceApy(history.tokens?.[marketById(loop.market).reserves[loop.collateral]]?.points ?? [])
+      const measured = priceApy(history.tokens?.[loopMarket(loop).reserves[loop.collateral]]?.points ?? [])
       priceYields.set(loop.market, measured != null ? { apy: measured, source: 'price' } : envApy(loop))
     }
   } catch (error) { console.warn('[loop] price yield unavailable', error?.message) }
@@ -242,7 +242,7 @@ function loopStrategyForAction(snapshot, marketId, leverage = 1.5) {
   const localExecution = localForkProgramEvidenceReady()
   return evaluateLoopStrategy({
     marketId,
-    market: marketById(marketId),
+    market: loopMarket(loopByMarket(marketId)),
     allowedMarketIds: LOOP_ALLOWED_MARKET_IDS,
     vaults: snapshot?.vaults ?? {},
     reserves: loopReserves(snapshot, marketId),

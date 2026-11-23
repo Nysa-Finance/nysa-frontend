@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { VanillaObligation, ObligationTypeTag, PROGRAM_ID, getObligationType, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress, some } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, TOKENS, VAULTS, loopByMarket, tokensOf } from '../src/config.js'
+import { MARKETS, TOKENS, VAULTS, loopByMarket, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
 import { getLive, getVault, reserveOf, farms, num } from './market.js'
 import { LOOP_POSITION_MARKET_IDS } from './strategy.js'
@@ -128,7 +128,7 @@ async function readAccount(wallet) {
   // a token lent in two markets is two positions
   const balances = {}, balancesBaseUnits = {}, positions = {}, positionsBaseUnits = {}, claimable = {}, loopPositions = [], loopPositionReadStatus = {}
   let sol = 0
-  for (const m of LIVE) {
+  for (const m of MARKETS) {
     positions[m.id] = {}
     positionsBaseUnits[m.id] = {}
     const { market, now, farms: farmStates } = getLive(m)

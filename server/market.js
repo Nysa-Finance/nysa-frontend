@@ -3,7 +3,7 @@ import {
   KaminoMarket, LendingMarket, getSingleReserve, getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS,
 } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
-import { LIVE, tokensOf } from '../src/config.js'
+import { MARKETS, tokensOf } from '../src/config.js'
 import { rewardApr, short } from '../src/logic.js'
 import { rpc, NONE, LOCAL_FORK } from './rpc.js'
 import { createLatestReadPublisher, createRefresher } from './refresh.js'
@@ -31,7 +31,7 @@ export async function loadMarket(rpcClient, m) {
 }
 
 export function reserveOf(market, t) {
-  const m = LIVE.find((x) => x.kaminoMarket === String(market.getAddress()))
+  const m = MARKETS.find((x) => x.kaminoMarket === String(market.getAddress()))
   const r = m?.reserves[t.token_id] && market.getReserveByAddress(address(m.reserves[t.token_id]))
   if (!r) throw new Error(`The Kamino market has no ${t.name} reserve`)
   return r
@@ -92,7 +92,7 @@ function farmRewards(tokens, t, r, farm, market) {
 async function readAll() {
   const now = await getCurrentLedgerInstant(rpc)
   const live = new Map(), reserves = {}, rewards = {}
-  for (const m of LIVE) {
+  for (const m of MARKETS) {
     reserves[m.id] = {}
     rewards[m.id] = {}
     const market = await loadMarket(rpc, m)
