@@ -75,18 +75,18 @@ function onMove(e) {
     </div>
     <div v-if="series.length" ref="box" class="canvas" @pointermove="onMove" @pointerleave="hover = null">
       <svg :width="W" :height="H" role="img" :aria-label="`Daily realized APY for ${token.name}`">
-        <g font-size="11" fill="#8a8a8a" font-weight="300">
+        <g font-size="11" fill="#a3a3a3" font-weight="300">
           <template v-for="t in yAxis.ticks" :key="'y' + t">
-            <line :x1="L" :x2="W - R" :y1="y(t)" :y2="y(t)" stroke="#141414" />
+            <line :x1="L" :x2="W - R" :y1="y(t)" :y2="y(t)" stroke="#1a1a1a" />
             <text :x="L - 8" :y="y(t) + 4" text-anchor="end">{{ tickLabel(t) }}</text>
           </template>
           <text v-for="p in xTicks" :key="'x' + p.ts" :x="x(p.ts)" :y="H - B + 16" :text-anchor="x(p.ts) > W - R - 30 ? 'end' : x(p.ts) < L.value + 30 ? 'start' : 'middle'">{{ date(p.ts) }}</text>
         </g>
-        <line :x1="L" :x2="W - R" :y1="H - B" :y2="H - B" stroke="#1a1a1a" />
+        <line :x1="L" :x2="W - R" :y1="H - B" :y2="H - B" stroke="#262626" />
         <path :d="path" fill="none" :stroke="COLOR" stroke-width="2" stroke-linejoin="round" />
         <circle v-for="p in series" :key="p.ts" :cx="x(p.ts)" :cy="y(p.apy)" r="2.5" :fill="COLOR" />
         <g v-if="hover">
-          <line :x1="x(hover.ts)" :x2="x(hover.ts)" :y1="T" :y2="H - B" stroke="#333" />
+          <line :x1="x(hover.ts)" :x2="x(hover.ts)" :y1="T" :y2="H - B" stroke="#404040" />
           <circle :cx="x(hover.ts)" :cy="y(hover.apy)" r="4.5" :fill="COLOR" stroke="#fff" stroke-width="2" />
         </g>
       </svg>
@@ -116,7 +116,7 @@ function onMove(e) {
 .canvas { position: relative; height: 220px; touch-action: pan-y; }
 .canvas svg { display: block; }
 .ra-empty { padding: 36px 12px; }
-.tip { position: absolute; top: 12px; min-width: 150px; pointer-events: none; background: #0d0d0d; border: 1px solid #333; border-radius: 6px; padding: 10px; font-size: 12px; color: var(--n-text-2); display: flex; flex-direction: column; gap: 4px; }
+.tip { position: absolute; top: 12px; min-width: 150px; pointer-events: none; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 4px; padding: 10px; font-size: 12px; color: var(--n-text-2); display: flex; flex-direction: column; gap: 4px; }
 .tip-t { color: #fff; font-weight: 500; }
 .tip i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
 .tip b { color: #fff; font-weight: 500; margin-left: 6px; }

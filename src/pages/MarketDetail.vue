@@ -190,7 +190,7 @@ function openDd() {
 .side { position: sticky; top: 96px; }
 .side-switch { display: inline-block; margin-bottom: 12px; font-size: 13px; color: var(--n-text-3); }
 .side-switch:hover { color: var(--n-pink); }
-.geo-note { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--n-line); border-radius: 8px; font-size: 13px; line-height: 1.5; color: var(--n-text-2); }
+.geo-note { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--n-line); border-radius: 4px; font-size: 13px; line-height: 1.5; color: var(--n-text-2); }
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
 .farm-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ec008c59; border-radius: 8px; background: #ec008c0f; }
