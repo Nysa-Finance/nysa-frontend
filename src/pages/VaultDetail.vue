@@ -58,15 +58,15 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
             <span class="n-chip">Kamino vault</span>
           </div>
           <p class="n-sub blurb">{{ v.description }}</p>
-          <div v-if="live?.rewards" class="farm-cta reward-cta">
+          <div v-if="live?.rewards" class="n-banner reward split">
             <div>
-              <div class="farm-cta-t">⚡ Boosted: +{{ pct(live.rewardsApy) }} APY in {{ live.rewards.symbol }} rewards, auto-compounded into your deposit.</div>
+              <div class="n-banner-t">⚡ Boosted: +{{ pct(live.rewardsApy) }} APY in {{ live.rewards.symbol }} rewards, auto-compounded into your deposit.</div>
             </div>
           </div>
-          <div v-if="v.farmPoints" class="farm-cta">
+          <div v-if="v.farmPoints" class="n-banner split">
             <div>
-              <div class="farm-cta-t">This vault is eligible for farming Nysa Points.</div>
-              <div class="farm-cta-s">Deposit and earn points on your balance, every day.</div>
+              <div class="n-banner-t">This vault is eligible for farming Nysa Points.</div>
+              <div class="n-banner-s">Deposit and earn points on your balance, every day.</div>
             </div>
             <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'vault' })">Check your points →</button>
           </div>
@@ -136,10 +136,6 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
 .side { position: sticky; top: 96px; }
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
-.farm-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ec008c59; border-radius: 8px; background: #ec008c0f; }
-.farm-cta-t { font-size: 14px; font-weight: 500; }
-.farm-cta-s { margin-top: 2px; font-size: 13px; color: var(--n-text-3); }
-.farm-cta .n-btn-sm { flex-shrink: 0; }
 .reward-cta { border-color: #3ddc8459; background: #3ddc840f; }
 .hint { margin-top: 12px; color: var(--n-text-4); font-size: 12px; line-height: 1.6; }
 .addr-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 15px 20px; border-bottom: 1px solid var(--n-hair); font-size: 14px; }
@@ -153,7 +149,6 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
 .addr-short { display: none; }
 @media (max-width: 1320px) { .addr-full { display: none; } .addr-short { display: inline; } }
 @media (max-width: 860px) {
-  .farm-cta { flex-direction: column; align-items: stretch; }
   .n-detail-grid { grid-template-columns: 1fr; gap: 30px; }
   .side { position: static; }
   #side-mobile { margin-bottom: 22px; }

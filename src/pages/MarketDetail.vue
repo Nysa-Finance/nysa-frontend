@@ -57,10 +57,10 @@ function openDd() {
             <button class="n-pill" @click="openDd"><span class="n-dot" />Safety Score {{ m.dueDiligence.safetyScore }}/10</button>
           </div>
           <p class="n-sub blurb">{{ m.blurb }}</p>
-          <div v-if="m.farmPoints" class="farm-cta">
+          <div v-if="m.farmPoints" class="n-banner split">
             <div>
-              <div class="farm-cta-t">This market is eligible for farming Nysa Points.</div>
-              <div class="farm-cta-s">Collateral deposited here earns points on its balance, every day.</div>
+              <div class="n-banner-t">This market is eligible for farming Nysa Points.</div>
+              <div class="n-banner-s">Collateral deposited here earns points on its balance, every day.</div>
             </div>
             <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'market' })">Check your points →</button>
           </div>
@@ -164,12 +164,12 @@ function openDd() {
       <aside class="side">
         <Teleport defer to="#side-mobile" :disabled="!narrow">
         <RouterLink v-if="mode === 'withdraw'" :to="{ name: 'market-detail', params: { id: m.id } }" class="side-switch">← Back to borrowing</RouterLink>
-        <p v-if="geoBlocked" class="geo-note">This market is not available in your country (United States, Canada and sanctioned countries). You can still repay a loan and withdraw collateral.</p>
+        <p v-if="geoBlocked" class="n-note geo-note">This market is not available in your country (United States, Canada and sanctioned countries). You can still repay a loan and withdraw collateral.</p>
         <LendPanel
           v-if="mode === 'withdraw'" :key="'l' + route.fullPath" :market="m" :tokens="loans" :all-tokens="tokens"
           initial-tab="withdraw" :initial-asset="route.query.asset" withdraw-only
         />
-        <div v-if="state.swapVisible && mode === 'withdraw'" class="n-banner withdraw-swap-cta">
+        <div v-if="state.swapVisible && mode === 'withdraw'" class="n-note withdraw-swap-cta">
           Withdrew {{ tok(m.pairs[0].collateral).name }}? <RouterLink :to="{ name: 'swap', query: { input: m.pairs[0].collateral, output: m.pairs[0].liability } }">Swap it to {{ tok(m.pairs[0].liability).name }}</RouterLink>.
         </div>
         <BorrowPanel
@@ -190,15 +190,11 @@ function openDd() {
 .side { position: sticky; top: 96px; }
 .side-switch { display: inline-block; margin-bottom: 12px; font-size: 13px; color: var(--n-text-3); }
 .side-switch:hover { color: var(--n-pink); }
-.geo-note { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--n-line); border-radius: 4px; font-size: 13px; line-height: 1.5; color: var(--n-text-2); }
+.geo-note { margin: 0 0 12px; }
 .title-row { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; flex-wrap: wrap; }
 .blurb { max-width: 620px; margin-bottom: 22px; line-height: 1.6; font-size: 14px; }
-.farm-cta { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; padding: 16px 20px; border: 1px solid #ec008c59; border-radius: 8px; background: #ec008c0f; }
 .withdraw-swap-cta { margin-top: 14px; line-height: 1.6; }
 .withdraw-swap-cta a { color: var(--n-pink); font-weight: 500; }
-.farm-cta-t { font-size: 14px; font-weight: 500; }
-.farm-cta-s { margin-top: 2px; font-size: 13px; color: var(--n-text-3); }
-.farm-cta .n-btn-sm { flex-shrink: 0; }
 .n-thead { font-size: 11px; padding: 14px 20px; }
 .n-tr.sm { padding: 15px 20px; font-size: 14px; }
 .ad-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr 1fr; }
@@ -228,7 +224,6 @@ function openDd() {
 @media (max-width: 1320px) { .addr-full { display: none; } .addr-short { display: inline; } }
 @media (max-width: 1180px) { .n-table { overflow-x: auto; } }
 @media (max-width: 860px) {
-  .farm-cta { flex-direction: column; align-items: stretch; }
   .n-detail-grid { grid-template-columns: 1fr; gap: 30px; }
   .side { position: static; }
   #side-mobile { margin-bottom: 22px; }

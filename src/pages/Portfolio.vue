@@ -96,13 +96,13 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     </div>
   </section>
 
-  <div v-if="on" class="n-banner fp-banner">
+  <div v-if="on" class="n-banner split">
     <span v-if="points">Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span>
-    <span v-else>Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as supplied balance × time, snapshotted every hour.</span>
+    <span v-else>Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as deposited balance × time, snapshotted every hour.</span>
     <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'portfolio' })">View leaderboard</button>
   </div>
 
-  <div v-for="c in claimable" :key="c.m.id" class="n-banner reward-banner">
+  <div v-for="c in claimable" :key="c.m.id" class="n-banner reward split">
     <span>Unclaimed rewards from {{ c.m.name }}: <b>{{ c.items.map(([name, a]) => `${amt(a, 4)} ${name}`).join(' + ') }}</b></span>
     <button class="n-btn-sm" :disabled="claimTx.status === 'running'" @click="claim(c.m)">Claim</button>
   </div>
@@ -164,10 +164,6 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
 
 <style scoped>
 .mk { font-weight: 600; }
-.fp-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.fp-banner b { color: #fff; font-weight: 600; }
-.reward-banner { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-left-color: var(--n-green); }
-.reward-banner b { color: #fff; font-weight: 600; }
 .link { color: var(--n-pink); }
 .swap-portfolio-cta { line-height: 1.6; }
 .loop-position-panel { margin: 22px 0; }
