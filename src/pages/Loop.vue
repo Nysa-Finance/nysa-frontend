@@ -44,6 +44,11 @@ watch(() => route.query.position, (p) => { if (p) tab.value = 'positions' })
 const openAsset = (l) => router.push({ name: 'loop', params: { asset: l.id } })
 const strategies = computed(() => strategy.value?.strategies ?? [])
 const strategyOf = (l) => strategies.value.find((item) => item.id === l?.market)
+// Only loops whose market the Nysa vault actually lends into are offered, to everyone (beta wallets included): a
+// market without that allocation (sUSDai's, for now) stays hidden. Open positions still show, so they can be closed.
+const allocated = (l) => !!strategyOf(l) && !strategyOf(l).unavailableReasons?.some((reason) => reason.code === 'no-actual-allocation')
+const visibleLoops = computed(() => LOOPS.filter(allocated))
+watch([asset, strategy], () => { if (asset.value && strategy.value && !allocated(loop.value)) router.replace({ name: 'loop' }) })
 const executionMode = computed(() => preview.value?.executionMode ?? strategy.value?.executionMode ?? null)
 const localForkMode = computed(() => executionMode.value === 'surfpool-local')
 const fees = computed(() => preview.value?.fees ?? [])
@@ -324,7 +329,8 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
     <div v-if="tab === 'loops'" class="loops">
       <div class="n-thead lp-grid"><div>Asset</div><div>Max net APY</div><div>Max leverage</div><div>Available liquidity</div><div>Deposited</div><div>Borrow</div></div>
-      <div v-for="l in LOOPS" :key="l.id" class="n-tr click lp-grid lp-row" role="link" tabindex="0" @click="openAsset(l)" @keydown.enter="openAsset(l)">
+      <div v-if="strategy && !visibleLoops.length" class="n-empty">Loops aren't open on Nysa yet.</div>
+      <div v-for="l in visibleLoops" :key="l.id" class="n-tr click lp-grid lp-row" role="link" tabindex="0" @click="openAsset(l)" @keydown.enter="openAsset(l)">
         <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="tok(l.collateral)" /><span class="asset-name"><b>{{ tok(l.collateral).name }}</b><small>{{ l.fullName }}</small></span></div>
         <div class="n-cell n-num" :class="netApyOf(l, l.maxLeverage) < 0 ? 'neg' : 'up'" data-label="Max net APY">{{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}</div>
         <div class="n-cell n-num" data-label="Max leverage">{{ lev(l.maxLeverage) }}</div>
