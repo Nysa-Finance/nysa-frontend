@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, MARKETS, TOKENS } from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy } from './strategy.js'
 
 const now = Date.parse('2026-11-05T12:00:00.000Z')
@@ -87,6 +87,11 @@ const allocationMissing = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allo
 assert.ok(allocationMissing.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))
 const collateralReserveOnly = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [{ ...vaults.rwa.allocations[0], reserve: LIVE[0].reserves['svm-usdy'] }] } } })
 assert.ok(collateralReserveOnly.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))
+// A betaOnly loop (oTFY, LOOP_WALLETS only) needs no Nysa vault allocation in its market.
+const betaOnly = evaluateLoopStrategy({ ...ready, marketId: 'sol-otfy-usdc', market: MARKETS.find((m) => m.id === 'sol-otfy-usdc'),
+  allowedMarketIds: ['sol-otfy-usdc'], vaults: { rwa: { allocations: [] } },
+  reserves: { 'svm-otfy': reserves['svm-usdy'], 'svm-usdc': reserves['svm-usdc'] } })
+assert.ok(!betaOnly.unavailableReasons.some((x) => x.code === 'no-actual-allocation'), 'betaOnly loops skip the allocation gate')
 
 const inactive = evaluateLoopStrategy({ ...ready, market: { ...market, visible: false } })
 assert.ok(inactive.unavailableReasons.some((x) => x.code === 'market-inactive'))

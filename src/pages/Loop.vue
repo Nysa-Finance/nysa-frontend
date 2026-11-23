@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sendLoopAction, sendLoopSetup, state, priceOf, useTx } from '../store.js'
-import { LOOP_ENABLED, LOOPS, TOKENS, loopById, loopByMarket, loopMarket, tok } from '../config.js'
+import { LOOP_ENABLED, LOOPS, TOKENS, loopById, loopByMarket, loopMarket, swapTokens, tok } from '../config.js'
 import { amt, pct, usd, usdFull, num, floorTo, hfText, cleanAmount } from '../logic.js'
 import { formatBaseUnits } from '../swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
@@ -45,10 +45,12 @@ const openAsset = (l) => router.push({ name: 'loop', params: { asset: l.id } })
 const strategies = computed(() => strategy.value?.strategies ?? [])
 const strategyOf = (l) => strategies.value.find((item) => item.id === l?.market)
 // Only loops whose market the Nysa vault actually lends into are offered, to everyone (beta wallets included): a
-// market without that allocation (sUSDai's, for now) stays hidden. Open positions still show, so they can be closed.
+// market without that allocation (sUSDai's, for now) stays hidden. A betaOnly loop (oTFY) shows to LOOP_WALLETS only,
+// allocated or not. Open positions still show, so they can be closed.
 const allocated = (l) => !!strategyOf(l) && !strategyOf(l).unavailableReasons?.some((reason) => reason.code === 'no-actual-allocation')
-const visibleLoops = computed(() => LOOPS.filter(allocated))
-watch([asset, strategy], () => { if (asset.value && strategy.value && !allocated(loop.value)) router.replace({ name: 'loop' }) })
+const offered = (l) => (l.betaOnly ? state.loopBeta : allocated(l))
+const visibleLoops = computed(() => LOOPS.filter(offered))
+watch([asset, strategy], () => { if (asset.value && strategy.value && !loop.value.betaOnly && !allocated(loop.value)) router.replace({ name: 'loop' }) })
 const executionMode = computed(() => preview.value?.executionMode ?? strategy.value?.executionMode ?? null)
 const localForkMode = computed(() => executionMode.value === 'surfpool-local')
 const fees = computed(() => preview.value?.fees ?? [])
@@ -393,7 +395,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
           <button :disabled="!state.address" @click="setPct(100)">Max</button>
         </div>
         <!-- Balance read and exactly 0: point to Buy Collateral (a link, not a second gradient button in the panel). -->
-        <p v-if="state.swapVisible && state.balances[coll.token_id] === 0" class="n-note buy">Are you looking to buy {{ coll.name }}? <RouterLink :to="{ name: 'swap', query: { input: debt.token_id, output: coll.token_id } }">Buy {{ coll.name }} →</RouterLink></p>
+        <p v-if="state.swapVisible && state.balances[coll.token_id] === 0 && swapTokens.some((t) => t.token_id === coll.token_id)" class="n-note buy">Are you looking to buy {{ coll.name }}? <RouterLink :to="{ name: 'swap', query: { input: debt.token_id, output: coll.token_id } }">Buy {{ coll.name }} →</RouterLink></p>
 
         <div class="n-label borrow-l">Borrow asset</div>
         <div class="borrow-asset"><span class="pair"><TokenIcon :token="debt" size="sm" />{{ debt.name }}</span><span class="rate">{{ rates.borrow == null ? '—' : `${pct(rates.borrow)} APY` }}</span></div>

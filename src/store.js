@@ -112,6 +112,7 @@ export const state = reactive({
   swapVisible: false, // SWAP_WALLETS beta: the server decides who can swap
   feeBps: null, // Nysa's swap fee (NYSA_FEE_BPS), from /api/swap-readiness
   loopVisible: false, // LOOP_WALLETS: the loop shows to those wallets only while it is off for everyone
+  loopBeta: false, // the wallet is in LOOP_WALLETS: it also sees betaOnly loops (config.js)
 })
 
 // Wallet objects stay outside Vue reactivity (they hold private fields).
@@ -288,7 +289,7 @@ async function loadSwapVisibility() {
   const addr = state.address
   const r = await api(`/api/swap-readiness${addr ? `?wallet=${addr}` : ''}`).catch(() => null)
   if (Number.isSafeInteger(r?.feeBps)) state.feeBps = r.feeBps
-  if (state.address === addr) { state.swapVisible = r?.visible === true; state.loopVisible = r?.loopVisible === true }
+  if (state.address === addr) { state.swapVisible = r?.visible === true; state.loopVisible = r?.loopVisible === true; state.loopBeta = r?.loopBeta === true }
 }
 
 async function connectWith(w, silent) {

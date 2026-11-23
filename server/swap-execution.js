@@ -161,15 +161,18 @@ function readV2RoutePlan(data, cursor, built, request) {
   const routeSteps = []
   for (let index = 0; index < count; index++) {
     const variant = readRouteByte(data, cursor, 'V2 DEX variant')
-    // only WhirlpoolSwapV2 is admitted for now
-    // the captured route has no optional remaining-account metadata
-    if (variant !== 47 || built.routePlan[index]?.swapInfo?.label !== 'Whirlpool') {
+    // Only WhirlpoolSwapV2 (47, with its direction and no remaining-account metadata) and Raydium CLMM (26, no args).
+    const label = built.routePlan[index]?.swapInfo?.label
+    if (!(variant === 47 && label === 'Whirlpool') && !(variant === 26 && label === 'Raydium CLMM')) {
       throw new SwapExecutionError('Jupiter V6 route_v2 contains an unsupported DEX variant.')
     }
-    const direction = readRouteByte(data, cursor, 'WhirlpoolSwapV2 direction')
-    const hasRemainingAccountsInfo = readRouteByte(data, cursor, 'WhirlpoolSwapV2 remaining-account option')
-    if (direction > 1 || hasRemainingAccountsInfo !== 0) {
-      throw new SwapExecutionError('Jupiter V6 route_v2 contains unsupported WhirlpoolSwapV2 account metadata.')
+    let direction = null
+    if (variant === 47) {
+      direction = readRouteByte(data, cursor, 'WhirlpoolSwapV2 direction')
+      const hasRemainingAccountsInfo = readRouteByte(data, cursor, 'WhirlpoolSwapV2 remaining-account option')
+      if (direction > 1 || hasRemainingAccountsInfo !== 0) {
+        throw new SwapExecutionError('Jupiter V6 route_v2 contains unsupported WhirlpoolSwapV2 account metadata.')
+      }
     }
     const bps = readRouteU16(data, cursor, 'V2 route allocation')
     const inputIndex = readRouteByte(data, cursor, 'V2 route input index')
@@ -280,6 +283,58 @@ async function validateJupiterV2WhirlpoolRoute(instruction, request, built, deri
   for (const [index, label] of [[19, 'vault A'], [21, 'vault B'], [22, 'tick array 0'], [23, 'tick array 1'], [24, 'tick array 2'], [25, 'oracle']]) {
     if (instruction.accounts[index + f]?.role !== AccountRole.WRITABLE) throw new SwapExecutionError(`Jupiter V6 WhirlpoolSwapV2 ${label} account role is invalid.`)
   }
+}
+
+// Jupiter's Raydium CLMM leg: the ten common metas, the fee account, then the Raydium program and its swap accounts
+// (payer, AMM config, pool, user input and output accounts, input and output vaults, observation, token program), then
+// the tick arrays and bitmap extension it may cross, closed by Jupiter's placeholder. Raydium itself checks the config,
+// vaults, observation and tick arrays against the pool; the user's accounts, the pool and the fee account are pinned here.
+const RAYDIUM_CLMM_PROGRAM = 'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK'
+async function validateJupiterV2RaydiumClmmRoute(instruction, request, built, deriveAta = ataOf) {
+  const decoded = decodeJupiterV6RouteInstruction(instruction, request, built)
+  if (decoded.routeSteps.length !== 1
+    || built.routePlan.length !== 1 || built.routePlan[0]?.swapInfo?.label !== 'Raydium CLMM'
+    || built.routePlan[0]?.swapInfo?.inputMint !== request.inputMint || built.routePlan[0]?.swapInfo?.outputMint !== request.outputMint
+    || built.routePlan[0]?.bps !== 10_000) {
+    throw new SwapExecutionError('Jupiter V6 Raydium CLMM requires one direct exact-input route_v2 step.')
+  }
+  const f = FEE_BPS ? 1 : 0
+  const tail = instruction.accounts.length - (20 + f) - 1 // tick arrays and bitmap extension before the placeholder
+  if (tail < 1 || tail > 6) throw new SwapExecutionError('Jupiter V6 Raydium CLMM route has an unsupported account count.')
+  // Raydium's swap instruction moves classic SPL tokens only.
+  if (tokenProgramOf(request.inputMint) !== TOKEN_PROGRAM_ADDRESS || tokenProgramOf(request.outputMint) !== TOKEN_PROGRAM_ADDRESS) {
+    throw new SwapExecutionError('Jupiter V6 Raydium CLMM is admitted for classic SPL Token mints only.')
+  }
+  const ata = async (mint) => deriveAta(address(request.wallet), address(mint), TOKEN_PROGRAM_ADDRESS)
+  const meta = (index, expected, role, text) => {
+    const item = instruction.accounts[index]
+    if (String(item?.address) !== String(expected) || item?.role !== role) throw new SwapExecutionError(`Jupiter V6 Raydium CLMM ${text} address or account role is invalid.`)
+  }
+  meta(0, request.wallet, AccountRole.READONLY_SIGNER, 'user authority')
+  meta(1, await ata(request.inputMint), AccountRole.WRITABLE, 'user source token account')
+  meta(2, await ata(request.outputMint), AccountRole.WRITABLE, 'user destination token account')
+  meta(3, request.inputMint, AccountRole.READONLY, 'source mint')
+  meta(4, request.outputMint, AccountRole.READONLY, 'destination mint')
+  meta(5, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'source token program')
+  meta(6, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'destination token program')
+  meta(7, JUPITER_V6_DESTINATION_TOKEN_ACCOUNT_PLACEHOLDER, AccountRole.READONLY, 'optional destination account placeholder')
+  meta(8, JUPITER_V6_EVENT_AUTHORITY, AccountRole.READONLY, 'event authority')
+  meta(9, JUPITER_V6_PROGRAM, AccountRole.READONLY, 'Jupiter program account')
+  if (f) meta(10, built.feeAccount, AccountRole.WRITABLE, 'platform fee account')
+  meta(10 + f, RAYDIUM_CLMM_PROGRAM, AccountRole.READONLY, 'program')
+  meta(11 + f, request.wallet, AccountRole.READONLY, 'payer')
+  if (instruction.accounts[12 + f]?.role !== AccountRole.READONLY) throw new SwapExecutionError('Jupiter V6 Raydium CLMM AMM config account role is invalid.')
+  meta(13 + f, built.routePlan[0].swapInfo.ammKey, AccountRole.WRITABLE, 'pool')
+  meta(14 + f, await ata(request.inputMint), AccountRole.WRITABLE, 'user input token account')
+  meta(15 + f, await ata(request.outputMint), AccountRole.WRITABLE, 'user output token account')
+  for (const [index, text] of [[16, 'input vault'], [17, 'output vault'], [18, 'observation']]) {
+    if (instruction.accounts[index + f]?.role !== AccountRole.WRITABLE) throw new SwapExecutionError(`Jupiter V6 Raydium CLMM ${text} account role is invalid.`)
+  }
+  meta(19 + f, TOKEN_PROGRAM_ADDRESS, AccountRole.READONLY, 'token program')
+  for (let index = 20 + f; index < 20 + f + tail; index++) {
+    if (instruction.accounts[index]?.role !== AccountRole.WRITABLE) throw new SwapExecutionError('Jupiter V6 Raydium CLMM tick array account role is invalid.')
+  }
+  meta(instruction.accounts.length - 1, JUPITER_V6_PROGRAM, AccountRole.READONLY, 'trailing placeholder')
 }
 
 async function validateAssociatedTokenCreate(request, instruction, deriveAta) {
@@ -443,7 +498,8 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
   }
   const priorityFee = priorityFeeLamports(built.instructions)
   if (priorityFee == null || priorityFee > MAX_PRIORITY_FEE_LAMPORTS) throw new SwapExecutionError('Swap route priority fee exceeds Nysa’s 0.001 SOL limit.')
-  await validateJupiterV2WhirlpoolRoute(swapInstruction, request, built, deriveAta)
+  if (built.routePlan?.[0]?.swapInfo?.label === 'Raydium CLMM') await validateJupiterV2RaydiumClmmRoute(swapInstruction, request, built, deriveAta)
+  else await validateJupiterV2WhirlpoolRoute(swapInstruction, request, built, deriveAta)
 }
 
 // The provider picks the pool and reports its own output, so the result is bounded with an independent price: the

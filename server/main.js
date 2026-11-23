@@ -183,7 +183,8 @@ function currentSwapReadiness(request = {}) {
 // everyone (LOOP_ENABLED) still needs NYSA_LOOP_RISK_OWNER / _APPROVED_AT and those gates.
 const LOOP_WALLETS = new Set((process.env.LOOP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
 const loopOn = LOOP_ENABLED || LOOP_WALLETS.size > 0
-const loopOpenTo = (wallet) => LOOP_ENABLED || LOOP_WALLETS.has(wallet)
+// A betaOnly loop (config.js) stays with LOOP_WALLETS even once loops are released to everyone.
+const loopOpenTo = (wallet, marketId) => (LOOP_ENABLED && !loopByMarket(marketId)?.betaOnly) || LOOP_WALLETS.has(wallet)
 const LOOP_NOT_ENABLED = { error: 'Loop is not available for this wallet yet.' }
 const loopBeta = !LOOP_ENABLED && LOOP_WALLETS.size > 0
 const LOOP_MAX_FUNDING = Number(process.env.LOOP_MAX_FUNDING) > 0 ? Number(process.env.LOOP_MAX_FUNDING) : null
@@ -412,7 +413,7 @@ const routes = [
     const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
     if (wallet && !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
     const { readiness, availability, visible } = currentSwapReadiness({ wallet: wallet ?? undefined })
-    return send(res, 200, { ...readiness, visible, loopVisible: loopOpenTo(wallet), feeBps: FEE_BPS, marketAvailability: availability,
+    return send(res, 200, { ...readiness, visible, loopVisible: loopOpenTo(wallet), loopBeta: LOOP_WALLETS.has(wallet), feeBps: FEE_BPS, marketAvailability: availability,
       executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
   }],
   ['POST', /^\/api\/swap-quote$/, async (req, res) => {
@@ -518,7 +519,7 @@ const routes = [
     const body = await jsonBody(req)
     if (!loopByMarket(body.marketId)) throw new UserError('Unknown loop strategy')
     if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
-    if (!loopOpenTo(body.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
+    if (!loopOpenTo(body.wallet, body.marketId)) return send(res, 403, LOOP_NOT_ENABLED)
     if (overLoopCap(body.fundingAmount, body.marketId)) throw new UserError(LOOP_CAP_ERROR())
     if (typeof body.fundingAmount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(body.fundingAmount)) throw new UserError('Invalid funding amount')
     if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage) throw new UserError('Funding amount or leverage is outside the preview range')
@@ -618,7 +619,7 @@ const routes = [
     if (!KINDS.includes(b.kind)) throw new UserError('Unknown action')
     if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
     if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
-      if (!loopOpenTo(b.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
+      if (!loopOpenTo(b.wallet, b.market)) return send(res, 403, LOOP_NOT_ENABLED)
       if (localForkDappEnabled && !isLocalForkWallet(b.wallet, { rpcUrl: RPC_URL })) {
         return send(res, 503, { error: 'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.' })
       }
