@@ -20,6 +20,9 @@ services:
       SUSDAI_APY: ${SUSDAI_APY:-} # USD.AI's rate, used until a week of sUSDai prices is recorded
       NYSA_LOOP_RISK_OWNER: ${NYSA_LOOP_RISK_OWNER:-} # sign-off required to release the loop to everyone
       NYSA_LOOP_RISK_APPROVED_AT: ${NYSA_LOOP_RISK_APPROVED_AT:-}
+      # Vault allocation sync (server/vault-crank.js): on only when .env sets VAULT_CRANK_KEYPAIR to the keypair's host path.
+      VAULT_CRANK_KEYPAIR: ${VAULT_CRANK_KEYPAIR:+/run/secrets/vault_crank}
+    secrets: [vault_crank] # read-only; /dev/null when unset
     volumes:
       - data:/data # Farm Points, APY history, market index
     restart: unless-stopped
@@ -123,6 +126,10 @@ services:
     security_opt: [no-new-privileges:true]
     mem_limit: 1536m
     logging: *logs
+
+secrets:
+  vault_crank:
+    file: ${VAULT_CRANK_KEYPAIR:-/dev/null}
 
 networks:
   analytics:

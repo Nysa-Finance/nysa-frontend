@@ -12,6 +12,7 @@ import { buildTx, sendSigned, txStatus, liquidationInfo, KINDS, UserError } from
 import { getFeeReceiverMetadata, getPositions, getVaultHolders } from './analytics.js'
 import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
+import { startVaultCrank } from './vault-crank.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
 import { priceApy } from '../src/logic.js'
@@ -820,6 +821,7 @@ const server = http.createServer(async (req, res) => {
 const READY_TIMEOUT_MS = 15_000
 await Promise.race([Promise.all([refreshMarket(), startScreening()]), new Promise((r) => setTimeout(r, READY_TIMEOUT_MS))])
 server.listen(PORT, () => console.log(`nysa listening on :${PORT}`))
+startVaultCrank()
 
 // Node as PID 1 ignores SIGTERM unless handled, and Docker would kill it after 10 s: stop taking connections, end the
 // streams (browsers reconnect to the new container), let requests finish, exit; forced after 8 s.
