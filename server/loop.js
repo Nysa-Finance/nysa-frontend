@@ -13,7 +13,7 @@ import { TOKENS, loopByMarket, loopMarket } from '../src/config.js'
 import { parseBaseUnits } from '../src/swap-fees.js'
 import { buildSwap, configuredFeeAccountForMint, FEE_BPS } from './swap.js'
 import { rpc } from './rpc.js'
-import { getLive, reserveOf, refreshMarketForExecution } from './market.js'
+import { getLive, reserveOf, refreshMarketForExecution, obligationByWallet } from './market.js'
 import { ataOf } from './account.js'
 import { simulateAtomicTransaction } from './tx.js'
 import { validateProviderSwapInstructions } from './swap-execution.js'
@@ -958,6 +958,7 @@ export async function buildLoopOpenApplication({
   refreshMarket = refreshMarketForExecution,
   contextReader = loopContext,
   applicationBuilder = buildAtomicMultiplyOpenApplication,
+  readObligation = obligationByWallet,
 } = {}) {
   const application = preview?.applicationContext
   if (!application || application.wallet !== wallet || application.fundingAmount !== amount
@@ -973,7 +974,7 @@ export async function buildLoopOpenApplication({
   }
   const multiplyType = getObligationType(fresh.market, ObligationTypeTag.Multiply,
     some(fresh.collateralReserve.address), some(fresh.liabilityReserve.address))
-  const existing = await fresh.market.getObligationByWallet(fresh.owner, multiplyType)
+  const existing = await readObligation(fresh.market, fresh.owner, multiplyType, fresh.currentLedgerInstant)
   if (existing) {
     const deposits = existing.refreshedStats?.userTotalDeposit
     const debt = existing.refreshedStats?.userTotalBorrow
@@ -1110,6 +1111,7 @@ export async function buildLoopCloseApplication({
   contextReader = loopContext,
   callbacks: suppliedCallbacks,
   applicationBuilder = buildAtomicMultiplyFullCloseApplication,
+  readObligation = obligationByWallet,
 } = {}) {
   if (!position || position.wallet !== wallet || !loopByMarket(position.market?.id)
     || position.obligation?.type !== 'multiply') throw new LoopPreviewError('The selected Multiply position is not owned by this wallet.')
@@ -1119,7 +1121,7 @@ export async function buildLoopCloseApplication({
     some(fresh.collateralReserve.address), some(fresh.liabilityReserve.address))
   const obligationAddress = await multiplyType.toPda(address(fresh.marketConfig.kaminoMarket), fresh.owner)
   if (String(obligationAddress) !== position.obligation.address) throw new LoopPreviewError('Multiply obligation identity changed; refresh the selected position.')
-  const obligation = await fresh.market.getObligationByWallet(fresh.owner, multiplyType)
+  const obligation = await readObligation(fresh.market, fresh.owner, multiplyType, fresh.currentLedgerInstant)
   if (!obligation || String(obligation.obligationAddress) !== position.obligation.address || String(obligation.state.owner) !== wallet) {
     throw new LoopPreviewError('The selected Multiply obligation is no longer owned by this wallet.')
   }

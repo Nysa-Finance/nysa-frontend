@@ -5,7 +5,7 @@ import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddr
 import Decimal from 'decimal.js'
 import { MARKETS, TOKENS, VAULTS, loopByMarket, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
-import { getLive, getVault, reserveOf, farms, num } from './market.js'
+import { getLive, getVault, reserveOf, farms, num, obligationByWallet } from './market.js'
 import { LOOP_POSITION_MARKET_IDS } from './strategy.js'
 import { multiplyPosition } from './positions.js'
 
@@ -19,19 +19,19 @@ const enc = getAddressEncoder()
 export const obligationType = () => new VanillaObligation(PROGRAM_ID)
 
 // Multiply reads are isolated and additive: the ordinary obligation stays the primary result.
-export async function readWalletObligations({ wallet, marketConfig, market, vanillaObligationType = obligationType() } = {}) {
+export async function readWalletObligations({ wallet, marketConfig, market, now, vanillaObligationType = obligationType(), readObligation = obligationByWallet } = {}) {
   if (typeof wallet !== 'string' || !wallet || !marketConfig || !market) throw new TypeError('Wallet, market configuration and market are required.')
   const owner = address(wallet)
   const loop = LOOP_POSITION_MARKET_IDS.includes(marketConfig.id) ? loopByMarket(marketConfig.id) : null
   const multiplyPairs = loop ? marketConfig.pairs.filter((pair) => pair.collateral === loop.collateral && pair.liability === loop.debt) : []
   const loopPositionReadStatus = multiplyPairs.length ? { [marketConfig.id]: 'verified' } : {}
   const reads = await Promise.allSettled([
-    market.getObligationByWallet(owner, vanillaObligationType),
+    readObligation(market, owner, vanillaObligationType, now),
     ...multiplyPairs.map(async (pair) => {
       const collateralReserve = reserveOf(market, TOKENS[pair.collateral])
       const liabilityReserve = reserveOf(market, TOKENS[pair.liability])
       const type = getObligationType(market, ObligationTypeTag.Multiply, some(collateralReserve.address), some(liabilityReserve.address))
-      const obligation = await market.getObligationByWallet(owner, type)
+      const obligation = await readObligation(market, owner, type, now)
       return { obligation, pair, collateralReserve, liabilityReserve }
     }),
   ])
@@ -133,7 +133,7 @@ async function readAccount(wallet) {
     positionsBaseUnits[m.id] = {}
     const { market, now, farms: farmStates } = getLive(m)
     const tokens = tokensOf(m)
-    const { obligation: ob, loopPositions: marketLoopPositions, loopPositionReadStatus: marketLoopPositionReadStatus } = await readWalletObligations({ wallet, marketConfig: m, market })
+    const { obligation: ob, loopPositions: marketLoopPositions, loopPositionReadStatus: marketLoopPositionReadStatus } = await readWalletObligations({ wallet, marketConfig: m, market, now })
     loopPositions.push(...marketLoopPositions)
     Object.assign(loopPositionReadStatus, marketLoopPositionReadStatus)
     const atas = await Promise.all(tokens.map((t) => ataOf(owner, address(t.mint), reserveOf(market, t).getLiquidityTokenProgram())))

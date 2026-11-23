@@ -13,7 +13,7 @@ import { createRequire } from 'node:module'
 import { LIVE, marketById, vaultById, tokensOf, tok } from '../src/config.js'
 import { floorTo } from '../src/logic.js'
 import { rpc, NONE } from './rpc.js'
-import { getLive, getVault, reserveOf, farms, refreshSoon, refreshMarketForExecution } from './market.js'
+import { getLive, getVault, reserveOf, farms, refreshSoon, refreshMarketForExecution, obligationByWallet } from './market.js'
 import { vaultClient } from './vault.js'
 import { obligationType, pendingRewards, ataOf, vaultShares, maxWithdrawFromObligation, maxOf } from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
@@ -193,7 +193,7 @@ export class UserError extends Error {}
 async function lending(kind, owner, m, t, amount, all, amountBaseUnits) {
   const { market, now } = getLive(m)
   const reserve = reserveOf(market, t)
-  const ob = await market.getObligationByWallet(owner, obligationType())
+  const ob = await obligationByWallet(market, owner, obligationType(), now)
   if (kind !== 'deposit' && !ob) throw new UserError('No Kamino position found for this wallet in this market')
   if (!all && kind === 'borrow') {
     const max = maxOf('borrow', ob, market, reserve, now)
@@ -244,8 +244,8 @@ async function lending(kind, owner, m, t, amount, all, amountBaseUnits) {
 }
 
 async function claim(owner, m) {
-  const { market, farms: farmStates } = getLive(m)
-  const ob = await market.getObligationByWallet(owner, obligationType())
+  const { market, now, farms: farmStates } = getLive(m)
+  const ob = await obligationByWallet(market, owner, obligationType(), now)
   if (!ob) throw new UserError('No Kamino position found for this wallet in this market')
   const farmAddrs = [...farmStates.keys()]
   const accounts = await fetchEncodedAccounts(rpc, await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress))))
@@ -268,8 +268,8 @@ function pairOf(m, ob) {
 // Kamino's rules (liquidation_operations.rs): up to the close factor of the debt (all of it past the insolvency-risk
 // LTV), capped per transaction; a loan under the full-liquidation threshold must be repaid in full.
 export async function liquidationInfo(m, borrower) {
-  const { market } = getLive(m)
-  const ob = await market.getObligationByWallet(address(borrower), obligationType())
+  const { market, now } = getLive(m)
+  const ob = await obligationByWallet(market, address(borrower), obligationType(), now)
   const { debt, coll } = pairOf(m, ob)
   return liquidationLimits(market, ob, reserveOf(market, debt), debt, coll)
 }
@@ -294,7 +294,7 @@ function liquidationLimits(market, ob, repay, debt, coll) {
 // Rebuilt with a minimum collateral payout (simulated amount − 1%), so a last-second price move can't pay out less.
 async function liquidate(liquidator, m, borrower, amount, preview) {
   const { market, now } = getLive(m)
-  const ob = await market.getObligationByWallet(address(borrower), obligationType())
+  const ob = await obligationByWallet(market, address(borrower), obligationType(), now)
   const { debt, coll } = pairOf(m, ob)
   const repay = reserveOf(market, debt), withdraw = reserveOf(market, coll)
   if (!ob?.getBorrowByReserve(repay.address)?.amount.gt(0)) throw new UserError('This wallet has no open loan in this market')
