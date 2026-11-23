@@ -6,6 +6,7 @@ import { flashBorrowReserveLiquidity, flashRepayReserveLiquidity, getSlippageFac
 import { LIVE, TOKENS } from '../src/config.js'
 import { buildLoopMetadataSetupBundle, buildLoopPreview, createKaminoSwapCallbacks, createLoopAcknowledgementKey, verifyLoopMetadataSetupSimulation } from './loop.js'
 import * as loop from './loop.js'
+const viaMarket = (market, owner, type) => market.getObligationByWallet(owner, type) // the fakes serve obligations by method
 
 const sdkSlippage = loop.sdkSlippagePctFromBps?.(50)
 assert.equal(sdkSlippage?.toString(), '0.5') // SDK slippagePct is percent units, then internally divided by 100.
@@ -129,7 +130,7 @@ const appPreview = {
 }
 let appOpenBegan = false, appOpenSealed = false, appCloseBegan = false, appCloseSealed = false
 let appOpenSdkInputs, appCloseSdkInputs
-const finalOpenApplication = await loop.buildLoopOpenApplication({
+const finalOpenApplication = await loop.buildLoopOpenApplication({ readObligation: viaMarket,
   wallet, amount: '100', leverage: 1.5, preview: appPreview, flashBorrowType: 'debt',
   refreshMarket: async () => {}, contextReader: appContext,
   applicationBuilder: async ({ sdkInputs, callbacks }) => {
@@ -157,7 +158,7 @@ assert.equal(finalOpenApplication.simulationContext.authorizedPosition.collatera
 assert.ok(finalOpenApplication.ownerTokenAccounts.some((item) => item.mint === usdy),
   'open simulation tracks the wallet USDY account so acquisition shortfalls cannot spend existing USDY')
 appCollateralPrice = new Decimal('1.10')
-await assert.rejects(loop.buildLoopOpenApplication({
+await assert.rejects(loop.buildLoopOpenApplication({ readObligation: viaMarket,
   wallet, amount: '100', leverage: 1.5, preview: appPreview,
   refreshMarket: async () => {}, contextReader: appContext,
   applicationBuilder: async () => { throw new Error('changed oracle assumptions must fail before composition') },
@@ -165,14 +166,14 @@ await assert.rejects(loop.buildLoopOpenApplication({
 'fresh build rejects a changed oracle price rather than authorizing poststate with preview prices')
 appCollateralPrice = new Decimal('1.09')
 appCollateralOracleTimestamp = -60
-await assert.rejects(loop.buildLoopOpenApplication({
+await assert.rejects(loop.buildLoopOpenApplication({ readObligation: viaMarket,
   wallet, amount: '100', leverage: 1.5, preview: appPreview,
   refreshMarket: async () => {}, contextReader: appContext,
   applicationBuilder: async () => { throw new Error('stale oracle must fail before composition') },
 }), /oracle|heartbeat|stale/i, 'fresh build rejects an oracle timestamp outside its reserve heartbeat')
 appCollateralOracleTimestamp = 1
 appMaxBorrowLtv = 0.8
-await assert.rejects(loop.buildLoopOpenApplication({
+await assert.rejects(loop.buildLoopOpenApplication({ readObligation: viaMarket,
   wallet, amount: '100', leverage: 1.5, preview: appPreview,
   refreshMarket: async () => {}, contextReader: appContext,
   applicationBuilder: async () => { throw new Error('changed governance LTV must fail before composition') },
@@ -191,7 +192,7 @@ const appObligation = {
   getBorrowByReserve: () => ({ amount: '50000000', mintFactor: '1000000' }),
 }
 appMarket.getObligationByWallet = async () => appObligation
-const finalCloseApplication = await loop.buildLoopCloseApplication({
+const finalCloseApplication = await loop.buildLoopCloseApplication({ readObligation: viaMarket,
   wallet, flashBorrowType: 'debt', refreshMarket: async () => {}, contextReader: appContext,
   callbacks: { setPricingQuote() {}, beginComposition() { appCloseBegan = true }, sealQuotes() { appCloseSealed = true } },
   position: { wallet, market: { id: 'sol-usdy-usdc' }, obligation: { address: appObligationAddress, type: 'multiply' } },
@@ -211,7 +212,7 @@ appMarket.getObligationByWallet = async () => ({
   state: { ...appObligation.state, deposits: [...appObligation.state.deposits,
     { depositReserve: extraReserve, depositedAmount: new BN(1) }] },
 })
-await assert.rejects(loop.buildLoopCloseApplication({
+await assert.rejects(loop.buildLoopCloseApplication({ readObligation: viaMarket,
   wallet, refreshMarket: async () => {}, contextReader: appContext,
   position: appClosePosition,
   applicationBuilder: async () => { throw new Error('unsupported extra-reserve position must fail before composing close instructions') },
@@ -221,7 +222,7 @@ appMarket.getObligationByWallet = async () => ({
   state: { ...appObligation.state, borrows: [...appObligation.state.borrows,
     { borrowReserve: extraReserve, borrowedAmountSf: new BN(1) }] },
 })
-await assert.rejects(loop.buildLoopCloseApplication({
+await assert.rejects(loop.buildLoopCloseApplication({ readObligation: viaMarket,
   wallet, refreshMarket: async () => {}, contextReader: appContext, position: appClosePosition,
   applicationBuilder: async () => { throw new Error('unsupported extra-reserve position must fail before composing close instructions') },
 }), /extra active borrow reserves/i, 'fresh close builder rejects positive extra debt reserve state')

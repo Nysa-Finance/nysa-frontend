@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module'
 import {
-  KaminoMarket, LendingMarket, getSingleReserve, getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS,
+  KaminoMarket, KaminoObligation, LendingMarket, getSingleReserve, getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS,
 } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
 import { MARKETS, tokensOf } from '../src/config.js'
@@ -28,6 +28,13 @@ export async function loadMarket(rpcClient, m) {
   ])
   if (!state) throw new Error(`Kamino market ${m.kaminoMarket} not found`)
   return KaminoMarket.loadWithReserves(rpcClient, state, new Map(reserves.map((r) => [r.address, r])), marketAddress, DEFAULT_RECENT_SLOT_DURATION_MS)
+}
+
+// market.getObligationByWallet reads the obligation, then asks the RPC for the block time of the very slot it read:
+// one the RPC may not have yet ("Block not available for slot", -32004) or never (a skipped slot), which failed
+// account reads and transaction builds at random. Interest is estimated at the market's own ledger instant instead.
+export async function obligationByWallet(market, owner, type, instant) {
+  return KaminoObligation.load(market, await type.toPda(market.getAddress(), owner), instant)
 }
 
 export function reserveOf(market, t) {

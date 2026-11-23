@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { maxWithdrawBaseUnits, maxWithdrawFromObligation, readWalletObligations } from './account.js'
+const viaMarket = (market, owner, type) => market.getObligationByWallet(owner, type) // the fakes below serve obligations by method
 import { LIVE, TOKENS } from '../src/config.js'
 
 assert.equal(maxWithdrawBaseUnits({ maxWithdrawAmountScaled: '1500000', suppliedAmountScaled: '2000000', mintFactor: '1000000', decimals: 6 }), '1500000')
@@ -40,7 +41,7 @@ const market = {
   getExistingReserveByAddress: (reserve) => reservesByAddress.get(String(reserve)),
   getObligationByWallet: async (_owner, type) => type.constructor.name === 'VanillaObligation' ? vanillaObligation : multiplyObligation,
 }
-const walletPositions = await readWalletObligations({ wallet, marketConfig, market })
+const walletPositions = await readWalletObligations({ wallet, marketConfig, market, readObligation: viaMarket })
 assert.equal(walletPositions.obligation, vanillaObligation, 'vanilla obligation remains available with a non-empty Multiply obligation')
 assert.equal(walletPositions.loopPositions.length, 1)
 assert.equal(walletPositions.loopPositions[0].collateral.tokenId, TOKENS['svm-usdy'].token_id, 'real token_id config shape maps to UI token identity')
@@ -56,7 +57,7 @@ const unavailableMultiplyMarket = {
     throw new Error('Multiply account read unavailable')
   },
 }
-const vanillaSurvivesMultiplyFailure = await readWalletObligations({ wallet, marketConfig, market: unavailableMultiplyMarket })
+const vanillaSurvivesMultiplyFailure = await readWalletObligations({ wallet, marketConfig, market: unavailableMultiplyMarket, readObligation: viaMarket })
 assert.equal(vanillaSurvivesMultiplyFailure.obligation, vanillaObligation)
 assert.deepEqual(vanillaSurvivesMultiplyFailure.loopPositions, [], 'Multiply read failure does not reject the vanilla account load')
 assert.deepEqual(vanillaSurvivesMultiplyFailure.loopPositionReadStatus, { 'sol-usdy-usdc': 'unavailable' },
