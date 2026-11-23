@@ -326,7 +326,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
       <div class="n-thead lp-grid"><div>Asset</div><div>Max net APY</div><div>Max leverage</div><div>Available liquidity</div><div>Deposited</div><div>Borrow</div></div>
       <div v-for="l in LOOPS" :key="l.id" class="n-tr click lp-grid lp-row" role="link" tabindex="0" @click="openAsset(l)" @keydown.enter="openAsset(l)">
         <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="tok(l.collateral)" /><span class="asset-name"><b>{{ tok(l.collateral).name }}</b><small>{{ l.fullName }}</small></span></div>
-        <div class="n-cell n-num up" data-label="Max net APY">{{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}</div>
+        <div class="n-cell n-num" :class="netApyOf(l, l.maxLeverage) < 0 ? 'neg' : 'up'" data-label="Max net APY">{{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}</div>
         <div class="n-cell n-num" data-label="Max leverage">{{ lev(l.maxLeverage) }}</div>
         <div class="n-cell n-num" data-label="Available liquidity">{{ usd(marketOf(l).liquidity) }}</div>
         <div class="n-cell n-num" data-label="Deposited">{{ usd(marketOf(l).deposited) }}</div>
@@ -342,7 +342,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         </div>
         <div class="n-stats pos-stats">
           <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(positionView(position).net) }}</div></div>
-          <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ pct(positionView(position).netApy) }}</div></div>
+          <div class="n-stat"><div class="k">Net APY</div><div class="v" :class="positionView(position).netApy < 0 ? 'neg' : 'accent'">{{ pct(positionView(position).netApy) }}</div></div>
           <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ positionView(position).leverage ? lev(positionView(position).leverage) : '—' }}</div></div>
           <div class="n-stat"><div class="k">Liquidation price</div><div class="v">{{ positionView(position).liqPrice ? `$${positionView(position).liqPrice.toFixed(4)}` : '—' }}</div></div>
           <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(positionView(position).hf) }} <span v-if="Number.isFinite(positionView(position).hf)" class="n-chip" :class="health(positionView(position).hf)[0]">{{ health(positionView(position).hf)[1] }}</span></div></div>
@@ -368,7 +368,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         </div>
         <p class="n-sub blurb">{{ loop.blurb }} A loop turns your {{ debt.name }} into {{ coll.name }} on Kamino and borrows {{ debt.name }} against it to buy more, in one transaction.</p>
         <div class="n-stats d-stats">
-          <div class="n-stat"><div class="k">Max net APY</div><div class="v up">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
+          <div class="n-stat"><div class="k">Max net APY</div><div class="v" :class="netApyAt(loop.maxLeverage) < 0 ? 'neg' : 'up'">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
           <div class="n-stat"><div class="k">Max leverage</div><div class="v">{{ lev(loop.maxLeverage) }}</div></div>
           <div class="n-stat"><div class="k">Total deposits</div><div class="v">{{ usd(market.deposited) }}</div></div>
           <div class="n-stat"><div class="k">Available liquidity</div><div class="v">{{ usd(market.liquidity) }}</div></div>
@@ -474,6 +474,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .asset-name { display: grid; line-height: 1.25; }
 .asset-name small { color: var(--n-text-3); font-weight: 400; font-size: 12.5px; }
 .up { color: var(--n-green); font-weight: 600; }
+.neg { color: var(--n-red); font-weight: 600; } /* a negative yield is a loss: red, so it never reads as a gain */
 .link { color: var(--n-pink); font-weight: 500; }
 /* Detail: header and breakdown on the left, the panel sticky on the right; on phones the panel follows the header */
 .detail { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); grid-template-areas: "head side" "body side"; gap: 24px 40px; align-items: start; }
@@ -512,7 +513,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .ba-row:last-child { border-bottom: 0; }
 .ba-row .k { color: var(--n-text-3); }
 .ba-row .to { font-weight: 600; text-align: right; }
-.ba-row .to.neg { color: var(--n-amber); }
+.ba-row .to.neg { color: var(--n-red); }
 .setup { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 14px; border: 1px solid var(--n-line); border-radius: 4px; font-size: 12.5px; color: var(--n-text-3); }
 .ack { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; color: var(--n-amber); font-size: 12.5px; }
 .ack input { margin-top: 3px; accent-color: var(--n-pink); }
@@ -532,8 +533,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .n-kv.total { padding-top: 6px; border-top: 1px solid var(--n-hair); font-weight: 600; }
 .n-kv.total .v { font-size: 18px; }
 .n-kv .v.up { color: var(--n-green); }
-.n-kv .v.neg { color: var(--n-text-2); }
-.n-kv.total .v.neg { color: var(--n-amber); }
+.n-kv .v.neg { color: var(--n-red); }
 .n-kv .v small { color: var(--n-text-4); font-weight: 400; font-size: 12px; margin-left: 6px; }
 .vs { color: var(--n-text-4); font-size: 12px; }
 .n-chip.ok { color: var(--n-green); border-color: #3ddc8459; }

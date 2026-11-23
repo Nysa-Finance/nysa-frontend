@@ -81,7 +81,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   <div class="n-stats stat-4">
     <div class="n-stat"><div class="k">Total deposits</div><div class="v">{{ on ? usd(supplied) : '—' }}</div></div>
     <div class="n-stat"><div class="k">Total Borrowed</div><div class="v">{{ on ? usd(borrowed) : '—' }}</div></div>
-    <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ on ? pct(netApy) : '—' }}</div></div>
+    <div class="n-stat"><div class="k">Net APY</div><div class="v" :class="on && netApy < 0 ? 'neg' : 'accent'">{{ on ? pct(netApy) : '—' }}</div></div>
     <div class="n-stat"><div class="k">Health Factor</div><div class="v" :style="{ color: hfColor(hf) }">{{ hfText(hf) }}</div></div>
   </div>
 

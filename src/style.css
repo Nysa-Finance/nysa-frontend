@@ -94,6 +94,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-stat .k { color: var(--n-text-3); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; }
 .n-stat .v { font-size: 30px; font-weight: 600; letter-spacing: -.01em; }
 .n-stat .v.accent { color: var(--n-pink); }
+.n-stat .v.neg { color: var(--n-red); } /* a negative yield is a loss: red, never the yield pink or green */
 .n-stat .s { color: var(--n-text-4); font-size: 12px; margin-top: 6px; }
 .stat-2 { grid-template-columns: repeat(2, 1fr); }
 .stat-4 { grid-template-columns: repeat(4, 1fr); margin-bottom: 34px; }
