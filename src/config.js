@@ -72,6 +72,17 @@ export const LOOPS = [
     fullName: 'Staked USDai',
     blurb: "sUSDai is USD.AI's staked dollar, earning from loans backed by AI compute hardware: its price rises as it earns.",
   },
+  {
+    id: 'otfy', market: 'sol-otfy-usdc', collateral: 'svm-otfy', debt: 'svm-usdc',
+    maxLeverage: 3, // Kamino lends up to 75% LTV on oTFY (4x); 3x for its single, thin Raydium pool
+    lookupTable: 'G8Y5htkw6mo79suEmJwsHYdmg5LLbDXK8goCs6WdWUcS',
+    priceYield: true,
+    // Only LOOP_WALLETS see and open it, even once loops are released to everyone, and it needs no Nysa vault
+    // allocation in its market (server/strategy.js).
+    betaOnly: true,
+    fullName: 'Obligate yield token',
+    blurb: "oTFY is a yield-bearing token issued by Obligate: its price rises as it earns.",
+  },
 ]
 export const loopById = (id) => LOOPS.find((l) => l.id === id)
 export const loopByMarket = (marketId) => LOOPS.find((l) => l.market === marketId)
@@ -86,13 +97,19 @@ const LOOP_ONLY_MARKETS = [
     collateral: ['svm-susdai'], loans: ['svm-usdc'],
     pairs: [{ collateral: 'svm-susdai', liability: 'svm-usdc', maxLtv: 80, liqLtv: 85 }],
   },
+  {
+    id: 'sol-otfy-usdc', name: 'Obligate Market',
+    kaminoMarket: '3hd61ZpG35tBwrmDvdmYVJoazC2mjJxHb6rEYEWs4QhH',
+    reserves: { 'svm-otfy': '6nk5K3PiV3EHtW4LLFhfMc1uR4kNwEfibvTdWqxCm6WF', 'svm-usdc': 'Au2Cg9CNNTX1KfzVhNnpi1ouHX74CwMMBvmSchmqS5ZW' },
+    collateral: ['svm-otfy'], loans: ['svm-usdc'],
+    pairs: [{ collateral: 'svm-otfy', liability: 'svm-usdc', maxLtv: 75, liqLtv: 80 }],
+  },
 ]
 export const MARKETS = [...LIVE, ...LOOP_ONLY_MARKETS]
 export const loopMarket = (loop) => MARKETS.find((m) => m.id === loop.market)
 
 // Kamino markets a vault may allocate to that Nysa doesn't curate (no page here), for the vault's exposure.
 export const OTHER_MARKETS = [
-  { kaminoMarket: '3hd61ZpG35tBwrmDvdmYVJoazC2mjJxHb6rEYEWs4QhH', name: 'Obligate Market', collateral: ['svm-otfy'] },
   { kaminoMarket: 'HMNm3ZrAvG4zKVv5zpMDA6DKduc612156RUsdAAZf4TC', name: 'Plume Vaults Market', collateral: ['svm-nopal'] },
 ]
 

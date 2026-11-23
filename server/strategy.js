@@ -125,7 +125,7 @@ export function evaluateLoopStrategy({
     const pair = market.pairs.find((candidate) => candidate.collateral === loop?.collateral && candidate.liability === loop?.debt)
     const collateral = pair ? TOKENS[pair.collateral] : null
     const liability = pair ? TOKENS[pair.liability] : null
-    if (!pair || !collateral || !liability || !allocationExists(vaults, market, collateral, liability)) {
+    if (!pair || !collateral || !liability || (!loop.betaOnly && !allocationExists(vaults, market, collateral, liability))) {
       unavailableReasons.push(reason('no-actual-allocation', `No configured Nysa vault has a nonzero actual allocation to ${collateral?.name ?? 'the loop'} collateral in this market.`))
     }
     if (!finite(snapshotUpdatedAt) || snapshotUpdatedAt <= 0 || now - snapshotUpdatedAt > SNAPSHOT_MAX_AGE_MS) {

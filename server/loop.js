@@ -1318,6 +1318,16 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
 }
 
 // Quote only: never returns instructions, never simulates an economic transaction, never offers a signer path.
+// Jupiter reports a 100% impact when it has no USD price for a token (oTFY). Then the cap reads the swap's loss against
+// Kamino's oracle prices instead: how far the quoted output's value falls below the input's.
+export function leverageImpactPct(quote, input, output, marketRisk) {
+  if (!quote) return Infinity
+  if (quote.priceImpactPct < 100) return quote.priceImpactPct
+  const paid = Number(quote.inputAmountBaseUnits) / 10 ** input.decimals * Number(marketRisk.liabilityPriceUsd)
+  const got = Number(quote.outputAmountBaseUnits) / 10 ** output.decimals * Number(marketRisk.collateralPriceUsd)
+  return paid > 0 && got > 0 ? Math.max(0, (1 - got / paid) * 100) : Infinity
+}
+
 export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount, leverage, snapshot, strategy, now = Date.now(), signal, onApplicationContext,
   localForkSimulation = false, localForkRpcUrl, localRouteProgramVerifier } = {}) {
   const loop = loopByMarket(marketId)
@@ -1392,7 +1402,7 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
   const quoteTimes = [leverageQuote?.quoteAt]
   const riskInputs = {
     slippageBps: 50,
-    priceImpactPct: leverageQuote?.priceImpactPct ?? Infinity,
+    priceImpactPct: leverageImpactPct(leverageQuote, liability, collateral, marketRisk),
     quoteAgeSeconds: Math.max(...quoteTimes.map((at) => at == null ? Infinity : (now - at) / 1000)),
     oracleAgeSeconds: Math.max(...oracleAges),
     oracleHeartbeatSeconds: Math.min(...heartbeats),

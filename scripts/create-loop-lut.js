@@ -3,7 +3,7 @@
 // that loop uses whoever the wallet is (COMMON plus the loop's list below, read off its transactions on a mainnet
 // fork); wallet accounts and the swap's tick arrays stay out. Put the printed address in the loop's `lookupTable`
 // (LOOPS in src/config.js).
-// Run: node scripts/create-loop-lut.js --loop=<id> --rpc=<url> --keypair=<funded keypair JSON> [--dry-run]
+// Run: node scripts/create-loop-lut.js --loop=<id> --rpc=<url> --keypair=<funded keypair JSON> [--table=<address>] [--dry-run]
 // The keypair pays the rent (about 0.007 SOL, kept by the frozen table) and fees; it holds no other power afterwards.
 import { readFile } from 'node:fs/promises'
 import {
@@ -74,6 +74,30 @@ const LOOP_ACCOUNTS = { usdy: [
   '77EVo67J3Yhi2t2sruWwNYRU5cKFEZKoRh5egJajSGh2',
   'FEATZxwUnGd9AoGppvy1zhbQrdDCuPLHBEjxAYML4mGU',
   'DqD6rsPDYxXzr9dwFLAWXdvpUG6umesV56V1Hd77eNhP',
+], otfy: [
+  // Mints
+  'BwB3tNH92jKw6naNGDYDbDwRo8bvYxZVvZjRZRcoWR2h', // oTFY
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+  '43VUsCTABo7CzcDBC4FCujQWS4XwQVYj6E9hvmZ9ACEg', // oTFY reserve collateral mint
+  // Obligate Market (Kamino)
+  '3hd61ZpG35tBwrmDvdmYVJoazC2mjJxHb6rEYEWs4QhH', // lending market
+  'DAAE4bDMzRJXf7KSzBmjLBWUKit3mESH9tzGQE6MrRjU', // lending market authority
+  '6nk5K3PiV3EHtW4LLFhfMc1uR4kNwEfibvTdWqxCm6WF', // oTFY reserve
+  'Au2Cg9CNNTX1KfzVhNnpi1ouHX74CwMMBvmSchmqS5ZW', // USDC reserve
+  '6iBvALkb94jdbHgqasSiKdyCUMxepuA9tQQCWsi8MsML', // reserve vaults (owned by the market authority)
+  'WRrDXR73TiK1Byqu11bwwY4iGdJvbMhduFCm7KwHHg1',
+  '6Q5FXg624rCBeDWigfkJmdzXiE4eLKdzzakJpSvLp6m',
+  '2YyxBZunhK7ADkcMSHK3BKZVtmKVhP1bKW3t8CybvEpm',
+  '6MmV3UfZ8s5Gjtft9w4qqLBBkm3eorkMDJGJ6eS5R4Aq',
+  '3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH', // Scope price feed
+  // oTFY/USDC Raydium CLMM pool, its config, vaults, observation and tick-array bitmap
+  'CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK',
+  '7GzGBjKG8Y326tpiNQ83CA5oePy8qZqfXgz2dLBn7qyq',
+  '9iFER3bpjf1PTTCQCfTRu17EJgvsxo9pVyA9QWwEuX4x',
+  '7NK3g4UtCEM6Ee2BAumQVNagMeqagY2o7abjTk3pHBu1',
+  'Ad8LmqZiyPqknQA4uCQNd16wX66i9h8UvsURinESH1TE',
+  '8TxKaAwLWYpKNWwr8FC6nCUqq69MJQXVFW1tjmtpHUz',
+  '81eWxPoEon52YTpiCSCcZsFx5LkWo3dKdY1iZEw2WMvP',
 ] }
 
 async function send(rpc, signer, instructions) {
@@ -104,13 +128,27 @@ async function main() {
   if (!args.rpc || !args.keypair) throw new Error('Use --rpc=<url> --keypair=<funded keypair JSON> (or --dry-run).')
   const rpc = createSolanaRpc(args.rpc)
   const signer = await createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(await readFile(args.keypair, 'utf8'))))
-  const recentSlot = await rpc.getSlot({ commitment: 'finalized' }).send()
-  const create = await getCreateLookupTableInstructionAsync({ authority: signer, payer: signer, recentSlot })
-  const table = create.accounts[0].address
-  console.log(`create ${table}: ${await send(rpc, signer, [create])}`)
-  for (let i = 0; i < LOOP_LUT_ADDRESSES.length; i += 20) {
+  // --table=<address> resumes a table this keypair created whose extend or freeze failed (e.g. out of SOL for its
+  // rent): only the missing addresses are added.
+  let table, present = []
+  if (args.table) {
+    table = address(args.table)
+    const { data } = await fetchAddressLookupTable(rpc, table, { commitment: 'confirmed' })
+    if (data.authority?.__option !== 'Some' || String(data.authority.value) !== String(signer.address)) {
+      throw new Error(`Table ${table} is frozen or not owned by this keypair; create a new one instead.`)
+    }
+    present = data.addresses.map(String)
+    console.log(`resume ${table}: ${present.length} of ${LOOP_LUT_ADDRESSES.length} addresses already in it`)
+  } else {
+    const recentSlot = await rpc.getSlot({ commitment: 'finalized' }).send()
+    const create = await getCreateLookupTableInstructionAsync({ authority: signer, payer: signer, recentSlot })
+    table = create.accounts[0].address
+    console.log(`create ${table}: ${await send(rpc, signer, [create])}`)
+  }
+  const missing = LOOP_LUT_ADDRESSES.filter((a) => !present.includes(a))
+  for (let i = 0; i < missing.length; i += 20) {
     const extend = getExtendLookupTableInstruction({ address: table, authority: signer, payer: signer,
-      addresses: LOOP_LUT_ADDRESSES.slice(i, i + 20).map(address) })
+      addresses: missing.slice(i, i + 20).map(address) })
     console.log(`extend: ${await send(rpc, signer, [extend])}`)
   }
   console.log(`freeze: ${await send(rpc, signer, [getFreezeLookupTableInstruction({ address: table, authority: signer })])}`)

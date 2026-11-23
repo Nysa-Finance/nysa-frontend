@@ -5,7 +5,7 @@ const jupiter = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'
 const whirlpool = 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc'
 const unknown = 'UnknownProgram1111111111111111111111111111111'
 
-assert.equal(APPROVED_PROGRAMS.size, 4, 'only the reviewed swap programs are approved')
+assert.equal(APPROVED_PROGRAMS.size, 5, 'only the reviewed swap programs are approved')
 assert.equal(evaluateProgramPolicy([jupiter, whirlpool], ['Whirlpool'], { Whirlpool: [whirlpool] }).approved, true)
 assert.deepEqual(evaluateProgramPolicy([jupiter, unknown]), {
   approved: false,
