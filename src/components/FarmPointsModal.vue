@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { state, loadPoints, myPoints } from '../store.js'
 import { explorer } from '../config.js'
 import { short, ago } from '../logic.js'
@@ -12,15 +12,18 @@ const me = computed(myPoints)
 const stale = computed(() => board.value && Date.now() / 1000 - board.value.updatedTs > 3 * 3600)
 
 onMounted(loadPoints)
+const onKey = (e) => e.key === 'Escape' && emit('close')
+onMounted(() => addEventListener('keydown', onKey))
+onUnmounted(() => removeEventListener('keydown', onKey))
 </script>
 
 <template>
   <div class="overlay" @click.self="emit('close')">
-    <div class="fp-modal" role="dialog" aria-modal="true" aria-labelledby="fp-title">
-      <div class="fp-head">
+    <div class="n-dialog fp-modal" role="dialog" aria-modal="true" aria-labelledby="fp-title">
+      <div class="n-dialog-head">
         <div>
-          <h3 id="fp-title" class="fp-title">Farm Points</h3>
-          <p class="fp-sub">Points accrue as deposited balance × time. Updated every hour.</p>
+          <h3 id="fp-title" class="n-dialog-title">Farm Points</h3>
+          <p class="n-dialog-sub">Points accrue as deposited balance × time. Updated every hour.</p>
         </div>
         <button class="x-btn" aria-label="Close" @click="emit('close')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -62,15 +65,7 @@ onMounted(loadPoints)
 </template>
 
 <style scoped>
-.overlay { animation: fp-fade .2s ease-out; }
-.fp-modal { animation: fp-rise .24s ease-out; }
-@keyframes fp-fade { from { opacity: 0; } }
-@keyframes fp-rise { from { opacity: 0; transform: translateY(10px) scale(.98); } }
-@media (prefers-reduced-motion: reduce) { .overlay, .fp-modal { animation: none; } }
-.fp-modal { width: 100%; max-width: 560px; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 6px; padding: 24px; box-shadow: 0 40px 100px -20px #000c; }
-.fp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.fp-title { font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 28px; line-height: 1.1; }
-.fp-sub { color: var(--n-text-3); font-size: 13px; margin-top: 6px; }
+.fp-modal { max-width: 560px; }
 .fp-you { display: flex; align-items: center; gap: 24px; margin: 20px 0 16px; padding: 16px 18px; border: 1px solid var(--n-line); border-radius: 4px; background: #000; min-height: 62px; }
 .fp-you.ranked { border-color: #ec008c73; background: #ec008c0f; }
 .fp-you-rank { font-size: 26px; font-weight: 600; color: var(--n-pink); }

@@ -149,8 +149,22 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .pl-grid { grid-template-columns: 1.1fr .9fr 1.2fr .9fr .6fr 1.4fr; }
 .toggle { margin-bottom: 22px; max-width: 380px; }
 
-.overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; background: #000000b8; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
-.x-btn { color: var(--n-text-3); padding: 4px; border-radius: 6px; display: grid; place-items: center; }
+/* One dialog shell for every window: liquidation, Farm Points, the wallet picker, the transaction sheet, the Terms gate and
+   access restricted. Phones get it as a bottom sheet. */
+.overlay { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; background: #000000b8; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); animation: n-fade .2s ease-out; }
+.n-dialog { width: 100%; max-width: 480px; max-height: calc(100vh - 32px); overflow-y: auto; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 16px; padding: 24px; color: var(--n-text); animation: n-rise .24s ease-out; }
+.n-dialog-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.n-dialog-title { font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 28px; line-height: 1.1; color: var(--n-text); }
+.n-dialog-sub { color: var(--n-text-3); font-size: 13px; line-height: 1.5; margin-top: 6px; }
+@keyframes n-fade { from { opacity: 0; } }
+@keyframes n-rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes n-sheet { from { opacity: 0; transform: translateY(16px); } }
+@media (max-width: 640px) {
+  .overlay { align-items: flex-end; padding: 0; }
+  .n-dialog { max-width: none; max-height: 92vh; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding-bottom: calc(24px + env(safe-area-inset-bottom)); animation: n-sheet .2s ease-out; }
+}
+@media (prefers-reduced-motion: reduce) { .overlay, .n-dialog { animation: none; } }
+.x-btn { color: var(--n-text-3); padding: 4px; border-radius: 999px; display: grid; place-items: center; flex-shrink: 0; }
 .x-btn:hover { color: var(--n-text); background: var(--n-bg-3); }
 .x-btn svg { width: 20px; height: 20px; }
 

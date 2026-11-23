@@ -1,6 +1,6 @@
 <script setup>
 // The quote is the backend's simulation of the real transaction: exactly what the program would pay out.
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { state, priceOf, loadLiquidationInfo, previewLiquidation, liquidate, useTx } from '../store.js'
 import { tok } from '../config.js'
 import { amt, usdFull, num, cleanAmount, floorTo, short, hfText, hfColor } from '../logic.js'
@@ -72,15 +72,18 @@ async function submit() {
   await loadInfo() // the loan as it is now (often no longer liquidatable), which also refreshes the server's list
   emit('done')
 }
+const onKey = (e) => e.key === 'Escape' && tx.status !== 'running' && emit('close')
+onMounted(() => addEventListener('keydown', onKey))
+onUnmounted(() => removeEventListener('keydown', onKey))
 </script>
 
 <template>
   <div class="overlay" @click.self="tx.status !== 'running' && emit('close')">
-    <div class="lq-modal" role="dialog" aria-modal="true" aria-labelledby="lq-title">
-      <div class="lq-head">
+    <div class="n-dialog lq-modal" role="dialog" aria-modal="true" aria-labelledby="lq-title">
+      <div class="n-dialog-head">
         <div>
-          <h3 id="lq-title" class="lq-title">Liquidate loan</h3>
-          <p class="lq-sub">Repay part of this loan's {{ debt.name }} debt and receive its {{ coll.name }} collateral plus a bonus.</p>
+          <h3 id="lq-title" class="n-dialog-title">Liquidate loan</h3>
+          <p class="n-dialog-sub">Repay part of this loan's {{ debt.name }} debt and receive its {{ coll.name }} collateral plus a bonus.</p>
         </div>
         <button class="x-btn" aria-label="Close" :disabled="tx.status === 'running'" @click="emit('close')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -126,15 +129,7 @@ async function submit() {
 </template>
 
 <style scoped>
-.overlay { animation: lq-fade .2s ease-out; }
-.lq-modal { animation: lq-rise .24s ease-out; }
-@keyframes lq-fade { from { opacity: 0; } }
-@keyframes lq-rise { from { opacity: 0; transform: translateY(10px) scale(.98); } }
-@media (prefers-reduced-motion: reduce) { .overlay, .lq-modal { animation: none; } }
-.lq-modal { width: 100%; max-width: 480px; max-height: calc(100vh - 32px); overflow-y: auto; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 6px; padding: 24px; box-shadow: 0 40px 100px -20px #000c; display: flex; flex-direction: column; gap: 14px; }
-.lq-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-.lq-title { font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 28px; line-height: 1.1; }
-.lq-sub { color: var(--n-text-3); font-size: 13px; margin-top: 6px; line-height: 1.5; }
+.lq-modal { display: flex; flex-direction: column; gap: 14px; }
 .lq-box { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border: 1px solid var(--n-line); border-radius: 4px; background: #000; }
 .n-label { margin-bottom: -6px; }
 .lq-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--n-text-3); margin-top: -4px; }
