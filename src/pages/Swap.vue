@@ -211,7 +211,7 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
 .token { display: inline-flex; align-items: center; gap: 8px; color: var(--n-text); font-size: 17px; font-weight: 600; }
 .box input, .box output { min-width: 0; width: 100%; text-align: right; color: var(--n-text); font-size: 26px; font-variant-numeric: tabular-nums; outline: 0; }
 .box output.dim { color: var(--n-text-4); }
-.flip { align-self: center; margin: -18px 0; z-index: 1; width: 36px; height: 36px; border: 1px solid var(--n-line-2); border-radius: 10px; background: var(--n-bg-3); color: var(--n-text-2); font-size: 18px; }
+.flip { align-self: center; margin: -18px 0; z-index: 1; width: 36px; height: 36px; border: 1px solid var(--n-line-2); border-radius: 999px; background: var(--n-bg-3); color: var(--n-text-2); font-size: 18px; }
 .flip:hover:not(:disabled) { color: var(--n-pink); border-color: var(--n-pink); }
 .bar { margin: 4px 0; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--n-line-2); border-radius: 999px; color: var(--n-text-2); font-size: 12px; }

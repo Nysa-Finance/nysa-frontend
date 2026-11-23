@@ -9,7 +9,7 @@
   --n-bg: #000; --n-bg-2: #111; --n-bg-3: #1c1c1c;
   --n-line: #262626; --n-line-2: #404040; --n-hair: #1a1a1a;
   --n-text: #fff; --n-text-2: #ccc; --n-text-3: #a3a3a3; --n-text-4: #808080;
-  --n-pink: #EC008C; --n-green: #3ddc84; --n-amber: #E8B339; --n-red: #ff5d5d;
+  --n-pink: #f5289b; /* text, lines and focus; fills use --m1 */ --n-green: #3ddc84; --n-amber: #E8B339; --n-red: #ff5d5d;
   --n-grad: var(--grad); --n-max: 1400px;
   color-scheme: dark;
 }
@@ -41,7 +41,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-pill.net .n-dot { background: #9945ff; }
 .n-btn-grad { padding: 10px 22px; border-radius: 999px; font-size: 13px; font-weight: 600; color: #fff; background: var(--grad); display: inline-flex; align-items: center; gap: 6px; transition: filter .15s, box-shadow .2s; }
 .n-btn-grad:hover { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }
-.n-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 8px; padding: 6px; font-size: 13px; }
+.n-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 12px; padding: 6px; font-size: 13px; }
 .n-menu a, .n-menu button { display: block; width: 100%; text-align: left; padding: 9px 12px; border-radius: 4px; color: var(--n-text-2); }
 .n-menu a:hover, .n-menu button:hover { background: var(--n-bg-3); color: #fff; }
 /* Phones only (see the 860px block). */
@@ -50,7 +50,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-footer nav { display: flex; gap: 18px; }
 .n-footer a { color: var(--n-text-3); }
 .n-footer a:hover { color: #fff; }
-.n-progress { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 60; background: linear-gradient(90deg, transparent, var(--n-pink), transparent) no-repeat; background-size: 40% 100%; animation: n-progress 1.1s ease-in-out infinite; }
+.n-progress { position: fixed; top: 0; left: 0; right: 0; height: 2px; z-index: 60; background: linear-gradient(90deg, transparent, var(--m1), transparent) no-repeat; background-size: 40% 100%; animation: n-progress 1.1s ease-in-out infinite; }
 @keyframes n-progress { 0% { background-position: -40% 0 } 100% { background-position: 140% 0 } }
 
 .n-page-head { margin-bottom: 30px; }
@@ -102,7 +102,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-seg button { flex: 1; padding: 10px 18px; border-radius: 999px; font-size: 14px; font-weight: 500; border: 1px solid var(--n-line-2); color: var(--n-text-3); transition: .15s; }
 .n-seg button:hover { color: #fff; border-color: #555; }
 .n-seg button.on { background: #1c1c1c; border-color: var(--n-line-2); color: #fff; font-weight: 600; } /* neutral: the gradient is the submit's */
-.n-panel { border: 1px solid var(--n-line); border-radius: 8px; padding: 26px; background: #000; }
+.n-panel { border: 1px solid var(--n-line); border-radius: 12px; padding: 26px; background: #000; }
 .n-label { color: var(--n-text-3); font-size: 13px; margin-bottom: 8px; }
 .n-label .opt { color: var(--n-text-4); }
 .n-select, .n-input { width: 100%; padding: 14px 16px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 4px; color: #fff; font-size: 15px; }
@@ -192,7 +192,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 @media (max-width: 860px) {
   .n-nav { row-gap: 0; }
   .n-tabs { display: none; }
-  .n-fab { display: grid; place-items: center; position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 80; width: 54px; height: 54px; border-radius: 50%; background: var(--n-grad); color: #fff; box-shadow: 0 10px 30px -6px #000c; }
+  .n-fab { display: grid; place-items: center; position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 80; width: 54px; height: 54px; border-radius: 50%; background: var(--n-grad); color: #fff; }
   .n-fab svg { width: 26px; height: 26px; transition: transform .2s; }
   .n-fab[aria-expanded="true"] svg { transform: rotate(45deg); } /* the + turns into a × */
   .n-fab-shade { display: block; position: fixed; inset: 0; z-index: 78; background: #000000b8; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); } /* as the transaction sheet */
@@ -201,8 +201,8 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
   .n-wallet-btn svg { width: 22px; height: 22px; }
   .n-wallet-btn .n-dot { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; box-shadow: 0 0 0 2px #000; }
   .n-menu-addr { display: block; padding: 9px 12px 6px; color: var(--n-text-4); font-family: var(--mono); font-size: 12px; }
-  .n-fab-menu { display: grid; gap: 2px; position: fixed; right: 16px; bottom: calc(82px + env(safe-area-inset-bottom)); z-index: 79; min-width: 210px; padding: 6px; border: 1px solid var(--n-line-2); border-radius: 16px; background: var(--n-bg-2); box-shadow: 0 20px 60px -10px #000c; }
-  .n-fab-menu a { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 10px; font-size: 15px; font-weight: 500; color: var(--n-text-2); }
+  .n-fab-menu { display: grid; gap: 2px; position: fixed; right: 16px; bottom: calc(82px + env(safe-area-inset-bottom)); z-index: 79; min-width: 210px; padding: 6px; border: 1px solid var(--n-line-2); border-radius: 12px; background: var(--n-bg-2); }
+  .n-fab-menu a { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 4px; font-size: 15px; font-weight: 500; color: var(--n-text-2); }
   .n-fab-menu a.on { color: #fff; background: var(--n-bg-3); }
   .n-fab-menu img { width: 18px; height: 18px; }
   .n-footer { padding-bottom: calc(88px + env(safe-area-inset-bottom)); } /* keep the footer links clear of the button */
