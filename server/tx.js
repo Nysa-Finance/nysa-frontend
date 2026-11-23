@@ -43,7 +43,7 @@ const BUILDERS = {
 
 // Lookup tables only grow, so a cached copy stays valid for a while.
 const lutCache = new Map()
-async function fetchLuts(luts) {
+export async function fetchLuts(luts) {
   const out = {}
   const missing = (luts ?? []).filter((l) => { const c = lutCache.get(String(l)); return !c || Date.now() - c.at > 600_000 })
   if (missing.length) {
@@ -77,7 +77,7 @@ async function priorityFee() {
 }
 
 // klend-sdk adds its own compute-budget instruction: ours replaces it.
-async function compile(owner, ixs, luts, units = MAX_CU) {
+export async function compile(owner, ixs, luts, units = MAX_CU) {
   const body = ixs.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET)
   const [{ context, value: blockhash }, price] = await Promise.all([rpc.getLatestBlockhash({ commitment: 'confirmed' }).send(), priorityFee()])
   const msg = pipe(
@@ -144,7 +144,7 @@ export async function simulateAtomicTransaction({ compiled, accounts = [], token
 const LIQ_SLIPPAGE = 0.01 // minimum collateral payout, against the simulation
 
 // Simulated first, so a failing transaction shows a readable error instead of a wallet warning, and is never sent.
-async function simulated(compiled) {
+export async function simulated(compiled) {
   if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
   const { value } = await rpc.simulateTransaction(compiled.tx, { encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true }).send()
   if (value.err) simulationError(value.logs ?? [], value.err)
@@ -330,7 +330,7 @@ export async function buildTx(req) {
 const VAULT_SLIPPAGE = 0.005 // a deposit must mint at least 99.5% of the shares the current share value gives
 
 // Reserves away from their target allocation (more than 0.1% of the vault), most over-allocated first.
-async function offTarget(state, reserves, now) {
+export async function offTarget(state, reserves, now) {
   const [holdings, target] = await Promise.all([
     vaultClient.getVaultHoldings(state, now, reserves, now),
     vaultClient.getVaultComputedReservesAllocation(state, now, reserves, now),
