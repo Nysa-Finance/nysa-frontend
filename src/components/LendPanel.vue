@@ -51,7 +51,7 @@ watch(options, (o) => { if (!o.some((t) => t.token_id === assetId.value)) assetI
 
 async function submit() {
   const t = token.value, a = num(amount.value)
-  const [label, kind] = tab.value === 'lend' ? ['Supply', 'deposit'] : ['Withdraw', 'withdraw']
+  const [label, kind] = tab.value === 'lend' ? ['Deposit', 'deposit'] : ['Withdraw', 'withdraw']
   if (await run([{ label: `${label} ${t.name}`, run: () => sendKaminoAction(kind, { market: props.market, token: t, amount: a, all: withdrawAll.value }) }])) amount.value = ''
 }
 </script>
@@ -60,19 +60,19 @@ async function submit() {
   <div class="n-panel">
     <div v-if="withdrawOnly" class="n-label" style="margin-bottom: 16px; font-size: 15px; color: #fff">Withdraw from {{ market.name }}</div>
     <div v-else class="n-seg" style="margin-bottom: 22px">
-      <button :class="{ on: tab === 'lend' }" @click="tab = 'lend'">Lend</button>
+      <button :class="{ on: tab === 'lend' }" @click="tab = 'lend'">Deposit</button>
       <button :class="{ on: tab === 'withdraw' }" @click="tab = 'withdraw'">Withdraw</button>
     </div>
-    <div class="n-label">{{ tab === 'withdraw' ? 'Asset to withdraw' : 'Asset to supply' }}</div>
+    <div class="n-label">{{ tab === 'withdraw' ? 'Asset to withdraw' : 'Asset to deposit' }}</div>
     <select v-model="assetId" class="n-select" style="margin-bottom: 14px">
       <option v-for="t in options" :key="t.token_id" :value="t.token_id">{{ t.name }}</option>
     </select>
-    <div class="n-kv" style="margin-bottom: 10px"><span class="k">Supply APY</span><span class="v accent">{{ pct(row?.reserve.supplyAPR) }}</span></div>
+    <div class="n-kv" style="margin-bottom: 10px"><span class="k">Deposit APY</span><span class="v accent">{{ pct(row?.reserve.supplyAPR) }}</span></div>
     <template v-if="rewardAprOf(market, token.token_id) > 0">
       <div class="n-kv" style="margin-bottom: 10px"><span class="k">{{ state.rewards[market.id][token.token_id].rewards.map((x) => x.symbol).join(' + ') }} rewards APR</span><span class="v" style="color: var(--n-green)">+{{ pct(rewardAprOf(market, token.token_id)) }}</span></div>
       <div class="n-kv" style="margin-bottom: 10px"><span class="k">⚡ Boosted APY</span><span class="v accent">{{ pct((row?.reserve.supplyAPR ?? 0) + rewardAprOf(market, token.token_id)) }}</span></div>
     </template>
-    <div class="n-kv" style="margin-bottom: 10px"><span class="k">Your supplied</span><span class="v">{{ on ? `${amt(supplied)} ${token.name}` : '—' }}</span></div>
+    <div class="n-kv" style="margin-bottom: 10px"><span class="k">Your deposits</span><span class="v">{{ on ? `${amt(supplied)} ${token.name}` : '—' }}</span></div>
     <div class="n-kv" style="margin-bottom: 20px">
       <span class="k">{{ tab === 'lend' ? 'Wallet balance' : 'Available to withdraw' }}</span>
       <span class="v">{{ on ? `${amt(available)} ${token.name}` : '—' }}</span>
@@ -85,7 +85,7 @@ async function submit() {
     <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(value) }}</span></div>
     <p v-if="withdrawAll && !warning" class="n-note" style="margin-bottom: 16px">Withdrawing in full. The exact balance is settled on-chain so no dust is left behind.</p>
     <p v-if="warning" class="n-warn" style="margin-bottom: 16px">{{ warning }}</p>
-    <button class="n-btn-block" :disabled="!canSubmit" @click="submit">{{ tab === 'withdraw' ? 'Withdraw' : 'Lend' }} {{ token.name }}</button>
+    <button class="n-btn-block" :disabled="!canSubmit" @click="submit">{{ tab === 'withdraw' ? 'Withdraw' : 'Deposit' }} {{ token.name }}</button>
     <TxProgress :tx="tx" @dismiss="reset" />
   </div>
 </template>

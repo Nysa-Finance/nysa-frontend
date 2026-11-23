@@ -323,12 +323,12 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
     </div>
 
     <div v-if="tab === 'loops'" class="loops">
-      <div class="n-thead lp-grid"><div>Asset</div><div>Max Net APY</div><div>Max leverage</div><div>Liq. available</div><div>Deposited</div><div>Borrow</div></div>
+      <div class="n-thead lp-grid"><div>Asset</div><div>Max net APY</div><div>Max leverage</div><div>Available liquidity</div><div>Deposited</div><div>Borrow</div></div>
       <div v-for="l in LOOPS" :key="l.id" class="n-tr click lp-grid lp-row" role="link" tabindex="0" @click="openAsset(l)" @keydown.enter="openAsset(l)">
         <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="tok(l.collateral)" /><span class="asset-name"><b>{{ tok(l.collateral).name }}</b><small>{{ l.fullName }}</small></span></div>
-        <div class="n-cell n-num up" data-label="Max Net APY">{{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}</div>
+        <div class="n-cell n-num up" data-label="Max net APY">{{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}</div>
         <div class="n-cell n-num" data-label="Max leverage">{{ lev(l.maxLeverage) }}</div>
-        <div class="n-cell n-num" data-label="Liq. available">{{ usd(marketOf(l).liquidity) }}</div>
+        <div class="n-cell n-num" data-label="Available liquidity">{{ usd(marketOf(l).liquidity) }}</div>
         <div class="n-cell n-num" data-label="Deposited">{{ usd(marketOf(l).deposited) }}</div>
         <div class="n-cell" data-label="Borrow"><TokenIcon :token="tok(l.debt)" size="sm" /></div>
       </div>
@@ -368,10 +368,10 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         </div>
         <p class="n-sub blurb">{{ loop.blurb }} A loop turns your {{ debt.name }} into {{ coll.name }} on Kamino and borrows {{ debt.name }} against it to buy more, in one transaction.</p>
         <div class="n-stats d-stats">
-          <div class="n-stat"><div class="k">Max Net APY</div><div class="v up">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
+          <div class="n-stat"><div class="k">Max net APY</div><div class="v up">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
           <div class="n-stat"><div class="k">Max leverage</div><div class="v">{{ lev(loop.maxLeverage) }}</div></div>
-          <div class="n-stat"><div class="k">Total supplied</div><div class="v">{{ usd(market.deposited) }}</div></div>
-          <div class="n-stat"><div class="k">Liquidity available</div><div class="v">{{ usd(market.liquidity) }}</div></div>
+          <div class="n-stat"><div class="k">Total deposits</div><div class="v">{{ usd(market.deposited) }}</div></div>
+          <div class="n-stat"><div class="k">Available liquidity</div><div class="v">{{ usd(market.liquidity) }}</div></div>
         </div>
       </div>
 

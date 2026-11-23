@@ -72,7 +72,7 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
     <Section title="Loans by health" open>
       <template #meta>{{ loans ? `${loans.length} open · riskiest first` : '' }}</template>
       <div class="n-table">
-        <div class="n-thead lo-grid"><div>Wallet</div><div>Collateral</div><div>Debt</div><div>Health factor</div><div>Liq. price</div><div>Price drop to liq.</div><div>Status</div></div>
+        <div class="n-thead lo-grid"><div>Wallet</div><div>Collateral</div><div>Debt</div><div>Health factor</div><div>Liquidation price</div><div>Drop to liquidation</div><div>Status</div></div>
         <div v-if="loans === undefined" class="n-empty">Reading on-chain data…</div>
         <div v-else-if="loans === null" class="n-empty">Open loans are temporarily unavailable.</div>
         <div v-else-if="!loans.length" class="n-empty">No open loans right now.</div>
@@ -81,8 +81,8 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
           <div class="n-cell n-num" data-label="Collateral">${{ amt(p.deposits, 2) }}</div>
           <div class="n-cell n-num" data-label="Debt">${{ amt(p.debt, 2) }}</div>
           <div class="n-cell n-num" data-label="Health factor" :style="{ color: hfColor(p.hf), fontWeight: 600 }">{{ hfText(p.hf) }}</div>
-          <div class="n-cell n-num" data-label="Liq. price">{{ liqPrice(p) ? `$${amt(liqPrice(p), 4)}` : '—' }}<span v-if="p.collateral" class="unit"> {{ tok(p.collateral).name }}</span></div>
-          <div class="n-cell n-num" data-label="Price drop to liq.">{{ pct(drop(p), 1) }}</div>
+          <div class="n-cell n-num" data-label="Liquidation price">{{ liqPrice(p) ? `$${amt(liqPrice(p), 4)}` : '—' }}<span v-if="p.collateral" class="unit"> {{ tok(p.collateral).name }}</span></div>
+          <div class="n-cell n-num" data-label="Drop to liquidation">{{ pct(drop(p), 1) }}</div>
           <div class="n-cell st-cell" data-label="Status">
             <span class="n-chip" :class="status(p.hf)[1]">{{ status(p.hf)[0] }}</span>
             <button v-if="p.hf < 1 && p.owner !== state.address && p.collateral && p.debtToken" class="n-btn-sm" @click="target = p">Liquidate</button>

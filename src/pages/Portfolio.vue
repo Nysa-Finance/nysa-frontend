@@ -79,16 +79,16 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   <div v-if="!on" class="n-banner">Connect a wallet to see your positions.</div>
 
   <div class="n-stats stat-4">
-    <div class="n-stat"><div class="k">Total Supplied</div><div class="v">{{ on ? usd(supplied) : '—' }}</div></div>
+    <div class="n-stat"><div class="k">Total deposits</div><div class="v">{{ on ? usd(supplied) : '—' }}</div></div>
     <div class="n-stat"><div class="k">Total Borrowed</div><div class="v">{{ on ? usd(borrowed) : '—' }}</div></div>
     <div class="n-stat"><div class="k">Net APY</div><div class="v accent">{{ on ? pct(netApy) : '—' }}</div></div>
     <div class="n-stat"><div class="k">Health Factor</div><div class="v" :style="{ color: hfColor(hf) }">{{ hfText(hf) }}</div></div>
   </div>
 
   <section v-if="on && loopPositions.length" class="n-panel loop-position-panel">
-    <div class="loop-heading"><div><h2>Nysa Multiply positions</h2><p class="n-muted">Loop collateral and debt stay separate from vanilla lending positions.</p></div><span class="n-chip">{{ loopPositions.length }} identified</span></div>
+    <div class="loop-heading"><div><h2>Loop positions</h2><p class="n-muted">Loop collateral and debt stay separate from your deposits and loans.</p></div><span class="n-chip">{{ loopPositions.length }} identified</span></div>
     <div v-for="position in loopPositions" :key="position.id" class="loop-position-row">
-      <div><div class="loop-market">{{ position.market.name }}</div><div class="n-muted">Multiply · {{ position.obligation.address.slice(0, 6) }}…{{ position.obligation.address.slice(-4) }}</div></div>
+      <div><div class="loop-market">{{ position.market.name }}</div><div class="n-muted">Loop · {{ position.obligation.address.slice(0, 6) }}…{{ position.obligation.address.slice(-4) }}</div></div>
       <div><div class="loop-label">Collateral</div><div class="n-num">{{ amt(Number(position.collateral.amount), 4) }} {{ tok(position.collateral.tokenId)?.name ?? position.collateral.tokenId }}</div><div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div></div>
       <div><div class="loop-label">Debt</div><div class="n-num">{{ amt(Number(position.liability.amount), 4) }} {{ tok(position.liability.tokenId)?.name ?? position.liability.tokenId }}</div><div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div></div>
       <div><div class="loop-label">Health factor</div><div class="n-num">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div></div>
@@ -122,21 +122,21 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   </div>
 
   <div v-if="view === 'deposits'" class="n-table">
-    <div class="n-thead dp-grid"><div>Vault / Market</div><div>Asset Supplied</div><div>$ Value</div><div /></div>
+    <div class="n-thead dp-grid"><div>Vault / Market</div><div>Deposited</div><div>Value</div><div /></div>
     <div v-if="!on" class="n-empty">Connect a wallet to see your deposits.</div>
     <div v-else-if="!deposits.length && !vaultDeposits.length" class="n-empty">No active deposits.</div>
     <template v-else><div v-for="d in vaultDeposits" :key="d.v.id" class="n-tr dp-grid">
       <div class="n-cell" data-label="Market"><span class="mk">{{ d.live?.name ?? d.v.name }}</span> <span class="n-chip">Vault</span></div>
-      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.value) }} {{ d.t.name }}</span></div>
-      <div class="n-cell n-muted n-num" data-label="$ Value">{{ usd(d.usd) }}</div>
+      <div class="n-cell n-asset" data-label="Deposited"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.value) }} {{ d.t.name }}</span></div>
+      <div class="n-cell n-muted n-num" data-label="Value">{{ usd(d.usd) }}</div>
       <div class="n-cell n-actions">
         <button class="n-btn-sm" @click="goVault(d.v, 'deposit')">Deposit</button>
         <button class="n-btn-sm ghost" @click="goVault(d.v, 'withdraw')">Withdraw</button>
       </div>
     </div><div v-for="d in deposits" :key="d.m.id + d.t.token_id" class="n-tr dp-grid">
       <div class="n-cell" data-label="Market"><span class="mk">{{ d.m.name }}</span> <span class="n-chip mainnet">Solana</span></div>
-      <div class="n-cell n-asset" data-label="Asset Supplied"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.units) }} {{ d.t.name }}</span></div>
-      <div class="n-cell n-muted n-num" data-label="$ Value">{{ usd(d.usd) }}</div>
+      <div class="n-cell n-asset" data-label="Deposited"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.units) }} {{ d.t.name }}</span></div>
+      <div class="n-cell n-muted n-num" data-label="Value">{{ usd(d.usd) }}</div>
       <div class="n-cell n-actions">
         <button class="n-btn-sm ghost" @click="go(d.m, 'withdraw', undefined, d.t.token_id)">Withdraw</button>
       </div>
@@ -144,15 +144,15 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   </div>
 
   <div v-else class="n-table">
-    <div class="n-thead pl-grid"><div>Loan</div><div>Loan $ Value</div><div>Collateral</div><div>Collateral $ Value</div><div>HF</div><div /></div>
+    <div class="n-thead pl-grid"><div>Loan</div><div>Loan value</div><div>Collateral</div><div>Collateral value</div><div>Health factor</div><div /></div>
     <div v-if="!on" class="n-empty">Connect a wallet to see your loans.</div>
     <div v-else-if="!loans.length" class="n-empty">No active loans.</div>
     <template v-else><div v-for="l in loans" :key="l.m.id + l.t.token_id" class="n-tr pl-grid">
       <div class="n-cell n-asset" data-label="Loan"><TokenIcon :token="l.t" size="sm" /><span class="n-num">{{ amt(l.units) }} {{ l.t.name }}</span></div>
-      <div class="n-cell n-muted n-num" data-label="Loan $ Value">{{ usd(l.usd) }}</div>
+      <div class="n-cell n-muted n-num" data-label="Loan value">{{ usd(l.usd) }}</div>
       <div class="n-cell" data-label="Collateral"><div class="n-tok-group"><TokenIcon v-for="c in l.coll" :key="c.t.token_id" :token="c.t" size="sm" /></div></div>
-      <div class="n-cell n-muted n-num" data-label="Collateral $ Value">{{ usd(l.collUsd) }}</div>
-      <div class="n-cell n-num" data-label="HF" :style="{ color: hfColor(l.hf), fontWeight: 600 }">{{ hfText(l.hf) }}</div>
+      <div class="n-cell n-muted n-num" data-label="Collateral value">{{ usd(l.collUsd) }}</div>
+      <div class="n-cell n-num" data-label="Health factor" :style="{ color: hfColor(l.hf), fontWeight: 600 }">{{ hfText(l.hf) }}</div>
       <div class="n-cell n-actions">
         <button class="n-btn-sm" @click="go(l.m, undefined, 'repay', l.t.token_id)">Repay</button>
         <button class="n-btn-sm ghost" @click="go(l.m, undefined, 'borrow', l.t.token_id)">Add collateral</button>
