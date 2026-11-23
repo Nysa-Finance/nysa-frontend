@@ -187,7 +187,7 @@ async function submitRepay() {
 .buy { margin: -10px 0 22px; }
 .buy a { color: var(--n-pink); font-weight: 500; white-space: nowrap; }
 .buy a:hover { text-decoration: underline; }
-.slider { width: 100%; accent-color: var(--n-pink); }
+.slider { width: 100%; accent-color: var(--m1); }
 .slider:disabled { opacity: .4; }
 .to-withdraw { margin-top: 20px; padding-top: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--n-text-3); }
 .to-withdraw a { color: var(--n-pink); font-weight: 500; width: fit-content; }

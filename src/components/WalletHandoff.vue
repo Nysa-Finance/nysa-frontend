@@ -83,7 +83,7 @@ async function checkLocalExpiry() {
 
 <style scoped>
 .ho-stack { position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 90; display: flex; flex-direction: column; gap: 8px; max-width: 440px; max-height: calc(100vh - 32px); overflow-y: auto; margin: 0 auto; pointer-events: none; }
-.ho { position: relative; flex: 0 0 auto; width: 100%; margin: 0; padding: 16px 18px; border: 1px solid var(--n-line-2); border-radius: 12px; background: var(--n-bg-2); box-shadow: 0 20px 60px -10px #000c; font-size: 13px; color: var(--n-text-2); pointer-events: auto; }
+.ho { position: relative; flex: 0 0 auto; width: 100%; margin: 0; padding: 16px 18px; border: 1px solid var(--n-line-2); border-radius: 12px; background: var(--n-bg-2); font-size: 13px; color: var(--n-text-2); pointer-events: auto; }
 .ho.error { border-color: #ff5d5d66; }
 .ho-label { font-weight: 600; font-size: 14px; color: #fff; }
 .ho-msg { margin-top: 4px; display: flex; align-items: center; gap: 8px; }

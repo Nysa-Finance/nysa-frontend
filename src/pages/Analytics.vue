@@ -299,7 +299,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
 .receiver-network { display: flex; align-items: center; margin-bottom: 12px; }
 .receiver-intro { margin: 0 0 16px; color: var(--n-text-3); font-size: 12px; line-height: 1.6; }
 .receiver-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px; }
-.receiver-card { min-width: 0; padding: 16px; border: 1px solid var(--n-line); border-radius: 6px; }
+.receiver-card { min-width: 0; padding: 16px; border: 1px solid var(--n-line); border-radius: 12px; }
 .receiver-label { margin-bottom: 10px; color: var(--n-text-3); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
 .receiver-address { display: block; color: var(--n-text); font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; user-select: all; }
 .receiver-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }

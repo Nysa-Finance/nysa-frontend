@@ -86,7 +86,7 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
 .vault-id { display: flex; align-items: center; gap: 12px; }
 .name-col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .ea-cards { display: none; flex-direction: column; gap: 14px; }
-.ea-card { border: 1px solid var(--n-line); border-radius: 16px; background: var(--n-bg-2); padding: 20px 22px 12px; cursor: pointer; transition: border-color .15s; }
+.ea-card { border: 1px solid var(--n-line); border-radius: 12px; background: var(--n-bg-2); padding: 20px 22px 12px; cursor: pointer; transition: border-color .15s; }
 .ea-card:hover, .ea-card:focus-visible { border-color: var(--n-line-2); }
 .ea-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--n-line); }
 .ea-head .vault-id { align-items: flex-start; }

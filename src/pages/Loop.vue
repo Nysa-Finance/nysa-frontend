@@ -466,7 +466,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .head-center { text-align: center; }
 .seg-center { margin: 0 auto 26px; }
 /* Loops table: rows as cards, numbers right-aligned */
-.loops { border: 1px solid var(--n-line); border-radius: 10px; background: var(--n-bg-2); padding: 0 10px 10px; }
+.loops { border: 1px solid var(--n-line); border-radius: 12px; background: var(--n-bg-2); padding: 0 10px 10px; }
 .loops .n-thead { border-bottom: 0; padding: 14px 18px 6px; }
 .lp-grid { grid-template-columns: minmax(0, 1.6fr) 1fr .9fr 1fr 1fr .6fr; }
 .lp-grid > :not(:first-child) { justify-self: end; text-align: right; }
@@ -511,7 +511,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .borrow-asset .pair { color: var(--n-text); font-size: 14px; font-weight: 500; }
 .borrow-asset .rate { color: var(--n-text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
 .lev { margin-top: 20px; }
-.slider { width: 100%; accent-color: var(--n-pink); }
+.slider { width: 100%; accent-color: var(--m1); }
 .ticks { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11.5px; margin-top: 2px; }
 .ba { margin-top: 20px; border: 1px solid var(--n-line); border-radius: 4px; }
 .ba-row { display: flex; justify-content: space-between; gap: 14px; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--n-hair); font-variant-numeric: tabular-nums; }
@@ -521,7 +521,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .ba-row .to.neg { color: var(--n-red); }
 .setup { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 14px; border: 1px solid var(--n-line); border-radius: 4px; font-size: 12.5px; color: var(--n-text-3); }
 .ack { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; color: var(--n-amber); font-size: 12.5px; }
-.ack input { margin-top: 3px; accent-color: var(--n-pink); }
+.ack input { margin-top: 3px; accent-color: var(--m1); }
 .go { margin-top: 20px; }
 .why { display: block; margin-top: 10px; text-align: center; color: var(--n-text-3); font-size: 12.5px; }
 .fresh { margin-top: 6px; text-align: center; color: var(--n-text-4); font-size: 12px; }
