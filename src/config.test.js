@@ -1,7 +1,7 @@
 // Checks every market entry in config.js, so a mistake in a new market fails here and not in production.
 import assert from 'node:assert/strict'
 import { existsSync } from 'node:fs'
-import { LIVE, OTHER_MARKETS, TOKENS, VAULTS, tokensOf } from './config.js'
+import { LIVE, LOOPS, MARKETS, OTHER_MARKETS, TOKENS, VAULTS, loopMarket, tokensOf } from './config.js'
 
 const unique = (list, what) => assert.equal(new Set(list).size, list.length, `duplicate ${what}`)
 const ADDRESS = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
@@ -33,7 +33,17 @@ for (const m of LIVE) {
     assert.ok(p.maxLtv < p.liqLtv && p.liqLtv <= 100, `${m.id}: max LTV must be under the liquidation LTV`)
   }
 }
-unique([...LIVE, ...OTHER_MARKETS].map((m) => m.kaminoMarket), 'Kamino market (a market is either ours or other)')
+unique([...MARKETS, ...OTHER_MARKETS].map((m) => m.kaminoMarket), 'Kamino market (a market is either ours, loop-only or other)')
+unique(MARKETS.map((m) => m.id), 'market id')
+unique(LOOPS.map((l) => l.id), 'loop id')
+unique(LOOPS.map((l) => l.market), 'loop market (one loop per market)')
+for (const l of LOOPS) {
+  const m = loopMarket(l)
+  assert.ok(m, `loop ${l.id}: market ${l.market} is not in MARKETS`)
+  assert.ok(m.reserves[l.collateral] && m.reserves[l.debt] && m.pairs.some((p) => p.collateral === l.collateral && p.liability === l.debt), `loop ${l.id}: ${m.id} has no ${l.collateral}/${l.debt} pair`)
+  assert.match(l.lookupTable, ADDRESS, `loop ${l.id} lookupTable (scripts/create-loop-lut.js)`)
+  assert.ok(l.maxLeverage > 1 && l.maxLeverage < 100 / (100 - m.pairs.find((p) => p.collateral === l.collateral).maxLtv), `loop ${l.id}: maxLeverage must be under the market's LTV limit`)
+}
 for (const m of OTHER_MARKETS) {
   assert.match(m.kaminoMarket, ADDRESS, `${m.name} kaminoMarket`)
   assert.ok(m.name && m.collateral.length && m.collateral.every((id) => TOKENS[id]), `${m.name} needs a name and collateral listed in TOKENS`)

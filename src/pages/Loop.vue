@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sendLoopAction, sendLoopSetup, state, priceOf, useTx } from '../store.js'
-import { LOOP_ENABLED, LOOPS, TOKENS, loopById, loopByMarket, marketById, tok } from '../config.js'
+import { LOOP_ENABLED, LOOPS, TOKENS, loopById, loopByMarket, loopMarket, tok } from '../config.js'
 import { amt, pct, usd, usdFull, num, floorTo, hfText, cleanAmount } from '../logic.js'
 import { formatBaseUnits } from '../swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
@@ -250,7 +250,7 @@ const marketOf = (l) => ({
   liquidity: reserve(l, l.debt) ? reserve(l, l.debt).availableLiquidity * reserve(l, l.debt).price : undefined,
 })
 const market = computed(() => marketOf(loop.value))
-const liqLtvOf = (l) => reserve(l, l.collateral)?.liqLtv ?? marketById(l.market).pairs.find((p) => p.collateral === l.collateral)?.liqLtv
+const liqLtvOf = (l) => reserve(l, l.collateral)?.liqLtv ?? loopMarket(l).pairs.find((p) => p.collateral === l.collateral)?.liqLtv
 const liqLtv = computed(() => liqLtvOf(loop.value))
 const collPrice = computed(() => priceOf(loop.value.collateral))
 const amount = computed(() => num(fundingAmount.value))
@@ -363,7 +363,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
           <TokenIcon :token="coll" />
           <h1 class="n-h1">{{ coll.name }} Loop</h1>
           <span v-if="coll.rwa" class="n-chip">RWA Loop</span>
-          <span class="n-chip">{{ marketById(loop.market).name }}</span>
+          <span class="n-chip">{{ loopMarket(loop).name }}</span>
           <span class="oracle">{{ coll.name }} oracle price <b>${{ collPrice.toFixed(4) }}</b></span>
         </div>
         <p class="n-sub blurb">{{ loop.blurb }} A loop turns your {{ debt.name }} into {{ coll.name }} on Kamino and borrows {{ debt.name }} against it to buy more, in one transaction.</p>

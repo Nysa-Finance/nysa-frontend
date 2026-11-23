@@ -2,7 +2,7 @@
 import { pathToFileURL } from 'node:url'
 import { getCurrentLedgerInstant } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
-import { LIVE, VAULTS, tokensOf } from '../src/config.js'
+import { MARKETS, VAULTS, tokensOf } from '../src/config.js'
 import { parsePoints, snapshotPoints, pointsCsv } from '../src/logic.js'
 import { rpc } from './rpc.js'
 import { loadMarket } from './market.js'
@@ -30,7 +30,7 @@ async function firstTxTime(addr) {
 export async function readMarkets(history, {
   indexReader = freshIndex,
   ledgerReader = () => getCurrentLedgerInstant(rpc),
-  markets: configuredMarkets = LIVE,
+  markets: configuredMarkets = MARKETS, // loop-only markets too: their collateral's price history is the loop's yield
   vaults: configuredVaults = VAULTS,
   marketLoader = (marketConfig) => loadMarket(rpc, marketConfig),
   firstTxTimeReader = firstTxTime,

@@ -18,7 +18,7 @@ export const TOKENS = {
   'svm-usdy': { token_id: 'svm-usdy', name: 'USDY', icon: '/tokens/usdy.svg', decimals: 6, price: 1.09, rwa: true, mint: 'A1KLoBrKBde8Ty9qtNQUtq3C2ortoC3u7twggz7sEto6' },
   'svm-otfy': { token_id: 'svm-otfy', name: 'oTFY', icon: '/tokens/otfy.png', decimals: 9, price: 1.03, rwa: true, mint: 'BwB3tNH92jKw6naNGDYDbDwRo8bvYxZVvZjRZRcoWR2h' },
   'svm-nopal': { token_id: 'svm-nopal', name: 'nOPAL', icon: '/tokens/nopal.svg', decimals: 6, price: 1.12, rwa: true, mint: 'GArhnnDj3GYhmQeApKVXaRv4TQFwhPcs3SNF6FXsTeXq' },
-  'svm-susdai': { token_id: 'svm-susdai', name: 'sUSDai', icon: '/tokens/susdai.svg', decimals: 6, price: 1.13, rwa: true, mint: 'sUSDai6Y3GxysDEtA9BVcEFTaog6UZpYUVxJiMhAKYE' },
+  'svm-susdai': { token_id: 'svm-susdai', name: 'sUSDai', icon: '/tokens/susdai.svg', decimals: 6, price: 1.13, rwa: true, token2022: true, mint: 'sUSDai6Y3GxysDEtA9BVcEFTaog6UZpYUVxJiMhAKYE' },
   'svm-usdc': { token_id: 'svm-usdc', name: 'USDC', icon: '/tokens/usdc.webp', decimals: 6, price: 1, mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v' },
 }
 
@@ -51,7 +51,7 @@ export const LIVE = [
 ]
 
 // One entry per loop (Kamino Multiply): USDC funds it and buys `collateral`, `debt` is borrowed against it.
-// Adding a loop: its market in LIVE (the server reads its reserves), the tokens in TOKENS, a frozen lookup table from
+// Adding a loop: its market in LIVE, or in LOOP_ONLY_MARKETS when Nysa doesn't curate it (the server reads its reserves), the tokens in TOKENS, a frozen lookup table from
 // scripts/create-loop-lut.js (without it an open is over Solana's transaction size limit), then the mainnet-fork
 // check of open and close. A route through a DEX not in server/program-policy.js is refused.
 // ponytail: one loop per market, the API names a loop by its market; key it by loop id when a market needs two.
@@ -64,15 +64,36 @@ export const LOOPS = [
     fullName: 'Ondo US Dollar Yield',
     blurb: "USDY is Ondo's tokenized note backed by short-term US Treasuries: its price rises as it earns.",
   },
+  {
+    id: 'susdai', market: 'sol-susdai-usdc', collateral: 'svm-susdai', debt: 'svm-usdc',
+    maxLeverage: 4, // Kamino lends up to 80% LTV on sUSDai (5x); 4x leaves room for swap costs and the thinner pool
+    lookupTable: 'DqFBX36Vq9Zb8n7ydQif9UhyoQnU3mXkjJmDvASQkBYJ',
+    priceYield: true,
+    fullName: 'Staked USDai',
+    blurb: "sUSDai is USD.AI's staked dollar, earning from loans backed by AI compute hardware: its price rises as it earns.",
+  },
 ]
 export const loopById = (id) => LOOPS.find((l) => l.id === id)
 export const loopByMarket = (marketId) => LOOPS.find((l) => l.market === marketId)
+
+// Kamino markets Nysa doesn't curate where a loop runs: the server reads them like LIVE ones (reserves, positions,
+// price history), but they have no page, no Borrow row and no supply or borrow through Nysa.
+const LOOP_ONLY_MARKETS = [
+  {
+    id: 'sol-susdai-usdc', name: 'sUSDai Market',
+    kaminoMarket: 'BVJ1FvFfYuLbGX4qDNezqU6z2N3p8M2XNeGzabm86BzE',
+    reserves: { 'svm-susdai': '5vq24eGz45YWt4x8ub4eiJHU952UgFKpCTyW7rLb8wF2', 'svm-usdc': 'EfMKdLdPKooewofAcGSNTw9FNjc98oDMjbRMHXLJ6QqS' },
+    collateral: ['svm-susdai'], loans: ['svm-usdc'],
+    pairs: [{ collateral: 'svm-susdai', liability: 'svm-usdc', maxLtv: 80, liqLtv: 85 }],
+  },
+]
+export const MARKETS = [...LIVE, ...LOOP_ONLY_MARKETS]
+export const loopMarket = (loop) => MARKETS.find((m) => m.id === loop.market)
 
 // Kamino markets a vault may allocate to that Nysa doesn't curate (no page here), for the vault's exposure.
 export const OTHER_MARKETS = [
   { kaminoMarket: '3hd61ZpG35tBwrmDvdmYVJoazC2mjJxHb6rEYEWs4QhH', name: 'Obligate Market', collateral: ['svm-otfy'] },
   { kaminoMarket: 'HMNm3ZrAvG4zKVv5zpMDA6DKduc612156RUsdAAZf4TC', name: 'Plume Vaults Market', collateral: ['svm-nopal'] },
-  { kaminoMarket: 'BVJ1FvFfYuLbGX4qDNezqU6z2N3p8M2XNeGzabm86BzE', name: 'sUSDai Market', collateral: ['svm-susdai'] },
 ]
 
 // Name, token, allocations and exposure are read on-chain (server/vault.js).

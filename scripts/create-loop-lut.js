@@ -50,6 +50,30 @@ const LOOP_ACCOUNTS = { usdy: [
   'AGXrswVDRoUf62UX9voTXv6TCGw6fBUEwDpyUd9YdZfD',
   '7jLEfNKea3UUrRUbxVMjZQc8vLohAUaZ7vo3akpnWW8V',
   '2vKEGgEzrDa3zGAdszdwmpygEYSTJvYVhPpp6WBY55eS',
+], susdai: [
+  'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb', // Token-2022 (sUSDai)
+  // Mints
+  'sUSDai6Y3GxysDEtA9BVcEFTaog6UZpYUVxJiMhAKYE', // sUSDai
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+  '5tYfJfRYD99o3rqDECVVswtLHrKxGrHG7suxfzEncaM1', // sUSDai reserve collateral mint
+  // sUSDai Market (Kamino)
+  'BVJ1FvFfYuLbGX4qDNezqU6z2N3p8M2XNeGzabm86BzE', // lending market
+  '2u9FunCYFdKFgUshkqvZoSi2mHftVxHswx92H4vZvq6y', // lending market authority
+  '5vq24eGz45YWt4x8ub4eiJHU952UgFKpCTyW7rLb8wF2', // sUSDai reserve
+  'EfMKdLdPKooewofAcGSNTw9FNjc98oDMjbRMHXLJ6QqS', // USDC reserve
+  'ARQ9taJ9vEic3MfSY1ekrjJnMsraZhTcGRZBryWQPhQh', // reserve vaults (owned by the market authority)
+  'J4zngPC1xFFAhGj4kQvg9Rq3i9tVYog6tHXBBgJK6VB7',
+  'E29i3ZRLj8CY3fjiLBU3X4B7XywihmbyryWT345cgKD6',
+  '8TFrBL2w7SRazVBeRqtR6DPLhySb8dAs3Gz2UkfKxFci',
+  '2MK3tFa9jAYAjV8JmzDaTsTqBnPK2UciskHmkLjCD6SK',
+  '4WCS2RFCm82DhANCy8ZVmFZhK7eBon25Qh7Bf3varN9M', // reserve farms (sUSDai collateral, USDC debt)
+  'BszhW8Wq2vWNh3TwSFSFh2MPz5rmEmsimZxhvCC374cZ',
+  '3t4JZcueEzTbVP6kLxXrL3VpWx45jDer4eqysweBchNH', // Scope price feed
+  // sUSDai/USDC Whirlpool, its vaults and oracle
+  '2JwiWq6zeBgooqKvLZSafEgB8QYuAEsfHxp253i6oJ8n',
+  '77EVo67J3Yhi2t2sruWwNYRU5cKFEZKoRh5egJajSGh2',
+  'FEATZxwUnGd9AoGppvy1zhbQrdDCuPLHBEjxAYML4mGU',
+  'DqD6rsPDYxXzr9dwFLAWXdvpUG6umesV56V1Hd77eNhP',
 ] }
 
 async function send(rpc, signer, instructions) {

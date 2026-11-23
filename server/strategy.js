@@ -1,4 +1,4 @@
-import { LIVE, LOOPS, TOKENS, loopByMarket } from '../src/config.js'
+import { LOOPS, MARKETS, TOKENS, loopByMarket } from '../src/config.js'
 import { calculateCarryPct, carryNeedsAcknowledgement } from '../src/loop-policy.js'
 
 export const LOOP_ALLOWED_MARKET_IDS = Object.freeze(LOOPS.map((loop) => loop.market))
@@ -10,7 +10,7 @@ const SNAPSHOT_MAX_AGE_MS = 60_000
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value)
 const reason = (code, message) => ({ code, message })
-const marketIsActive = (market) => !!market && market.visible !== false && LIVE.some((candidate) => candidate.id === market.id)
+const marketIsActive = (market) => !!market && market.visible !== false && MARKETS.some((candidate) => candidate.id === market.id)
 
 // Fail closed. Full close does not inherit entry-only allocation, carry or risk-approval gates.
 export function evaluateLoopActionReadiness({
@@ -103,7 +103,7 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
 
 export function evaluateLoopStrategy({
   marketId = LOOPS[0].market,
-  market = LIVE.find((candidate) => candidate.id === marketId),
+  market = MARKETS.find((candidate) => candidate.id === marketId),
   allowedMarketIds = LOOP_ALLOWED_MARKET_IDS,
   vaults = {},
   reserves = {},

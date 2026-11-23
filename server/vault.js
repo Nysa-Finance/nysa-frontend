@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { KaminoVaultClient, KaminoVault, getSingleReserve, DEFAULT_RECENT_SLOT_DURATION_MS } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, OTHER_MARKETS, VAULTS, TOKENS } from '../src/config.js'
+import { LIVE, MARKETS, OTHER_MARKETS, VAULTS, TOKENS } from '../src/config.js'
 import { rpc, NONE } from './rpc.js'
 
 const require = createRequire(import.meta.url)
@@ -48,7 +48,7 @@ export async function readVault(v, markets, now) {
   const allocations = reserveAddrs.map((a) => {
     const r = reserves.get(a)
     const m = LIVE.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
-    const known = m ?? OTHER_MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
+    const known = MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket)) ?? OTHER_MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
     const invested = n(holdings.investedInReserves.get(a))
     const supply = BigInt(String(r.state.collateral.mintTotalSupply)), mine = ctokens.get(String(a)) ?? 0n
     const part = (raw) => (supply > 0n ? Number((raw * mine) / supply) / 10 ** dec : 0)

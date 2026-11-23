@@ -1,5 +1,5 @@
 import { AccountRole, address, fetchEncodedAccount, getAddressDecoder, getBase58Decoder } from '@solana/kit'
-import { LIVE, TOKENS, swapTokens } from '../src/config.js'
+import { MARKETS, TOKENS, swapTokens } from '../src/config.js'
 import { calculateSwapFeeBaseUnits } from '../src/swap-fees.js'
 import { APPROVED_PROGRAMS, evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
 import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
@@ -280,7 +280,7 @@ export async function buildSwap({
   safeAddress(wallet, 'wallet address')
   if (FEE_BPS) safeAddress(feeAccount, 'fee account')
   if (inputMint === outputMint) throw new SwapError('Swap input and output mints must be different.')
-  const supportedPair = LIVE.some((market) => market.pairs?.some((pair) =>
+  const supportedPair = MARKETS.some((market) => market.pairs?.some((pair) =>
     new Set([TOKENS[pair.collateral]?.mint, TOKENS[pair.liability]?.mint]).has(inputMint)
       && new Set([TOKENS[pair.collateral]?.mint, TOKENS[pair.liability]?.mint]).has(outputMint)))
   if (!supportedPair) throw new SwapError('Unsupported swap mint pair.')

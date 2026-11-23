@@ -9,7 +9,7 @@ import {
   ObligationTypeTag,
 } from '@kamino-finance/klend-sdk'
 import { DEFAULT_LOOP_LIMITS, loopExposure, projectedLtvLimitPct } from '../src/loop-policy.js'
-import { LIVE, TOKENS, loopByMarket } from '../src/config.js'
+import { TOKENS, loopByMarket, loopMarket } from '../src/config.js'
 import { parseBaseUnits } from '../src/swap-fees.js'
 import { buildSwap, configuredFeeAccountForMint, FEE_BPS } from './swap.js'
 import { rpc } from './rpc.js'
@@ -876,7 +876,7 @@ export function verifyAtomicLoopFeeDeltas(feeEvents, tokenDeltas) {
 function loopContext(wallet, marketId) {
   const owner = address(wallet)
   const loop = loopByMarket(marketId)
-  const marketConfig = loop && LIVE.find((market) => market.id === loop.market)
+  const marketConfig = loop && loopMarket(loop)
   if (!marketConfig) throw new LoopPreviewError('This loop market is not configured.')
   const { market, now: currentLedgerInstant } = getLive(marketConfig)
   const collateral = TOKENS[loop.collateral]
