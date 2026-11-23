@@ -6,9 +6,9 @@
   --display: "Poppins", sans-serif; --serif: "Instrument Serif", Georgia, serif;
   --mono: "JetBrains Mono", monospace; --sans: "Inter", sans-serif;
 
-  --n-bg: #000; --n-bg-2: #0a0a0a; --n-bg-3: #0d0d0d;
-  --n-line: #1a1a1a; --n-line-2: #333; --n-hair: #141414;
-  --n-text: #fff; --n-text-2: #ccc; --n-text-3: #8a8a8a; --n-text-4: #666;
+  --n-bg: #000; --n-bg-2: #111; --n-bg-3: #1c1c1c;
+  --n-line: #262626; --n-line-2: #404040; --n-hair: #1a1a1a;
+  --n-text: #fff; --n-text-2: #ccc; --n-text-3: #a3a3a3; --n-text-4: #808080;
   --n-pink: #EC008C; --n-green: #3ddc84; --n-amber: #E8B339; --n-red: #ff5d5d;
   --n-grad: var(--grad); --n-max: 1400px;
   color-scheme: dark;
@@ -31,7 +31,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-brand span { font-weight: 500; font-size: 19px; letter-spacing: .2px; }
 .n-tabs { display: flex; gap: 6px; justify-self: center; }
 .n-tab { display: flex; align-items: center; gap: 8px; padding: 8px 18px; font-size: 14px; font-weight: 500; border-radius: 999px; color: #fff9; transition: background .15s, color .15s; white-space: nowrap; }
-.n-tab:hover { color: #fff; background: #0a0a0a; }
+.n-tab:hover { color: #fff; background: var(--n-bg-3); }
 .n-tab.router-link-exact-active, .n-tab.on { color: #fff; background: var(--n-bg-3); }
 .n-tab img { width: 16px; height: 16px; opacity: .85; }
 .n-nav-right { display: flex; align-items: center; gap: 10px; justify-self: end; position: relative; }
@@ -42,7 +42,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-btn-grad { padding: 10px 22px; border-radius: 999px; font-size: 13px; font-weight: 600; color: #fff; background: var(--grad); display: inline-flex; align-items: center; gap: 6px; transition: filter .15s, box-shadow .2s; }
 .n-btn-grad:hover { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }
 .n-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 8px; padding: 6px; font-size: 13px; }
-.n-menu a, .n-menu button { display: block; width: 100%; text-align: left; padding: 9px 12px; border-radius: 6px; color: var(--n-text-2); }
+.n-menu a, .n-menu button { display: block; width: 100%; text-align: left; padding: 9px 12px; border-radius: 4px; color: var(--n-text-2); }
 .n-menu a:hover, .n-menu button:hover { background: var(--n-bg-3); color: #fff; }
 /* Phones only (see the 860px block). */
 .n-fab, .n-fab-menu, .n-fab-shade, .n-wallet-btn, .n-menu-addr { display: none; }
@@ -104,7 +104,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-panel { border: 1px solid var(--n-line); border-radius: 8px; padding: 26px; background: #000; }
 .n-label { color: var(--n-text-3); font-size: 13px; margin-bottom: 8px; }
 .n-label .opt { color: var(--n-text-4); }
-.n-select, .n-input { width: 100%; padding: 14px 16px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 6px; color: #fff; font-size: 15px; }
+.n-select, .n-input { width: 100%; padding: 14px 16px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 4px; color: #fff; font-size: 15px; }
 .n-select:focus, .n-input:focus { outline: none; border-color: var(--n-pink); }
 .n-input::placeholder { color: var(--n-text-4); }
 .n-input:disabled, .n-select:disabled { opacity: .4; cursor: not-allowed; }
@@ -121,7 +121,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-quick button:hover:not(:disabled) { color: var(--n-pink); border-color: var(--n-pink); }
 .n-quick button:disabled { opacity: .4; cursor: not-allowed; }
 .n-warn { font-size: 12.5px; color: var(--n-red); line-height: 1.5; }
-.n-note { font-size: 12.5px; color: var(--n-text-2); line-height: 1.5; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 6px; padding: 11px 13px; }
+.n-note { font-size: 12.5px; color: var(--n-text-2); line-height: 1.5; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 4px; padding: 11px 13px; }
 .n-banner { border: 1px solid #2a2a2a; border-left: 3px solid var(--n-pink); border-radius: 4px; padding: 14px 20px; background: var(--n-bg-2); font-size: 13px; color: var(--n-text-2); line-height: 1.5; margin-bottom: 26px; }
 .n-banner.warn { border-left-color: var(--n-amber); }
 .n-back { color: var(--n-text-3); font-size: 14px; margin-bottom: 22px; }
