@@ -44,8 +44,22 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 12px; padding: 6px; font-size: 13px; }
 .n-menu a, .n-menu button { display: block; width: 100%; text-align: left; padding: 9px 12px; border-radius: 4px; color: var(--n-text-2); }
 .n-menu a:hover, .n-menu button:hover { background: var(--n-bg-3); color: #fff; }
+/* The account menu (Account): a popover under the address pill, a bottom sheet on phones. */
+.n-menu { z-index: 2; }
+.n-menu-shade { position: fixed; inset: 0; z-index: 1; }
+.n-nav.raised { z-index: 95; } /* an open account menu sits above the FAB on phones */
+.n-menu-addr { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px 10px; color: var(--n-text-3); font-family: var(--mono); font-size: 12px; }
+.n-menu .n-menu-addr .copy { width: auto; padding: 3px 10px; border: 1px solid var(--n-line-2); border-radius: 999px; font-family: var(--display); font-size: 11px; color: var(--n-text-2); }
+.n-menu .n-menu-addr .copy:hover { border-color: #5a5a5a; background: none; }
+.n-menu-sep { border: 0; border-top: 1px solid var(--n-line); margin: 6px 0; }
+.n-menu button.danger { color: var(--n-red); }
+.n-pill.account { cursor: pointer; transition: border-color .15s; }
+.n-pill.account:hover { border-color: #5a5a5a; }
+.n-pill.account.open { border-color: var(--n-pink); }
+.n-pill .chev { width: 12px; height: 12px; transition: transform .2s; }
+.n-pill.open .chev { transform: rotate(180deg); }
 /* Phones only (see the 860px block). */
-.n-fab, .n-fab-menu, .n-fab-shade, .n-wallet-btn, .n-menu-addr { display: none; }
+.n-fab, .n-fab-menu, .n-fab-shade, .n-wallet-btn { display: none; }
 .n-footer { border-top: 1px solid var(--n-line); padding: 22px 48px; display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; color: var(--n-text-4); font-size: 12px; }
 .n-footer nav { display: flex; gap: 18px; }
 .n-footer a { color: var(--n-text-3); }
@@ -198,10 +212,15 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
   .n-fab[aria-expanded="true"] svg { transform: rotate(45deg); } /* the + turns into a × */
   .n-fab-shade { display: block; position: fixed; inset: 0; z-index: 78; background: #000000b8; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); } /* as the transaction sheet */
   .n-nav-right > .n-btn-grad, .n-nav-right > .n-pill { display: none; }
-  .n-wallet-btn { display: grid; place-items: center; position: relative; width: 42px; height: 42px; border-radius: 50%; background: #fff; color: #000; }
+  /* Disconnected: the gradient (it connects); connected: outlined with the green dot. */
+  .n-wallet-btn { display: grid; place-items: center; position: relative; width: 42px; height: 42px; border-radius: 50%; background: var(--grad); color: #fff; border: 1px solid transparent; }
+  .n-wallet-btn.on { background: transparent; border-color: var(--n-line-2); }
+  .n-wallet-btn.open { border-color: var(--n-pink); }
+  .n-menu { position: fixed; left: 0; right: 0; bottom: 0; top: auto; min-width: 0; z-index: 91; border-radius: 16px 16px 0 0; border-width: 1px 0 0; padding: 10px 10px calc(14px + env(safe-area-inset-bottom)); font-size: 15px; animation: n-sheet .2s ease-out; }
+  .n-menu a, .n-menu button { padding: 13px 14px; }
+  .n-menu-shade { z-index: 90; background: #000000b8; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
   .n-wallet-btn svg { width: 22px; height: 22px; }
   .n-wallet-btn .n-dot { position: absolute; top: 1px; right: 1px; width: 10px; height: 10px; box-shadow: 0 0 0 2px #000; }
-  .n-menu-addr { display: block; padding: 9px 12px 6px; color: var(--n-text-4); font-family: var(--mono); font-size: 12px; }
   .n-fab-menu { display: grid; gap: 2px; position: fixed; right: 16px; bottom: calc(82px + env(safe-area-inset-bottom)); z-index: 79; min-width: 210px; padding: 6px; border: 1px solid var(--n-line-2); border-radius: 12px; background: var(--n-bg-2); }
   .n-fab-menu a { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-radius: 4px; font-size: 15px; font-weight: 500; color: var(--n-text-2); }
   .n-fab-menu a.on { color: #fff; background: var(--n-bg-3); }
