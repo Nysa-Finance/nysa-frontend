@@ -23,7 +23,7 @@ onUnmounted(() => removeEventListener('keydown', onKey))
       <div class="n-dialog-head">
         <div>
           <h3 id="fp-title" class="n-dialog-title">Farm Points</h3>
-          <p class="n-dialog-sub">Points accrue as supplied balance × time. Updated every hour.</p>
+          <p class="n-dialog-sub">Points accrue as deposited balance × time. Updated every hour.</p>
         </div>
         <button class="x-btn" aria-label="Close" @click="emit('close')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -33,11 +33,11 @@ onUnmounted(() => removeEventListener('keydown', onKey))
         <template v-if="me">
           <div class="fp-you-rank">#{{ me.rank }}</div>
           <div><div class="fp-you-k">Your points</div><div class="fp-you-v">{{ fmt(me.points) }}</div></div>
-          <div><div class="fp-you-k">Your supplied</div><div class="fp-you-v sm">${{ fmt(me.supplied) }}</div></div>
+          <div><div class="fp-you-k">Your deposits</div><div class="fp-you-v sm">${{ fmt(me.supplied) }}</div></div>
         </template>
         <span v-else-if="!board && !error" class="n-skel" style="min-width: 180px" />
         <div v-else-if="state.address" class="fp-you-note">
-          No points for <b>{{ short(state.address, 6) }}</b> yet. Supply to this market: your first points appear within about two hours (snapshots run every hour).
+          No points for <b>{{ short(state.address, 6) }}</b> yet. Deposit in this market: your first points appear within about two hours (snapshots run every hour).
         </div>
         <div v-else class="fp-you-note"><button class="fp-connect" @click="state.connectOpen = true">Connect a wallet</button> to see your position.</div>
       </div>

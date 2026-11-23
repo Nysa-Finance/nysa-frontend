@@ -11,7 +11,7 @@ const pendingAction = computed(() => {
   if (state.lendingActionBusy && pending.status !== 'relay-unknown') return null
   const labels = {
     'loop-open': 'Open loop', 'loop-close': 'Full close', 'loop-setup': 'Initialize Kamino metadata',
-    deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards',
+    deposit: 'Deposit', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards',
     liquidate: 'Liquidate', 'vault-deposit': 'Deposit', 'vault-withdraw': 'Withdraw',
   }
   let message = pending.status === 'relay-unknown'

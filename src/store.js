@@ -342,7 +342,7 @@ async function confirmed(signature) {
 
 const buildTx = (params) => api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: params.wallet ?? account.address }) })
 
-const ACTION_LABELS = { deposit: 'Supply', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate', 'vault-deposit': 'Deposit', 'vault-withdraw': 'Withdraw', 'loop-open': 'Open loop', 'loop-close': 'Full close', 'loop-setup': 'Initialize Kamino metadata' }
+const ACTION_LABELS = { deposit: 'Deposit', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate', 'vault-deposit': 'Deposit', 'vault-withdraw': 'Withdraw', 'loop-open': 'Open loop', 'loop-close': 'Full close', 'loop-setup': 'Initialize Kamino metadata' }
 const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.vault ? ` ${vaultById(p.vault)?.name ?? ''}` : p.token ? ` ${tok(p.token).name}` : ''}`
 function trackSuccess(p) {
   if (p.kind === 'claim') event('Rewards claimed', { market: p.market })
@@ -1336,7 +1336,7 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
               status: 'error', label: labelOf(params), signature: relayed.pending.signature,
               error: 'The transaction is confirmed, but its final position state is not verified. Nysa will keep reconciling before allowing another action.',
             }
-            throw pendingActionError('The transaction is confirmed, but the selected Multiply position has not verified a full close. Reconcile it before retrying.')
+            throw pendingActionError('The transaction is confirmed, but the selected loop position has not verified a full close. Reconcile it before retrying.')
           }
           await clearActionReservation(id)
           if (resumeSignature) clearSetupRecovery(resumeSignature)

@@ -62,7 +62,7 @@ const noData = 'Protocol data could not be read — actions are disabled until i
 const borrowWarning = computed(() => {
   if (!on.value) return 'Connect a Solana wallet to continue.'
   if (!loanRow.value) return noData
-  if (collUsd.value <= 0 && !num(deposit.value)) return `Supply ${props.collateralTokens.map((t) => t.name).join(' or ')} as collateral before borrowing.`
+  if (collUsd.value <= 0 && !num(deposit.value)) return `Deposit ${props.collateralTokens.map((t) => t.name).join(' or ')} as collateral before borrowing.`
   if (num(deposit.value) > (collRow.value?.walletBalance ?? 0)) return `You only hold ${amt(collRow.value?.walletBalance ?? 0)} ${coll.value.name}.`
   const a = num(borrowAmt.value)
   if (!a) return null
@@ -102,7 +102,7 @@ watch([tab, loanId, collId], () => { deposit.value = ''; borrowAmt.value = ''; r
 async function submitBorrow() {
   const steps = []
   if (num(deposit.value) > 0)
-    steps.push({ label: `Supply ${coll.value.name} as collateral`, run: () => sendKaminoAction('deposit', { market: props.market, token: coll.value, amount: num(deposit.value) }) })
+    steps.push({ label: `Deposit ${coll.value.name} as collateral`, run: () => sendKaminoAction('deposit', { market: props.market, token: coll.value, amount: num(deposit.value) }) })
   steps.push({ label: `Borrow ${loan.value.name}`, run: () => sendKaminoAction('borrow', { market: props.market, token: loan.value, amount: num(borrowAmt.value) }) })
   if (await run(steps)) { deposit.value = ''; borrowAmt.value = '' }
 }
@@ -148,7 +148,7 @@ async function submitRepay() {
         <input v-model="borrowAmt" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 14px" />
         <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(borrowUsd) }}</span></div>
         <p v-if="borrowWarning" class="n-warn" style="margin-bottom: 16px">{{ borrowWarning }}</p>
-        <button class="n-btn-block" :disabled="!canBorrow" @click="submitBorrow">{{ num(deposit) > 0 ? 'Supply & borrow' : 'Borrow' }} {{ loan.name }}</button>
+        <button class="n-btn-block" :disabled="!canBorrow" @click="submitBorrow">{{ num(deposit) > 0 ? 'Deposit & borrow' : 'Borrow' }} {{ loan.name }}</button>
       </div>
     </template>
 

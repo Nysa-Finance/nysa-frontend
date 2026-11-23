@@ -52,7 +52,7 @@ const C = 90, R = 84, RI = 56
   </div>
 
   <div class="n-table ex-table">
-    <div class="n-thead ex-grid"><div>Market</div><div>Collateral</div><div>Allocation</div><div>Target</div><div>Deposited</div><div>Supply APY</div></div>
+    <div class="n-thead ex-grid"><div>Market</div><div>Collateral</div><div>Allocation</div><div>Target</div><div>Deposited</div><div>Deposit APY</div></div>
     <div v-for="(x, i) in vault.allocations" :key="x.reserve" class="n-tr sm ex-grid">
       <div class="n-cell" data-label="Market">
         <i class="dot" :style="{ background: COLORS[i % COLORS.length] }" />
@@ -63,7 +63,7 @@ const C = 90, R = 84, RI = 56
       <div class="n-cell n-num" data-label="Allocation">{{ pct(x.share, 1) }}</div>
       <div class="n-cell n-num" data-label="Target" :title="`Weight ${x.weight}${x.cap != null ? ` · capped at ${usd(x.cap * (price ?? 1))}` : ', no cap'}`">{{ pct(x.targetShare, 1) }}<span v-if="x.cap != null" class="cap">cap {{ usd(x.cap * (price ?? 1)) }}</span></div>
       <div class="n-cell n-num" data-label="Deposited">{{ usd(x.invested * (price ?? 1)) }}</div>
-      <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct(x.supplyApy) }}</div>
+      <div class="n-cell n-accent n-num" data-label="Deposit APY">{{ pct(x.supplyApy) }}</div>
     </div>
   </div>
   <p class="hint">

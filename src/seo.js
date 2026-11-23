@@ -3,7 +3,7 @@
 import { marketById, vaultById } from './config.js'
 
 const SITE = 'https://app.nysa.finance'
-const DEFAULT = 'Lend and borrow against tokenized real-world assets on Solana: supply USDC or borrow against USDY in curated Kamino markets.'
+const DEFAULT = 'Deposit and borrow against tokenized real-world assets on Solana: deposit USDC or borrow against USDY in curated Kamino markets.'
 
 const PAGES = {
   earn: ['Nysa — Transparent curation of Lending Markets for the Tokenized Economy', 'Earn yield on USDC in Nysa-curated Kamino vaults, lent against tokenized real-world assets like Ondo USDY on Solana.'],

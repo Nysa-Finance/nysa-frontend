@@ -323,12 +323,12 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
     </div>
 
     <div v-if="tab === 'loops'" class="loops">
-      <div class="n-thead lp-grid"><div>Asset</div><div>Max Net APY</div><div>Max leverage</div><div>Liq. available</div><div>Deposited</div><div>Borrow</div></div>
+      <div class="n-thead lp-grid"><div>Asset</div><div>Max net APY</div><div>Max leverage</div><div>Available liquidity</div><div>Deposited</div><div>Borrow</div></div>
       <div v-for="l in LOOPS" :key="l.id" class="n-tr click lp-grid lp-row" role="link" tabindex="0" @click="openAsset(l)" @keydown.enter="openAsset(l)">
         <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="tok(l.collateral)" /><span class="asset-name"><b>{{ tok(l.collateral).name }}</b><small>{{ l.fullName }}</small></span></div>
-        <div class="n-cell n-num up" data-label="Max Net APY">{{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}</div>
+        <div class="n-cell n-num up" data-label="Max net APY">{{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}</div>
         <div class="n-cell n-num" data-label="Max leverage">{{ lev(l.maxLeverage) }}</div>
-        <div class="n-cell n-num" data-label="Liq. available">{{ usd(marketOf(l).liquidity) }}</div>
+        <div class="n-cell n-num" data-label="Available liquidity">{{ usd(marketOf(l).liquidity) }}</div>
         <div class="n-cell n-num" data-label="Deposited">{{ usd(marketOf(l).deposited) }}</div>
         <div class="n-cell" data-label="Borrow"><TokenIcon :token="tok(l.debt)" size="sm" /></div>
       </div>
@@ -368,10 +368,10 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         </div>
         <p class="n-sub blurb">{{ loop.blurb }} A loop turns your {{ debt.name }} into {{ coll.name }} on Kamino and borrows {{ debt.name }} against it to buy more, in one transaction.</p>
         <div class="n-stats d-stats">
-          <div class="n-stat"><div class="k">Max Net APY</div><div class="v up">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
+          <div class="n-stat"><div class="k">Max net APY</div><div class="v up">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
           <div class="n-stat"><div class="k">Max leverage</div><div class="v">{{ lev(loop.maxLeverage) }}</div></div>
-          <div class="n-stat"><div class="k">Total supplied</div><div class="v">{{ usd(market.deposited) }}</div></div>
-          <div class="n-stat"><div class="k">Liquidity available</div><div class="v">{{ usd(market.liquidity) }}</div></div>
+          <div class="n-stat"><div class="k">Total deposits</div><div class="v">{{ usd(market.deposited) }}</div></div>
+          <div class="n-stat"><div class="k">Available liquidity</div><div class="v">{{ usd(market.liquidity) }}</div></div>
         </div>
       </div>
 
@@ -468,7 +468,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .loops .n-thead { border-bottom: 0; padding: 14px 18px 6px; }
 .lp-grid { grid-template-columns: minmax(0, 1.6fr) 1fr .9fr 1fr 1fr .6fr; }
 .lp-grid > :not(:first-child) { justify-self: end; text-align: right; }
-.lp-row { background: #000; border: 1px solid var(--n-line); border-radius: 8px; padding: 16px 18px; margin-top: 8px; }
+.lp-row { background: #000; border: 1px solid var(--n-line); border-radius: 4px; padding: 16px 18px; margin-top: 8px; }
 .lp-row:last-child { border-bottom: 1px solid var(--n-line); }
 .lp-row:hover, .lp-row:focus-visible { border-color: var(--n-line-2); outline: none; }
 .asset-name { display: grid; line-height: 1.25; }
@@ -501,19 +501,19 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .input-unit .unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 7px; color: var(--n-text-2); font-weight: 500; }
 .n-quick { margin-top: 8px; }
 .borrow-l { margin-top: 20px; }
-.borrow-asset { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid var(--n-line); border-radius: 6px; }
+.borrow-asset { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid var(--n-line); border-radius: 4px; }
 .borrow-asset .pair { color: var(--n-text); font-size: 14px; font-weight: 500; }
 .borrow-asset .rate { color: var(--n-text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
 .lev { margin-top: 20px; }
 .slider { width: 100%; accent-color: var(--n-pink); }
 .ticks { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11.5px; margin-top: 2px; }
-.ba { margin-top: 20px; border: 1px solid var(--n-line); border-radius: 6px; }
+.ba { margin-top: 20px; border: 1px solid var(--n-line); border-radius: 4px; }
 .ba-row { display: flex; justify-content: space-between; gap: 14px; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--n-hair); font-variant-numeric: tabular-nums; }
 .ba-row:last-child { border-bottom: 0; }
 .ba-row .k { color: var(--n-text-3); }
 .ba-row .to { font-weight: 600; text-align: right; }
 .ba-row .to.neg { color: var(--n-amber); }
-.setup { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 14px; border: 1px solid var(--n-line); border-radius: 6px; font-size: 12.5px; color: var(--n-text-3); }
+.setup { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 14px; border: 1px solid var(--n-line); border-radius: 4px; font-size: 12.5px; color: var(--n-text-3); }
 .ack { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; color: var(--n-amber); font-size: 12.5px; }
 .ack input { margin-top: 3px; accent-color: var(--n-pink); }
 .go { margin-top: 20px; }
