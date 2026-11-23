@@ -43,25 +43,25 @@ const tipLeft = computed(() => (hover.value == null ? 0 : Math.min(x(hover.value
   </div>
   <div ref="box" class="canvas" @pointermove="onMove" @pointerleave="hover = null">
     <svg :width="W" :height="H" role="img" aria-label="Interest rate curve">
-      <g font-size="11" fill="#8a8a8a" font-weight="300">
+      <g font-size="11" fill="#a3a3a3" font-weight="300">
         <template v-for="t in yAxis.ticks" :key="'y' + t">
-          <line :x1="L" :x2="W - R" :y1="y(t)" :y2="y(t)" stroke="#141414" />
+          <line :x1="L" :x2="W - R" :y1="y(t)" :y2="y(t)" stroke="#1a1a1a" />
           <text :x="L - 8" :y="y(t) + 4" text-anchor="end">{{ tickLabel(t) }}</text>
         </template>
         <template v-for="u in [0, 25, 50, 75, 100]" :key="'x' + u">
-          <line :x1="x(u)" :x2="x(u)" :y1="T" :y2="H - B" stroke="#141414" />
+          <line :x1="x(u)" :x2="x(u)" :y1="T" :y2="H - B" stroke="#1a1a1a" />
           <text :x="x(u)" :y="H - B + 16" text-anchor="middle">{{ u }}%</text>
         </template>
-        <text :x="(L + W - R) / 2" :y="H - 4" text-anchor="middle" fill="#666">Utilization</text>
+        <text :x="(L + W - R) / 2" :y="H - 4" text-anchor="middle" fill="#808080">Utilization</text>
       </g>
-      <line :x1="L" :x2="W - R" :y1="H - B" :y2="H - B" stroke="#1a1a1a" />
-      <line :x1="L" :x2="L" :y1="T" :y2="H - B" stroke="#1a1a1a" />
+      <line :x1="L" :x2="W - R" :y1="H - B" :y2="H - B" stroke="#262626" />
+      <line :x1="L" :x2="L" :y1="T" :y2="H - B" stroke="#262626" />
       <line v-if="cur != null" :x1="x(cur)" :x2="x(cur)" :y1="T" :y2="H - B" stroke="rgba(255,255,255,.35)" stroke-dasharray="4 4" />
       <path :d="path(borrow)" fill="none" :stroke="BORROW" stroke-width="2" stroke-linejoin="round" />
       <path :d="path(supply)" fill="none" :stroke="SUPPLY" stroke-width="2" stroke-linejoin="round" />
       <circle v-if="cur != null" :cx="x(cur)" :cy="y(borrow(cur))" r="5" :fill="BORROW" stroke="#fff" stroke-width="2" />
       <g v-if="hover != null">
-        <line :x1="x(hover)" :x2="x(hover)" :y1="T" :y2="H - B" stroke="#333" />
+        <line :x1="x(hover)" :x2="x(hover)" :y1="T" :y2="H - B" stroke="#404040" />
         <circle :cx="x(hover)" :cy="y(borrow(hover))" r="4" :fill="BORROW" />
         <circle :cx="x(hover)" :cy="y(supply(hover))" r="4" :fill="SUPPLY" />
       </g>
@@ -81,7 +81,7 @@ const tipLeft = computed(() => (hover.value == null ? 0 : Math.min(x(hover.value
 .dash { width: 14px; border-top: 1px dashed rgba(255,255,255,.55); display: inline-block; }
 .canvas { position: relative; height: 240px; touch-action: pan-y; }
 .canvas svg { display: block; }
-.tip { position: absolute; top: 12px; min-width: 178px; pointer-events: none; background: #0d0d0d; border: 1px solid #333; border-radius: 6px; padding: 10px; font-size: 12px; color: var(--n-text-2); display: flex; flex-direction: column; gap: 4px; }
+.tip { position: absolute; top: 12px; min-width: 178px; pointer-events: none; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 4px; padding: 10px; font-size: 12px; color: var(--n-text-2); display: flex; flex-direction: column; gap: 4px; }
 .tip-t { color: #fff; font-weight: 500; margin-bottom: 2px; }
 .tip i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
 .tip b { color: #fff; font-weight: 500; margin-left: 6px; }
