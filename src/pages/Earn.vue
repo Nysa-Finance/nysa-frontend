@@ -1,4 +1,5 @@
 <script setup>
+import Boost from '../components/Boost.vue'
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, vaultApyNote } from '../store.js'
@@ -33,7 +34,7 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
         </div>
         <div class="n-cell" data-label="Network"><span class="n-chip mainnet">Solana</span></div>
         <div class="n-cell" data-label="Infra"><span class="n-chip">Kamino</span></div>
-        <div class="n-cell n-accent n-num" data-label="APY"><span>{{ x.live ? pct(x.live.apy) : '—' }}<span v-if="x.live?.rewardsApy" class="n-boost" :title="vaultApyNote(x.live)" :aria-label="vaultApyNote(x.live)">⚡</span></span></div>
+        <div class="n-cell n-accent n-num" data-label="APY"><span>{{ x.live ? pct(x.live.apy) : '—' }}<Boost v-if="x.live?.rewardsApy" :title="vaultApyNote(x.live)" /></span></div>
         <div class="n-cell" data-label="Exposure">
           <div class="n-tok-group" :title="x.live?.exposureTokens.map((t) => tok(t).name).join(', ')">
             <TokenIcon v-for="t in x.live?.exposureTokens ?? []" :key="t" :token="tok(t)" size="sm" />
@@ -52,12 +53,12 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
           <div class="vault-id">
             <TokenIcon v-if="x.live?.tokenId" :token="tok(x.live.tokenId)" />
             <div class="name-col">
-              <span class="name">{{ x.live?.name ?? x.v.name }} <span class="arrow">↗&#xFE0E;</span></span>
+              <span class="name">{{ x.live?.name ?? x.v.name }} <span class="arrow">→</span></span>
               <button v-if="x.v.farmPoints" type="button" class="n-farm-points" title="View the Farm Points leaderboard" @click.stop="pointsOpen = true">Farm Points</button>
             </div>
           </div>
           <div class="ea-apy">
-            <span class="n-accent">{{ x.live ? pct(x.live.apy) : '—' }}<span v-if="x.live?.rewardsApy" class="n-boost" :title="vaultApyNote(x.live)" :aria-label="vaultApyNote(x.live)">⚡</span></span>
+            <span class="n-accent">{{ x.live ? pct(x.live.apy) : '—' }}<Boost v-if="x.live?.rewardsApy" :title="vaultApyNote(x.live)" /></span>
             <span class="k">APY</span>
           </div>
         </div>
