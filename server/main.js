@@ -178,7 +178,7 @@ function currentSwapReadiness(request = {}) {
 }
 
 // Private beta, while LOOP_ENABLED is off: only LOOP_WALLETS see the loop, and they can open real ones (up to
-// LOOP_MAX_FUNDING USDC each, empty for no cap). Listing a wallet is the approval: it stands in for the risk owner and
+// LOOP_MAX_FUNDING dollars of collateral each, empty for no cap). Listing a wallet is the approval: it stands in for the risk owner and
 // the fork-only gates, covered by the passing `npm run verify:loop-fork` run (open, close, fees, rollback). Releasing to
 // everyone (LOOP_ENABLED) still needs NYSA_LOOP_RISK_OWNER / _APPROVED_AT and those gates.
 const LOOP_WALLETS = new Set((process.env.LOOP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
@@ -187,8 +187,14 @@ const loopOpenTo = (wallet) => LOOP_ENABLED || LOOP_WALLETS.has(wallet)
 const LOOP_NOT_ENABLED = { error: 'Loop is not available for this wallet yet.' }
 const loopBeta = !LOOP_ENABLED && LOOP_WALLETS.size > 0
 const LOOP_MAX_FUNDING = Number(process.env.LOOP_MAX_FUNDING) > 0 ? Number(process.env.LOOP_MAX_FUNDING) : null
-const overLoopCap = (amount) => LOOP_MAX_FUNDING != null && Number(amount) > LOOP_MAX_FUNDING
-const LOOP_CAP_ERROR = () => `Loops are capped at ${LOOP_MAX_FUNDING} USDC during the beta.`
+// Loops are funded in their collateral, so the cap is its dollar value at the market's oracle price.
+const overLoopCap = (amount, marketId) => {
+  if (LOOP_MAX_FUNDING == null) return false
+  const collateral = loopByMarket(marketId).collateral
+  const price = Number(getSnapshot()?.reserves?.[marketId]?.[collateral]?.price) || TOKENS[collateral].price
+  return Number(amount) * price > LOOP_MAX_FUNDING
+}
+const LOOP_CAP_ERROR = () => `Loops are capped at $${LOOP_MAX_FUNDING} during the beta.`
 
 // A `priceYield` collateral (USDY) earns through its price, not Kamino's supply APR, so the loop's carry adds it: the
 // annualized rise of the oracle price the snapshot records. Until a week of prices exists, <TOKEN>_APY (e.g. USDY_APY,
@@ -513,7 +519,7 @@ const routes = [
     if (!loopByMarket(body.marketId)) throw new UserError('Unknown loop strategy')
     if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
     if (!loopOpenTo(body.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
-    if (overLoopCap(body.fundingAmount)) throw new UserError(LOOP_CAP_ERROR())
+    if (overLoopCap(body.fundingAmount, body.marketId)) throw new UserError(LOOP_CAP_ERROR())
     if (typeof body.fundingAmount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(body.fundingAmount)) throw new UserError('Invalid funding amount')
     if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage) throw new UserError('Funding amount or leverage is outside the preview range')
     const snapshot = getSnapshot()
@@ -622,7 +628,7 @@ const routes = [
         || !Number.isFinite(Number(b.leverage)) || Number(b.leverage) <= 1 || Number(b.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage)) {
         throw new UserError('Funding amount or leverage is outside the loop range')
       }
-      if (b.kind === 'loop-open' && overLoopCap(b.amount)) throw new UserError(LOOP_CAP_ERROR())
+      if (b.kind === 'loop-open' && overLoopCap(b.amount, b.market)) throw new UserError(LOOP_CAP_ERROR())
       if (b.kind === 'loop-close' && (typeof b.positionId !== 'string' || !/^multiply:[a-f0-9]{64}$/.test(b.positionId))) {
         throw new UserError('An identified Multiply position is required for full close')
       }

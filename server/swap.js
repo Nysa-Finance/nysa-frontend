@@ -293,6 +293,8 @@ export async function buildSwap({
   endpoint.search = new URLSearchParams({
     inputMint, outputMint, amount: inputAmount, taker: wallet,
     ...(FEE_BPS ? { platformFeeBps: String(FEE_BPS), feeAccount } : {}), slippageBps: String(slippageBps), transactionVersion: '0',
+    // Only the reviewed DEXes: otherwise Jupiter may pick one (e.g. JupLend AMM for sUSDai) that the validator then refuses.
+    dexes: Object.keys(routeProgramIdsByLabel).join(','),
   }).toString()
   const headers = providerApiKey ? { 'x-api-key': providerApiKey } : {}
   const timeoutSignal = AbortSignal.timeout(10_000)

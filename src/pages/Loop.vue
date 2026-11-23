@@ -16,10 +16,10 @@ const router = useRouter()
 // /loop lists the loops (or your positions), /loop/<id> opens one. One component, so the progress sheet survives the move.
 const asset = computed(() => route.params.asset || null)
 const loop = computed(() => loopById(asset.value) ?? LOOPS[0]) // the open form's loop
-const coll = computed(() => tok(loop.value.collateral))
-const debt = computed(() => tok(loop.value.debt)) // also what funds the loop: with the borrowed debt it buys the collateral
+const coll = computed(() => tok(loop.value.collateral)) // also what funds the loop: only the borrowed debt is swapped into more
+const debt = computed(() => tok(loop.value.debt))
 const fundingAmount = ref('')
-watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, debt.value.decimals) })
+watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, coll.value.decimals) })
 const leverage = ref(loop.value.maxLeverage)
 watch(loop, (l) => { leverage.value = l.maxLeverage })
 const strategy = ref(null)
@@ -225,10 +225,10 @@ async function openLoop() {
 
 async function closeLoop(position) {
   if (!positionView(position).readiness?.executionEnabled) return
-  const d = tok(position.liability.tokenId)
-  const before = state.balances[d.token_id] ?? 0
+  const c = tok(position.collateral.tokenId) // closing sells only the collateral that repays the debt; the rest comes back
+  const before = state.balances[c.token_id] ?? 0
   const ok = await loopAction('Close loop', () => sendLoopAction('loop-close', { market: position.market.id, positionId: position.id }))
-  if (ok) tx.note = `${amt(Math.max(0, (state.balances[d.token_id] ?? 0) - before), 2)} ${d.name} returned to your wallet.`
+  if (ok) tx.note = `${amt(Math.max(0, (state.balances[c.token_id] ?? 0) - before), 2)} ${c.name} returned to your wallet.`
 }
 
 const feeLabel = (fee) => { const t = Object.values(TOKENS).find((x) => x.mint === fee.mint); return `${formatBaseUnits(BigInt(fee.amountBaseUnits), t.decimals)} ${t.name}` }
@@ -254,17 +254,17 @@ const liqLtvOf = (l) => reserve(l, l.collateral)?.liqLtv ?? loopMarket(l).pairs.
 const liqLtv = computed(() => liqLtvOf(loop.value))
 const collPrice = computed(() => priceOf(loop.value.collateral))
 const amount = computed(() => num(fundingAmount.value))
-// Your funding is the equity: with the borrowed debt it buys `leverage` times its value in collateral.
+// Your funding (in the collateral) is the equity: the borrowed debt buys the rest, up to `leverage` times its value.
 const est = computed(() => {
   const L = Number(leverage.value), ltv = (L - 1) / L
   const quoted = previewIsCurrent.value && preview.value?.exposure?.source === 'kamino-sdk-net-route' ? preview.value.exposure : null
   const debtPrice = priceOf(loop.value.debt)
-  const equityUsd = amount.value * debtPrice
+  const equityUsd = amount.value * collPrice.value
   const debtAmount = quoted ? Number(quoted.debtAmount) : (equityUsd * (L - 1)) / debtPrice
   return {
     collateral: quoted ? Number(quoted.collateralAmount) : (equityUsd * L) / collPrice.value,
     debt: debtAmount,
-    swap: amount.value + debtAmount,
+    swap: debtAmount * debtPrice, // only the borrowed debt is swapped, in dollars
     ltv: ltv * 100,
     hf: (liqLtv.value / 100) / ltv,
     liqPrice: (collPrice.value * ltv) / (liqLtv.value / 100),
@@ -272,7 +272,7 @@ const est = computed(() => {
   }
 })
 const health = (hf) => (hf >= 1.8 ? ['ok', 'Safe'] : hf >= 1.3 ? ['warn', 'Medium'] : ['bad', 'Risky'])
-const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances[debt.value.token_id] ?? 0) * p) / 100, debt.value.decimals)) }
+const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances[coll.value.token_id] ?? 0) * p) / 100, coll.value.decimals)) }
 
 const quoted = computed(() => previewIsCurrent.value && !!preview.value)
 // The preview needs only an amount; opening also needs the Kamino setup and no blocker.
@@ -281,8 +281,8 @@ const status = computed(() => {
   // Kamino keeps one Multiply position per wallet and pair
   if (positions.value.some((p) => p.market.id === loop.value.market)) return 'You already have an open loop. Close it to open a new one.'
   if (!(amount.value > 0)) return 'Enter an amount.'
-  if (amount.value > (state.balances[debt.value.token_id] ?? 0)) return `You only hold ${amt(state.balances[debt.value.token_id] ?? 0)} ${debt.value.name}.`
-  if (strategy.value?.maxFunding && amount.value > strategy.value.maxFunding) return `Loops are capped at ${strategy.value.maxFunding} USDC during the beta.`
+  if (amount.value > (state.balances[coll.value.token_id] ?? 0)) return `You only hold ${amt(state.balances[coll.value.token_id] ?? 0)} ${coll.value.name}.`
+  if (strategy.value?.maxFunding && amount.value * collPrice.value > strategy.value.maxFunding) return `Loops are capped at $${strategy.value.maxFunding} during the beta.`
   if (setupLoading.value) return 'Checking Kamino setup…'
   if (setupRequired.value) return 'Complete the one-time Kamino setup to open it.'
   if (!quoted.value) return previewError.value ?? 'Getting a quote…'
@@ -366,7 +366,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
           <span class="n-chip">{{ loopMarket(loop).name }}</span>
           <span class="oracle">{{ coll.name }} oracle price <b>${{ collPrice.toFixed(4) }}</b></span>
         </div>
-        <p class="n-sub blurb">{{ loop.blurb }} A loop turns your {{ debt.name }} into {{ coll.name }} on Kamino and borrows {{ debt.name }} against it to buy more, in one transaction.</p>
+        <p class="n-sub blurb">{{ loop.blurb }} A loop deposits your {{ coll.name }} on Kamino and borrows {{ debt.name }} against it to buy more, in one transaction.</p>
         <div class="n-stats d-stats">
           <div class="n-stat"><div class="k">Max net APY</div><div class="v" :class="netApyAt(loop.maxLeverage) < 0 ? 'neg' : 'up'">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
           <div class="n-stat"><div class="k">Max leverage</div><div class="v">{{ lev(loop.maxLeverage) }}</div></div>
@@ -377,15 +377,17 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
       <aside class="n-panel d-side">
         <h2 class="side-h">Open position</h2>
-        <div class="n-label row"><span>Deposit</span><span class="hint">In wallet: {{ state.address ? `${amt(state.balances[debt.token_id] ?? 0)} ${debt.name}` : '—' }}</span></div>
+        <div class="n-label row"><span>Deposit</span><span class="hint">In wallet: {{ state.address ? `${amt(state.balances[coll.token_id] ?? 0)} ${coll.name}` : '—' }}</span></div>
         <div class="input-unit">
-          <input v-model="fundingAmount" class="n-input" inputmode="decimal" autocomplete="off" placeholder="0.00" :aria-label="`${debt.name} amount`" />
-          <span class="unit"><TokenIcon :token="debt" size="sm" />{{ debt.name }}</span>
+          <input v-model="fundingAmount" class="n-input" inputmode="decimal" autocomplete="off" placeholder="0.00" :aria-label="`${coll.name} amount`" />
+          <span class="unit"><TokenIcon :token="coll" size="sm" />{{ coll.name }}</span>
         </div>
         <div class="n-quick">
           <button v-for="p in [25, 50, 75]" :key="p" :disabled="!state.address" @click="setPct(p)">{{ p }}%</button>
           <button :disabled="!state.address" @click="setPct(100)">Max</button>
         </div>
+        <!-- Balance read and exactly 0: point to Buy Collateral (a link, not a second gradient button in the panel). -->
+        <p v-if="state.swapVisible && state.balances[coll.token_id] === 0" class="n-note buy">Are you looking to buy {{ coll.name }}? <RouterLink :to="{ name: 'swap', query: { input: debt.token_id, output: coll.token_id } }">Buy {{ coll.name }} →</RouterLink></p>
 
         <div class="n-label borrow-l">Borrow asset</div>
         <div class="borrow-asset"><span class="pair"><TokenIcon :token="debt" size="sm" />{{ debt.name }}</span><span class="rate">{{ rates.borrow == null ? '—' : `${pct(rates.borrow)} APY` }}</span></div>
@@ -447,7 +449,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
           <div class="n-kv"><span class="k">Max slippage</span><span class="v">0.5%</span></div>
           <div v-for="fee in quoted ? fees.filter((f) => f.bps) : []" :key="fee.action" class="n-kv"><span class="k">Nysa fee</span><span class="v">{{ feeLabel(fee) }}</span></div>
           <div v-if="loop.priceYield" class="n-kv"><span class="k">{{ coll.name }} yield</span><span class="v">{{ rates.native == null ? '—' : `${pct(rates.native)} (${rates.nativeSource === 'env' ? 'published rate' : '30-day price'})` }}</span></div>
-          <div class="n-kv"><span class="k">Closing</span><span class="v">returns {{ debt.name }}</span></div>
+          <div class="n-kv"><span class="k">Closing</span><span class="v">returns {{ coll.name }}</span></div>
           <div class="n-kv"><span class="k">Rates as of</span><span class="v">{{ strategyOf(loop)?.carry?.asOf ? new Date(strategyOf(loop).carry.asOf).toLocaleString() : '—' }}</span></div>
         </details>
       </section>
@@ -501,6 +503,9 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .input-unit .n-input { font-size: 20px; font-weight: 500; padding-right: 110px; }
 .input-unit .unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 7px; color: var(--n-text-2); font-weight: 500; }
 .n-quick { margin-top: 8px; }
+.buy { margin-top: 10px; }
+.buy a { color: var(--n-pink); font-weight: 500; white-space: nowrap; }
+.buy a:hover { text-decoration: underline; }
 .borrow-l { margin-top: 20px; }
 .borrow-asset { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; border: 1px solid var(--n-line); border-radius: 4px; }
 .borrow-asset .pair { color: var(--n-text); font-size: 14px; font-weight: 500; }
@@ -533,7 +538,8 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .n-kv.total { padding-top: 6px; border-top: 1px solid var(--n-hair); font-weight: 600; }
 .n-kv.total .v { font-size: 18px; }
 .n-kv .v.up { color: var(--n-green); }
-.n-kv .v.neg { color: var(--n-red); }
+.n-kv .v.neg { color: var(--n-text-2); } /* the borrow cost line: a cost, not the result */
+.n-kv.total .v.neg { color: var(--n-red); }
 .n-kv .v small { color: var(--n-text-4); font-weight: 400; font-size: 12px; margin-left: 6px; }
 .vs { color: var(--n-text-4); font-size: 12px; }
 .n-chip.ok { color: var(--n-green); border-color: #3ddc8459; }
