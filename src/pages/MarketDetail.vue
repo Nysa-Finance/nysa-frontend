@@ -60,7 +60,7 @@ function openDd() {
           <div v-if="m.farmPoints" class="farm-cta">
             <div>
               <div class="farm-cta-t">This market is eligible for farming Nysa Points.</div>
-              <div class="farm-cta-s">Collateral supplied here earns points on its balance, every day.</div>
+              <div class="farm-cta-s">Collateral deposited here earns points on its balance, every day.</div>
             </div>
             <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'market' })">Check your points →</button>
           </div>
@@ -73,13 +73,13 @@ function openDd() {
 
         <Section title="Asset data">
           <div class="n-table">
-            <div class="n-thead ad-grid"><div>Asset</div><div>Deposits</div><div>Borrowed</div><div>Utilization</div><div>Supply APY</div><div>Borrow APY</div></div>
+            <div class="n-thead ad-grid"><div>Asset</div><div>Deposits</div><div>Borrowed</div><div>Utilization</div><div>Deposit APY</div><div>Borrow APY</div></div>
             <div v-for="t in tokens" :key="t.token_id" class="n-tr sm ad-grid">
               <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="t" size="sm" />{{ t.name }}</div>
               <div class="n-cell n-num" data-label="Deposits">{{ usd(r(t.token_id)?.supplyUsd) }}</div>
               <div class="n-cell n-num" data-label="Borrowed">{{ m.loans.includes(t.token_id) ? usd(r(t.token_id)?.borrowUsd) : '—' }}</div>
               <div class="n-cell n-num" data-label="Utilization">{{ pct(r(t.token_id)?.utilization, 1) }}</div>
-              <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct((r(t.token_id)?.supplyAPR ?? 0) + rewardAprOf(m, t.token_id)) }}<span v-if="rewardAprOf(m, t.token_id) > 0" class="n-boost" :title="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)" :aria-label="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)">⚡</span></div>
+              <div class="n-cell n-accent n-num" data-label="Deposit APY">{{ pct((r(t.token_id)?.supplyAPR ?? 0) + rewardAprOf(m, t.token_id)) }}<span v-if="rewardAprOf(m, t.token_id) > 0" class="n-boost" :title="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)" :aria-label="boostNote(m, t.token_id, r(t.token_id)?.supplyAPR)">⚡</span></div>
               <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r(t.token_id)?.borrowAPR) }}</div>
             </div>
           </div>
@@ -111,14 +111,14 @@ function openDd() {
 
         <Section title="Risk parameters">
           <div class="n-table">
-            <div class="n-thead rp-grid"><div>Collateral</div><div>Liability</div><div>Max LTV</div><div>Liquidation LTV</div><div>Liquidation bonus</div><div>Supply cap</div><div>Borrow cap</div></div>
+            <div class="n-thead rp-grid"><div>Collateral</div><div>Liability</div><div>Max LTV</div><div>Liquidation LTV</div><div>Liquidation bonus</div><div>Deposit cap</div><div>Borrow cap</div></div>
             <div v-for="p in m.pairs" :key="p.collateral + p.liability" class="n-tr sm rp-grid">
               <div class="n-cell n-asset" data-label="Collateral"><TokenIcon :token="tok(p.collateral)" size="sm" />{{ tok(p.collateral).name }}</div>
               <div class="n-cell n-asset" data-label="Liability"><TokenIcon :token="tok(p.liability)" size="sm" />{{ tok(p.liability).name }}</div>
               <div class="n-cell n-num" data-label="Max LTV">{{ riskOf(m, p).maxLtv }}%</div>
               <div class="n-cell n-num" data-label="Liquidation LTV">{{ riskOf(m, p).liqLtv }}%</div>
               <div class="n-cell n-num" data-label="Liquidation bonus" :title="`Configured max ${pct(riskOf(m, p).maxDiscount, 1)}; what a liquidator can actually get with these LTVs`">{{ bonusText(m, p) }}</div>
-              <div class="n-cell n-num" data-label="Supply cap">{{ compact(riskOf(m, p).supplyCap, tok(p.collateral).name) }}</div>
+              <div class="n-cell n-num" data-label="Deposit cap">{{ compact(riskOf(m, p).supplyCap, tok(p.collateral).name) }}</div>
               <div class="n-cell n-num" data-label="Borrow cap">{{ compact(riskOf(m, p).borrowCap, tok(p.liability).name) }}</div>
             </div>
           </div>

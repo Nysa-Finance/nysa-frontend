@@ -38,7 +38,7 @@ const tipLeft = computed(() => (hover.value == null ? 0 : Math.min(x(hover.value
 <template>
   <div class="legend">
     <span><i class="line" :style="{ background: BORROW }" />Borrow rate</span>
-    <span><i class="line" :style="{ background: SUPPLY }" />Supply rate</span>
+    <span><i class="line" :style="{ background: SUPPLY }" />Deposit rate</span>
     <span v-if="cur != null"><i class="dash" />Current utilization {{ pct(cur, 1) }} · borrow {{ pct(borrow(cur)) }}</span>
   </div>
   <div ref="box" class="canvas" @pointermove="onMove" @pointerleave="hover = null">
@@ -69,7 +69,7 @@ const tipLeft = computed(() => (hover.value == null ? 0 : Math.min(x(hover.value
     <div v-if="hover != null" class="tip" :style="{ left: tipLeft + 'px' }">
       <div class="tip-t">Utilization {{ pct(hover, 0) }}</div>
       <div><i :style="{ background: BORROW }" />Borrow rate <b>{{ pct(borrow(hover)) }}</b></div>
-      <div><i :style="{ background: SUPPLY }" />Supply rate <b>{{ pct(supply(hover)) }}</b></div>
+      <div><i :style="{ background: SUPPLY }" />Deposit rate <b>{{ pct(supply(hover)) }}</b></div>
     </div>
   </div>
 </template>

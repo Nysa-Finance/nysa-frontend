@@ -200,7 +200,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     </Section>
 
     <Section title="Markets by size">
-      <template #meta>by total supplied</template>
+      <template #meta>by total deposits</template>
       <div class="bars">
         <div v-for="r in [...reserves].sort((a, b) => b.supplyUsd - a.supplyUsd)" :key="r.key" class="bar-row">
           <div class="n-asset"><TokenIcon :token="r.token" size="sm" />{{ r.token.name }}<span v-if="multi" class="mkt">{{ r.m.name }}</span></div>
@@ -213,13 +213,13 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <Section title="Collateral assets">
       <template #meta>{{ collateral.length }} {{ collateral.length === 1 ? 'reserve' : 'reserves' }} · borrowing disabled</template>
       <div class="n-table">
-        <div class="n-thead co-grid"><div>Asset</div><div>Price</div><div>Total deposited</div><div>Max LTV</div><div>Supply cap</div><div>Status</div></div>
+        <div class="n-thead co-grid"><div>Asset</div><div>Price</div><div>Total deposited</div><div>Max LTV</div><div>Deposit cap</div><div>Status</div></div>
         <div v-for="r in collateral" :key="r.key" class="n-tr sm co-grid">
           <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="r.token" size="sm" /><div>{{ r.token.name }}<div v-if="multi" class="mkt">{{ r.m.name }}</div></div></div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-num" data-label="Total deposited">{{ usd(r.supplyUsd) }}</div>
           <div class="n-cell n-num" data-label="Max LTV">{{ pct(r.maxLtv, 0) }}</div>
-          <div class="n-cell n-num" data-label="Supply cap">{{ compact(r.supplyCap, r.token.name) }}</div>
+          <div class="n-cell n-num" data-label="Deposit cap">{{ compact(r.supplyCap, r.token.name) }}</div>
           <div class="n-cell" data-label="Status"><span class="n-chip ok">Active</span></div>
         </div>
       </div>
@@ -228,14 +228,14 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <Section title="Borrowable assets">
       <template #meta>{{ borrowable.length }} {{ borrowable.length === 1 ? 'reserve' : 'reserves' }}</template>
       <div class="n-table">
-        <div class="n-thead bo-grid"><div>Asset</div><div>Price</div><div>Supplied</div><div>Borrowed</div><div>Utilization</div><div>Supply APY</div><div>Borrow APY</div></div>
+        <div class="n-thead bo-grid"><div>Asset</div><div>Price</div><div>Deposited</div><div>Borrowed</div><div>Utilization</div><div>Deposit APY</div><div>Borrow APY</div></div>
         <div v-for="r in borrowable" :key="r.key" class="n-tr sm bo-grid">
           <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="r.token" size="sm" /><div>{{ r.token.name }}<div v-if="multi" class="mkt">{{ r.m.name }}</div></div></div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
-          <div class="n-cell n-num" data-label="Supplied">{{ usd(r.supplyUsd) }}</div>
+          <div class="n-cell n-num" data-label="Deposited">{{ usd(r.supplyUsd) }}</div>
           <div class="n-cell n-num" data-label="Borrowed">{{ usd(r.borrowUsd) }}</div>
           <div class="n-cell n-num" data-label="Utilization">{{ pct(r.utilization, 1) }}</div>
-          <div class="n-cell n-accent n-num" data-label="Supply APY">{{ pct(r.supplyAPR) }}</div>
+          <div class="n-cell n-accent n-num" data-label="Deposit APY">{{ pct(r.supplyAPR) }}</div>
           <div class="n-cell n-accent n-num" data-label="Borrow APY">{{ pct(r.borrowAPR) }}</div>
         </div>
       </div>
@@ -267,7 +267,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <Section title="Positions">
       <template #meta>{{ positions ? `${positions.length} open · sorted by risk` : '' }}</template>
       <div class="n-table">
-        <div class="n-thead po-grid"><div>Wallet</div><div>Deposits</div><div>Debt</div><div>LTV</div><div>Liq. LTV</div><div>Health factor</div></div>
+        <div class="n-thead po-grid"><div>Wallet</div><div>Deposits</div><div>Debt</div><div>LTV</div><div>Liquidation LTV</div><div>Health factor</div></div>
         <div v-if="positions === null" class="n-empty">Open positions are temporarily unavailable.</div>
         <div v-else-if="positions?.length === 0" class="n-empty">No open positions yet.</div>
         <div v-for="p in positions ?? []" :key="p.market + p.owner" class="n-tr sm po-grid">
@@ -275,7 +275,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
           <div class="n-cell n-num" data-label="Deposits">{{ usd(p.deposits) }}</div>
           <div class="n-cell n-num" data-label="Debt">{{ usd(p.debt) }}</div>
           <div class="n-cell n-num" data-label="LTV">{{ pct(p.ltv, 1) }}</div>
-          <div class="n-cell n-num" data-label="Liq. LTV">{{ p.debt > 0 ? pct(p.liqLtv, 0) : '—' }}</div>
+          <div class="n-cell n-num" data-label="Liquidation LTV">{{ p.debt > 0 ? pct(p.liqLtv, 0) : '—' }}</div>
           <div class="n-cell n-num" data-label="Health factor" :style="{ color: hfColor(p.hf), fontWeight: 600 }">{{ hfText(p.hf) }}</div>
         </div>
       </div>
