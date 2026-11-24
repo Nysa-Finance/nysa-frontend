@@ -656,6 +656,8 @@ const routes = [
           return send(res, error.status, { error: error.message, ...(error.unavailableReasons.length ? { unavailableReasons: error.unavailableReasons } : {}) })
         }
         if (error instanceof LoopPreviewError) return send(res, 409, { error: error.message }) // e.g. a loop is already open
+        // The simulation's own reason, already worded for the user (e.g. the market's liquidity or borrowing limit).
+        if (error instanceof UserError) return send(res, 409, { error: error.message })
         console.error('[loop] atomic build failed', error?.message)
         return send(res, 503, { error: 'Atomic loop transaction building is unavailable; no transaction was handed to the wallet.' })
       }
