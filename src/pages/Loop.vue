@@ -325,8 +325,8 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
       <p class="n-sub">Multiply your yield by borrowing against it, in one transaction.</p>
     </div>
     <div class="n-seg toggle seg-center">
-      <button :class="{ on: tab === 'loops' }" @click="tab = 'loops'">Loops</button>
-      <button :class="{ on: tab === 'positions' }" @click="tab = 'positions'">Manage Positions</button>
+      <button :class="{ on: tab === 'loops' }" :aria-pressed="tab === 'loops'" @click="tab = 'loops'">Loops</button>
+      <button :class="{ on: tab === 'positions' }" :aria-pressed="tab === 'positions'" @click="tab = 'positions'">Manage positions</button>
     </div>
 
     <div v-if="tab === 'loops'" class="loops">

@@ -113,10 +113,13 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-stat .s { color: var(--n-text-4); font-size: 12px; margin-top: 6px; }
 .stat-2 { grid-template-columns: repeat(2, 1fr); }
 .stat-4 { grid-template-columns: repeat(4, 1fr); margin-bottom: 34px; }
-.n-seg { display: flex; gap: 8px; }
-.n-seg button { flex: 1; padding: 10px 18px; border-radius: 999px; font-size: 14px; font-weight: 500; border: 1px solid var(--n-line-2); color: var(--n-text-3); transition: .15s; }
-.n-seg button:hover { color: #fff; border-color: #555; }
-.n-seg button.on { background: #1c1c1c; border-color: var(--n-line-2); color: #fff; font-weight: 600; } /* neutral: the gradient is the submit's */
+/* Segmented (design system): one pill track holding the options; the selected one is neutral (n-bg-3, white, 600),
+   never the gradient, which belongs to the panel's submit. */
+.n-seg { display: flex; gap: 6px; padding: 4px; border: 1px solid var(--n-line); border-radius: 999px; }
+.n-seg button { flex: 1; padding: 8px 18px; border-radius: 999px; font-size: 14px; font-weight: 500; color: var(--n-text-3); transition: color .15s, background .15s; }
+.n-seg button:hover { color: var(--n-text); }
+.n-seg button.on { background: var(--n-bg-3); color: var(--n-text); font-weight: 600; }
+.n-seg button:disabled { opacity: .4; cursor: not-allowed; }
 .n-panel { border: 1px solid var(--n-line); border-radius: 12px; padding: 26px; background: #000; }
 .n-label { color: var(--n-text-3); font-size: 13px; margin-bottom: 8px; }
 .n-label .opt { color: var(--n-text-4); }

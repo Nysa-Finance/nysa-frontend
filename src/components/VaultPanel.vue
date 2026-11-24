@@ -48,8 +48,8 @@ async function submit() {
 <template>
   <div class="n-panel">
     <div class="n-seg" style="margin-bottom: 22px">
-      <button :class="{ on: tab === 'deposit' }" @click="tab = 'deposit'">Deposit</button>
-      <button :class="{ on: tab === 'withdraw' }" @click="tab = 'withdraw'">Withdraw</button>
+      <button :class="{ on: tab === 'deposit' }" :aria-pressed="tab === 'deposit'" @click="tab = 'deposit'">Deposit</button>
+      <button :class="{ on: tab === 'withdraw' }" :aria-pressed="tab === 'withdraw'" @click="tab = 'withdraw'">Withdraw</button>
     </div>
     <div class="n-kv" style="margin-bottom: 10px">
       <span class="k">Vault APY</span>

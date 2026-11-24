@@ -115,8 +115,8 @@ async function submitRepay() {
 <template>
   <div class="n-panel">
     <div v-if="!repayOnly" class="n-seg" style="margin-bottom: 22px">
-      <button :class="{ on: tab === 'borrow' }" @click="tab = 'borrow'">Borrow</button>
-      <button :class="{ on: tab === 'repay' }" @click="tab = 'repay'">Repay</button>
+      <button :class="{ on: tab === 'borrow' }" :aria-pressed="tab === 'borrow'" @click="tab = 'borrow'">Borrow</button>
+      <button :class="{ on: tab === 'repay' }" :aria-pressed="tab === 'repay'" @click="tab = 'repay'">Repay</button>
     </div>
 
     <template v-if="tab === 'borrow'">
