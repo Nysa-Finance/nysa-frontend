@@ -112,7 +112,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
   </div>
   <div v-if="state.swapVisible && loanPair" class="n-banner swap-portfolio-cta">
-    Want {{ tok(loanPair.collateral).name }} after borrowing {{ tok(loanPair.liability).name }}? <RouterLink :to="{ name: 'swap', query: { input: loanPair.liability, output: loanPair.collateral } }" class="link">Swap {{ tok(loanPair.liability).name }} to {{ tok(loanPair.collateral).name }}</RouterLink>.
+    Want {{ tok(loanPair.collateral).name }} after borrowing {{ tok(loanPair.liability).name }}? <RouterLink :to="{ name: 'swap', query: { input: loanPair.liability, output: loanPair.collateral } }" class="link">Buy {{ tok(loanPair.collateral).name }} →</RouterLink>
     Locked collateral is never used for a swap.
   </div>
 
