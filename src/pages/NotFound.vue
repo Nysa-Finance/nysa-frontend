@@ -10,7 +10,7 @@
 <style scoped>
 .nf { min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 40px; }
 .nf-code { font-weight: 700; font-size: 120px; line-height: 1; letter-spacing: -.04em; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-.nf-title { font-weight: 600; font-size: 34px; margin-top: 8px; }
+.nf-title { font-weight: 600; font-size: 28px; margin-top: 8px; }
 .nf-title .serif { color: var(--m1); }
 .nf-sub { color: var(--n-text-3); font-size: 15px; margin-top: 12px; }
 .nf-btn { margin-top: 28px; font-weight: 600; font-size: 14px; color: #fff; background: var(--grad); padding: 13px 24px; border-radius: 999px; transition: filter .15s, box-shadow .2s; }

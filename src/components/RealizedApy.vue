@@ -75,7 +75,7 @@ function onMove(e) {
     </div>
     <div v-if="series.length" ref="box" class="canvas" @pointermove="onMove" @pointerleave="hover = null">
       <svg :width="W" :height="H" role="img" :aria-label="`Daily realized APY for ${token.name}`">
-        <g font-size="11" fill="#a3a3a3" font-weight="300">
+        <g font-size="11" fill="#a3a3a3" font-weight="400">
           <template v-for="t in yAxis.ticks" :key="'y' + t">
             <line :x1="L" :x2="W - R" :y1="y(t)" :y2="y(t)" stroke="#1a1a1a" />
             <text :x="L - 8" :y="y(t) + 4" text-anchor="end">{{ tickLabel(t) }}</text>

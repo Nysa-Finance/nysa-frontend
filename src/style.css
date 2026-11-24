@@ -18,7 +18,7 @@
 a { color: inherit; text-decoration: inherit; }
 button, input, select { font: inherit; color: inherit; background: none; border: 0; }
 button { cursor: pointer; }
-body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans-serif; font-weight: 300; line-height: 1.5; }
+body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans-serif; font-weight: 400; line-height: 1.5; } /* 300 only at 14px and up (design system) */
 .serif { font-family: var(--serif); font-style: italic; font-weight: 400; }
 @keyframes n-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .45 } }
 @keyframes spin { to { transform: rotate(360deg) } }
@@ -28,7 +28,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-nav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; padding: 18px 48px; border-bottom: 1px solid var(--n-line); position: sticky; top: 0; background: #000; z-index: 30; }
 .n-brand { display: flex; align-items: center; gap: 10px; color: var(--n-text); }
 .n-brand img { height: 34px; width: 34px; display: block; }
-.n-brand span { font-weight: 500; font-size: 19px; letter-spacing: .2px; }
+.n-brand span { font-weight: 500; font-size: 18px; letter-spacing: .2px; }
 .n-tabs { display: flex; gap: 6px; justify-self: center; }
 .n-tab { display: flex; align-items: center; gap: 8px; padding: 8px 18px; font-size: 14px; font-weight: 500; border-radius: 999px; color: #fff9; transition: background .15s, color .15s; white-space: nowrap; }
 .n-tab:hover { color: #fff; background: var(--n-bg-3); }
@@ -71,7 +71,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 
 .n-page-head { margin-bottom: 30px; }
 .n-h1 { font-family: var(--serif); font-style: italic; font-weight: 400; font-size: 40px; line-height: 1.1; margin-bottom: 6px; }
-.n-sub { color: var(--n-text-3); font-size: 15px; }
+.n-sub { color: var(--n-text-3); font-size: 15px; font-weight: 300; }
 .n-h2 { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
 .n-table { border: 1px solid var(--n-line); border-radius: 4px; overflow: hidden; }
 .n-thead, .n-tr { display: grid; gap: 12px; }
@@ -86,7 +86,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-row-wrap:last-child { border-bottom: none; }
 .n-tok { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #000; flex-shrink: 0; overflow: hidden; position: relative; background: #2a2a2a; }
 .n-tok img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-.n-tok.sm { width: 24px; height: 24px; font-size: 10px; }
+.n-tok.sm { width: 24px; height: 24px; font-size: 11px; }
 .n-tok.stack { border: 2px solid #000; }
 .n-tok-group { display: flex; align-items: center; }
 .n-tok-group .n-tok + .n-tok { margin-left: -8px; }
@@ -108,7 +108,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-stats { display: grid; gap: 1px; background: var(--n-line); border: 1px solid var(--n-line); border-radius: 4px; overflow: hidden; }
 .n-stat { background: #000; padding: 26px 30px; }
 .n-stat .k { color: var(--n-text-3); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; }
-.n-stat .v { font-size: 30px; font-weight: 600; letter-spacing: -.01em; }
+.n-stat .v { font-size: 28px; font-weight: 600; letter-spacing: -.01em; }
 .n-stat .v.accent { color: var(--n-pink); }
 .n-stat .v.neg { color: var(--n-red); } /* a negative yield is a loss: red, never the yield pink or green */
 .n-stat .s { color: var(--n-text-4); font-size: 12px; margin-top: 6px; }
@@ -139,8 +139,8 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-quick button { flex: 1; font-size: 12px; font-weight: 500; color: var(--n-text-3); background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 999px; padding: 7px 0; transition: .15s; }
 .n-quick button:hover:not(:disabled), .n-quick button.on { color: var(--n-pink); border-color: var(--n-pink); }
 .n-quick button:disabled { opacity: .4; cursor: not-allowed; }
-.n-warn { font-size: 12.5px; color: var(--n-red); line-height: 1.5; }
-.n-note { font-size: 12.5px; color: var(--n-text-2); line-height: 1.5; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 4px; padding: 11px 13px; }
+.n-warn { font-size: 13px; color: var(--n-red); line-height: 1.5; }
+.n-note { font-size: 13px; color: var(--n-text-2); line-height: 1.5; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 4px; padding: 11px 13px; }
 /* The one notice box (Banner): a tinted wash and a matching 1px border, never a side stripe. Tones: pink (default:
    information, Farm Points), reward (something to claim), warn (degraded data), error. `split` puts an action on the right. */
 .n-banner { border: 1px solid #ec008c59; border-radius: 12px; padding: 14px 20px; background: #ec008c0f; font-size: 13px; color: var(--n-text-2); line-height: 1.5; margin-bottom: 26px; }
@@ -158,7 +158,7 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-back:hover { color: #fff; }
 .n-farm-points { display: inline-block; margin-top: 4px; padding: 2px 8px; border: 1px solid rgba(236, 0, 140, .45); border-radius: 999px; background: #ec008c1a; color: var(--n-pink); font-size: 11px; font-weight: 600; letter-spacing: .02em; line-height: 1.4; white-space: nowrap; transition: background .15s, border-color .15s; }
 .n-farm-points:hover { background: #ec008c33; border-color: #ec008ccc; }
-.foot-note { margin-top: 16px; color: var(--n-text-4); font-size: 12.5px; }
+.foot-note { margin-top: 16px; color: var(--n-text-4); font-size: 13px; }
 
 .n-acc { background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 12px; }
 .n-acc > summary { list-style: none; display: flex; align-items: center; gap: 14px; padding: 22px 26px; cursor: pointer; border-radius: 12px; transition: background .15s; }
@@ -229,11 +229,11 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
   .n-fab-menu a.on { color: #fff; background: var(--n-bg-3); }
   .n-fab-menu img { width: 18px; height: 18px; }
   .n-footer { padding-bottom: calc(88px + env(safe-area-inset-bottom)); } /* keep the footer links clear of the button */
-  .n-h1 { font-size: 32px; }
+  .n-h1 { font-size: 28px; }
   .n-thead { display: none; }
   .n-tr { display: flex; flex-direction: column; align-items: stretch; gap: 10px; padding: 16px 18px; }
   .n-tr > .n-cell { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-  .n-tr > .n-cell::before { content: attr(data-label); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--n-text-3); font-weight: 400; flex-shrink: 0; }
+  .n-tr > .n-cell::before { content: attr(data-label); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--n-text-3); font-weight: 400; flex-shrink: 0; }
   .n-tr > .n-cell:empty { display: none; }
   .n-actions { justify-content: stretch; }
   .n-actions .n-btn-sm { flex: 1; }

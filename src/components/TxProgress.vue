@@ -64,7 +64,7 @@ onUnmounted(() => globalThis.removeEventListener?.('keydown', onKey))
 .n-btn-block { margin-top: 8px; text-align: center; }
 .quiet { padding: 8px 16px; color: var(--n-text-3); font-size: 14px; }
 .quiet:hover { color: #fff; }
-.mark { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; font-size: 20px; }
+.mark { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; font-size: 22px; }
 .tick { color: var(--n-green); background: #3ddc841f; }
 .cross { color: var(--n-red); background: #ff5d5d1f; }
 .spin { border: 3px solid var(--n-line-2); border-top-color: var(--n-pink); animation: spin .7s linear infinite; }

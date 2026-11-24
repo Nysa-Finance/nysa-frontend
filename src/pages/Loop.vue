@@ -482,7 +482,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .lp-row:last-child { border-bottom: 1px solid var(--n-line); }
 .lp-row:hover, .lp-row:focus-visible { border-color: var(--n-line-2); outline: none; }
 .asset-name { display: grid; line-height: 1.25; }
-.asset-name small { color: var(--n-text-3); font-weight: 400; font-size: 12.5px; }
+.asset-name small { color: var(--n-text-3); font-weight: 400; font-size: 13px; }
 .up { color: var(--n-green); font-weight: 600; }
 .neg { color: var(--n-red); font-weight: 600; } /* a negative yield is a loss: red, so it never reads as a gain */
 .link { color: var(--n-pink); font-weight: 500; }
@@ -499,16 +499,16 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .d-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .d-stats .n-stat { padding: 18px 20px; }
 .d-stats .n-stat .v { font-size: 22px; }
-.side-h { font-size: 17px; font-weight: 600; margin-bottom: 16px; }
+.side-h { font-size: 18px; font-weight: 600; margin-bottom: 16px; }
 .panel-h { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
-.panel-h h2 { font-size: 17px; font-weight: 600; }
+.panel-h h2 { font-size: 18px; font-weight: 600; }
 .pair { display: flex; align-items: center; gap: 7px; color: var(--n-text-2); font-size: 13px; }
 .pair .n-chip { margin-left: 4px; }
 .row { display: flex; justify-content: space-between; gap: 12px; }
 .row b { color: var(--n-text); font-weight: 600; font-size: 15px; }
 .hint { color: var(--n-text-4); }
 .input-unit { position: relative; }
-.input-unit .n-input { font-size: 20px; font-weight: 500; padding-right: 110px; }
+.input-unit .n-input { font-size: 22px; font-weight: 500; padding-right: 110px; }
 .input-unit .unit { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); display: flex; align-items: center; gap: 7px; color: var(--n-text-2); font-weight: 500; }
 .n-quick { margin-top: 8px; }
 .buy { margin-top: 10px; }
@@ -520,21 +520,21 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .borrow-asset .rate { color: var(--n-text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
 .lev { margin-top: 20px; }
 .slider { width: 100%; accent-color: var(--m1); }
-.ticks { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11.5px; margin-top: 2px; }
+.ticks { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 12px; margin-top: 2px; }
 .ba { margin-top: 20px; border: 1px solid var(--n-line); border-radius: 4px; }
 .ba-row { display: flex; justify-content: space-between; gap: 14px; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--n-hair); font-variant-numeric: tabular-nums; }
 .ba-row:last-child { border-bottom: 0; }
 .ba-row .k { color: var(--n-text-3); }
 .ba-row .to { font-weight: 600; text-align: right; }
 .ba-row .to.neg { color: var(--n-red); }
-.setup { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 14px; border: 1px solid var(--n-line); border-radius: 4px; font-size: 12.5px; color: var(--n-text-3); }
-.ack { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; color: var(--n-amber); font-size: 12.5px; }
+.setup { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 14px; border: 1px solid var(--n-line); border-radius: 4px; font-size: 13px; color: var(--n-text-3); }
+.ack { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; color: var(--n-amber); font-size: 13px; }
 .ack input { margin-top: 3px; accent-color: var(--m1); }
 .go { margin-top: 20px; }
-.why { display: block; margin-top: 10px; text-align: center; color: var(--n-text-3); font-size: 12.5px; }
+.why { display: block; margin-top: 10px; text-align: center; color: var(--n-text-3); font-size: 13px; }
 .fresh { margin-top: 6px; text-align: center; color: var(--n-text-4); font-size: 12px; }
-.err { margin-top: 10px; color: var(--n-red); font-size: 12.5px; text-align: center; }
-.more { margin-top: 12px; color: var(--n-text-3); font-size: 12.5px; }
+.err { margin-top: 10px; color: var(--n-red); font-size: 13px; text-align: center; }
+.more { margin-top: 12px; color: var(--n-text-3); font-size: 13px; }
 .more summary { cursor: pointer; list-style: none; }
 .more summary::before { content: "+ "; color: var(--n-pink); }
 .more[open] summary::before { content: "− "; }
@@ -555,7 +555,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .bar { position: relative; height: 6px; border-radius: 999px; background: linear-gradient(90deg, var(--n-green) 0%, var(--n-green) 45%, var(--n-amber) 70%, var(--n-red) 100%); margin: 6px 0 0; opacity: .85; }
 .bar .mark { position: absolute; top: -5px; width: 3px; height: 16px; border-radius: 2px; background: #fff; transform: translateX(-50%); transition: left .2s; }
 .bar .lim { position: absolute; top: -3px; width: 1px; height: 12px; background: #fff8; }
-.bar-l { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11.5px; }
+.bar-l { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 12px; }
 .position + .position, .position { margin-top: 0; margin-bottom: 18px; }
 .pos-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .pos-stats .n-stat { padding: 18px 20px; }
@@ -563,7 +563,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .pos-stats .n-chip { vertical-align: middle; margin-left: 6px; }
 .close { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: 18px; }
 .close .why { margin: 0; text-align: left; }
-.fee-note { margin: 0; padding: 6px 0; color: var(--n-text-3); font-size: 12px; font-weight: 300; }
+.fee-note { margin: 0; padding: 6px 0; color: var(--n-text-3); font-size: 12px; }
 .close .n-btn-grad:disabled { opacity: .4; cursor: not-allowed; filter: none; box-shadow: none; }
 .mode-banner { margin-top: 22px; }
 .position.picked { border-color: var(--n-pink); }
@@ -577,7 +577,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
   .d-side { position: static; }
   .d-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; } /* the global phone rule stacks every stat */
   .d-stats .n-stat { padding: 14px 16px; }
-  .d-stats .n-stat .v { font-size: 19px; }
+  .d-stats .n-stat .v { font-size: 18px; }
   .oracle { margin-left: 0; width: 100%; }
   .loops { padding: 0 8px 8px; }
   .lp-grid > :not(:first-child) { justify-self: stretch; text-align: left; }

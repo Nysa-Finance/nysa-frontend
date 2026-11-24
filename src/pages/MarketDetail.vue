@@ -201,7 +201,7 @@ function openDd() {
 .ad-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr 1fr; }
 .irm-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr 1fr; }
 .rp-grid { grid-template-columns: 1.2fr 1.2fr .9fr 1.1fr 1fr 1.1fr 1.1fr; }
-.collateral-only { font-size: 12.5px; }
+.collateral-only { font-size: 13px; }
 .hint { margin-top: 12px; color: var(--n-text-4); font-size: 12px; line-height: 1.6; }
 .irm-charts { display: grid; gap: 16px; margin-top: 18px; }
 .irm-card { border: 1px solid var(--n-line); border-radius: 4px; padding: 18px 20px 14px; min-width: 0; }
@@ -214,7 +214,7 @@ function openDd() {
 .addr-link:hover { color: var(--n-pink); }
 .ext { color: var(--n-text-3); font-size: 12px; }
 .addr-link:hover .ext { color: inherit; }
-.addr-full, .addr-short { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+.addr-full, .addr-short { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
 .addr-short { display: none; }
 .dd-section { scroll-margin-top: 96px; }
 .dd-score { display: inline-flex; align-items: center; gap: 9px; font-weight: 500; color: var(--n-green); }
