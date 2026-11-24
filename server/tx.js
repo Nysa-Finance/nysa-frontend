@@ -162,6 +162,7 @@ const KLEND_ERRORS = {
   6013: 'That\'s above your borrow limit right now (prices and interest move every block). Try a slightly smaller amount.',
   6093: 'That would bring your loan closer to liquidation than Kamino allows. Try a smaller amount.',
   6119: 'That would make your loan liquidatable. Try a smaller amount.',
+  6098: 'This market is at Kamino\'s borrowing limit right now, so it can\'t lend that much. Try a smaller amount or lower leverage.',
 }
 function simulationError(logs, err) {
   const code = typeof err === 'string' ? err : Object.keys(err ?? {})[0]
