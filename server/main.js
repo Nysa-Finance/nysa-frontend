@@ -108,7 +108,7 @@ function blocked(res, wallet, { failClosed }) {
 // CF-IPCountry (T1 = Tor). Repaying and withdrawing stay open, so nobody is locked out of their own funds.
 // ponytail: country by IP only, a VPN gets through; regions (Crimea, Donetsk, Luhansk) need Cloudflare's location headers.
 const GEO_BLOCKED = new Set(['US', 'CA', 'CU', 'IR', 'KP', 'SY', 'RU', 'BY', 'T1'])
-const GEO_KINDS = new Set(['deposit', 'borrow', 'liquidate'])
+const GEO_KINDS = new Set(['deposit', 'borrow', 'liquidate', 'loop-open']) // a loop deposits the collateral: USDY's market is geo-blocked
 const geoBlocked = (req) => GEO_BLOCKED.has(req.headers['cf-ipcountry'])
 const GEO_REFUSED = { error: 'This market is not available in your country (United States, Canada and sanctioned countries). You can still repay and withdraw.', geoBlocked: true }
 
@@ -186,7 +186,13 @@ const loopOn = LOOP_ENABLED || LOOP_WALLETS.size > 0
 // A betaOnly loop (config.js) stays with LOOP_WALLETS even once loops are released to everyone.
 const loopOpenTo = (wallet, marketId) => (LOOP_ENABLED && !loopByMarket(marketId)?.betaOnly) || LOOP_WALLETS.has(wallet)
 const LOOP_NOT_ENABLED = { error: 'Loop is not available for this wallet yet.' }
-const loopBeta = !LOOP_ENABLED && LOOP_WALLETS.size > 0
+// A loop runs under the private-beta approval (LOOP_WALLETS stand in for the risk owner and the fork-verified gates)
+// while loops are off, and always for a betaOnly loop (oTFY). A loop released to everyone (LOOP_ENABLED) runs under
+// the named risk approval instead: NYSA_LOOP_RISK_OWNER and NYSA_LOOP_RISK_APPROVED_AT, which also stand for its
+// passed fork checks. Without them a released loop stays closed.
+const loopUnderBeta = (marketId) => (!LOOP_ENABLED || !!loopByMarket(marketId)?.betaOnly) && LOOP_WALLETS.size > 0
+const releaseApproved = () => !!process.env.NYSA_LOOP_RISK_OWNER?.trim() && Number.isFinite(Date.parse(process.env.NYSA_LOOP_RISK_APPROVED_AT ?? ''))
+const loopGatesPassed = (marketId) => loopUnderBeta(marketId) || (LOOP_ENABLED && releaseApproved())
 const LOOP_MAX_FUNDING = Number(process.env.LOOP_MAX_FUNDING) > 0 ? Number(process.env.LOOP_MAX_FUNDING) : null
 // Loops are funded in their collateral, so the cap is its dollar value at the market's oracle price.
 const overLoopCap = (amount, marketId) => {
@@ -235,7 +241,7 @@ function currentLoopRouteReadiness(marketId) {
   const snapshotFresh = Number.isFinite(snapshot?.updatedAt) && snapshot.updatedAt > 0
     && Date.now() >= snapshot.updatedAt && Date.now() - snapshot.updatedAt <= 60_000
   const localExecution = localForkProgramEvidenceReady()
-  const forkProof = localExecution || loopBeta
+  const forkProof = localExecution || loopGatesPassed(marketId)
   const routeReadiness = swapReadiness({
     providerConfigured: !!process.env.JUPITER_API_KEY || localExecution,
     feeAccountsConfigured: loopFeeAccountsConfigured(marketId),
@@ -262,9 +268,9 @@ function loopStrategyForAction(snapshot, marketId, leverage = 1.5) {
     productionProviderConfigured: !!process.env.JUPITER_API_KEY || localExecution,
     treasuryConfigured: loopFeeAccountsConfigured(marketId),
     riskApproval: localExecution ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
-      : loopBeta ? { owner: 'LOOP_WALLETS private beta', approvedAt: new Date(0).toISOString() }
+      : loopUnderBeta(marketId) ? { owner: 'LOOP_WALLETS private beta', approvedAt: new Date(0).toISOString() }
         : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
-    feasibilityPassed: localExecution || loopBeta,
+    feasibilityPassed: localExecution || loopGatesPassed(marketId),
     leverage,
   })
 }
@@ -524,6 +530,7 @@ const routes = [
     if (!loopByMarket(body.marketId)) throw new UserError('Unknown loop strategy')
     if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
     if (!loopOpenTo(body.wallet, body.marketId)) return send(res, 403, LOOP_NOT_ENABLED)
+    if (marketById(body.marketId)?.geoBlocked && geoBlocked(req)) return send(res, 403, GEO_REFUSED)
     if (overLoopCap(body.fundingAmount, body.marketId)) throw new UserError(LOOP_CAP_ERROR())
     if (!loopAmountValid(body.fundingAmount, body.marketId)) throw new UserError('Invalid funding amount')
     if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage) throw new UserError('Funding amount or leverage is outside the preview range')
