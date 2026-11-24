@@ -1328,6 +1328,22 @@ export function leverageImpactPct(quote, input, output, marketRisk) {
   return paid > 0 && got > 0 ? Math.max(0, (1 - got / paid) * 100) : Infinity
 }
 
+// What Kamino will still lend from a reserve right now, in token units: its free liquidity, its borrow cap and its
+// "no borrowing above X% utilization" limit (0 = none). A loop asking for more fails its simulation (6008 / 6098), so
+// the preview says so before the click.
+export function borrowCapacity({ available, borrowed, totalSupply, borrowLimit, utilizationLimitPct }) {
+  let capacity = available
+  if (borrowLimit > 0) capacity = Math.min(capacity, borrowLimit - borrowed)
+  if (utilizationLimitPct > 0) capacity = Math.min(capacity, (totalSupply * utilizationLimitPct) / 100 - borrowed)
+  return Math.max(0, capacity)
+}
+
+// The leverage whose debt fits `capacity`, for the same funding: debt grows with (L - 1). Floored to 0.1x.
+export function leverageWithin(capacity, needed, leverage) {
+  if (!(needed > 0) || !(leverage > 1)) return null
+  return Math.floor((1 + ((leverage - 1) * capacity) / needed) * 10) / 10
+}
+
 export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount, leverage, snapshot, strategy, now = Date.now(), signal, onApplicationContext,
   localForkSimulation = false, localForkRpcUrl, localRouteProgramVerifier } = {}) {
   const loop = loopByMarket(marketId)
@@ -1450,6 +1466,23 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
       leverageSwapInputBaseUnits: sdkPreview.swapInputs.inputAmountLamports.toString(),
       leverageSwapMinimumOutputBaseUnits: sdkPreview.swapInputs.minOutAmountLamports?.toString() ?? null,
     },
+  }
+  const n = (value) => (typeof value === 'number' ? value : Number(String(value)))
+  const tokens = (value) => n(value) / n(debtReserve.getMintFactor())
+  const capacity = borrowCapacity({
+    available: tokens(debtReserve.getLiquidityAvailableAmount()),
+    borrowed: tokens(debtReserve.getBorrowedAmount()),
+    totalSupply: tokens(debtReserve.getTotalSupply()),
+    borrowLimit: tokens(debtReserve.stats.reserveBorrowLimit),
+    utilizationLimitPct: n(debtReserve.state.config.utilizationLimitBlockBorrowingAbovePct),
+  })
+  const needed = n(sdkPreview.initialInputs.calcs.debtTokenToBorrow) * (1 + n(debtReserve.getBorrowFee()))
+  result.borrowCapacity = capacity
+  if (needed > capacity) {
+    const fits = leverageWithin(capacity, needed, Number(leverage))
+    result.available = false
+    result.unavailableReasons = [...(result.unavailableReasons ?? []), { code: 'borrow-capacity-exceeded',
+      message: `Kamino can lend at most ${capacity.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${liability.name} in this market right now${fits >= 1.1 ? `: try ${fits}× or less, or a smaller amount.` : '. Try again later.'}` }]
   }
   if (typeof onApplicationContext === 'function' && wallet) {
     await onApplicationContext({

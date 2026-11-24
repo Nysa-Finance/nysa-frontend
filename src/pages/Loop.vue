@@ -293,6 +293,9 @@ const status = computed(() => {
   if (setupLoading.value) return 'Checking Kamino setup…'
   if (setupRequired.value) return 'Complete the one-time Kamino setup to open it.'
   if (!quoted.value) return previewError.value ?? 'Getting a quote…'
+  // The market can't lend that much right now: say how much it can, before the click.
+  const capacity = entryBlockers.value.find((reason) => reason.code === 'borrow-capacity-exceeded')
+  if (capacity) return capacity.message
   if (entryBlockers.value.length) return localForkMode.value ? 'This loop can\'t be opened on the local fork right now.' : 'Loops aren\'t open on Nysa yet.'
   return null
 })

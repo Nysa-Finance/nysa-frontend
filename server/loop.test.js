@@ -840,3 +840,11 @@ console.log('loop preview ok')
   assert.equal(debtWithinAccrual('11291900', '11290829'), true) // 0.01% of 11.29 USDC is 1,129 base units
   assert.equal(debtWithinAccrual('11293000', '11290829'), false)
 }
+
+// Borrow capacity: free liquidity, the borrow cap and Kamino's utilization limit, whichever is tightest.
+assert.equal(loop.borrowCapacity({ available: 1000, borrowed: 9000, totalSupply: 10000, borrowLimit: 0, utilizationLimitPct: 0 }), 1000)
+assert.equal(loop.borrowCapacity({ available: 1000, borrowed: 9000, totalSupply: 10000, borrowLimit: 9500, utilizationLimitPct: 0 }), 500)
+assert.equal(loop.borrowCapacity({ available: 1000, borrowed: 9000, totalSupply: 10000, borrowLimit: 0, utilizationLimitPct: 92 }), 200)
+assert.equal(loop.borrowCapacity({ available: 1000, borrowed: 9500, totalSupply: 10000, borrowLimit: 0, utilizationLimitPct: 90 }), 0)
+assert.equal(loop.leverageWithin(100, 200, 3), 2, 'half the debt fits: 3x becomes 2x')
+console.log('borrow capacity ok')
