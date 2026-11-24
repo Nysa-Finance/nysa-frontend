@@ -402,7 +402,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
         <div class="lev">
           <div class="n-label row"><span>Leverage</span><b>{{ lev(leverage) }}</b></div>
-          <input v-model.number="leverage" class="slider" type="range" min="1.1" :max="loop.maxLeverage" step="0.01" aria-label="Leverage" />
+          <input v-model.number="leverage" class="slider" type="range" min="1.1" :max="loop.maxLeverage" step="0.01" aria-label="Leverage" :style="{ '--fill': `${((leverage - 1.1) / (loop.maxLeverage - 1.1)) * 100}%` }" />
           <div class="ticks"><span>1.1×</span><span>{{ lev(loop.maxLeverage) }}</span></div>
         </div>
 
@@ -519,7 +519,6 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .borrow-asset .pair { color: var(--n-text); font-size: 14px; font-weight: 500; }
 .borrow-asset .rate { color: var(--n-text-3); font-size: 13px; font-variant-numeric: tabular-nums; }
 .lev { margin-top: 20px; }
-.slider { width: 100%; accent-color: var(--m1); }
 .ticks { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11.5px; margin-top: 2px; }
 .ba { margin-top: 20px; border: 1px solid var(--n-line); border-radius: 4px; }
 .ba-row { display: flex; justify-content: space-between; gap: 14px; padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--n-hair); font-variant-numeric: tabular-nums; }
@@ -529,7 +528,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 .ba-row .to.neg { color: var(--n-red); }
 .setup { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 14px; border: 1px solid var(--n-line); border-radius: 4px; font-size: 12.5px; color: var(--n-text-3); }
 .ack { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; color: var(--n-amber); font-size: 12.5px; }
-.ack input { margin-top: 3px; accent-color: var(--m1); }
+.ack input { margin-top: 1px; }
 .go { margin-top: 20px; }
 .why { display: block; margin-top: 10px; text-align: center; color: var(--n-text-3); font-size: 12.5px; }
 .fresh { margin-top: 6px; text-align: center; color: var(--n-text-4); font-size: 12px; }

@@ -36,7 +36,7 @@ const agreed = ref(false)
 .tos__link { display: inline-block; font-size: 13px; font-weight: 600; border: 1px solid var(--n-line-2); border-radius: 999px; padding: 9px 18px; margin-bottom: 24px; transition: border-color .2s; }
 .tos__link:hover { border-color: #5a5a5a; }
 .tos__check { display: flex; align-items: flex-start; gap: 10px; text-align: left; font-size: 13px; color: var(--n-text-2); margin-bottom: 24px; }
-.tos__check input { margin-top: 3px; flex-shrink: 0; }
+.tos__check input { margin-top: 1px; }
 .tos__check a { color: #fff; text-decoration: underline; }
 .tos__btn { width: 100%; font-weight: 600; font-size: 14px; color: #fff; background: var(--grad); padding: 13px 18px; border-radius: 999px; transition: filter .15s, box-shadow .2s, opacity .2s; }
 .tos__btn:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }

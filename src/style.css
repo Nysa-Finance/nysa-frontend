@@ -127,6 +127,29 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-select:focus, .n-input:focus { outline: none; border-color: var(--n-pink); }
 .n-input::placeholder { color: var(--n-text-4); }
 .n-input:disabled, .n-select:disabled { opacity: .4; cursor: not-allowed; }
+/* Custom controls (design system). Select: the field box with the system chevron. */
+.n-select { appearance: none; -webkit-appearance: none; padding-right: 42px; cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a3a3a3' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center; background-size: 16px; }
+.n-select:hover:not(:disabled), .n-input:hover:not(:disabled):not(:focus) { border-color: #5a5a5a; }
+.n-select option { background: var(--n-bg-2); }
+/* Checkbox: 18px, r-4, filled m1 with a white tick when checked. */
+input[type="checkbox"] { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; flex-shrink: 0; margin: 0; display: inline-grid; place-content: center;
+  border: 1px solid var(--n-line-2); border-radius: 4px; background: var(--n-bg-2); cursor: pointer; transition: background .15s, border-color .15s; }
+input[type="checkbox"]::before { content: ""; width: 10px; height: 10px; background: #fff; transform: scale(0); transition: transform .12s;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%); }
+input[type="checkbox"]:hover:not(:disabled) { border-color: #5a5a5a; }
+input[type="checkbox"]:checked { background: var(--m1); border-color: var(--m1); }
+input[type="checkbox"]:checked::before { transform: scale(1); }
+input[type="checkbox"]:focus-visible, .slider:focus-visible { outline: 2px solid var(--n-pink); outline-offset: 2px; }
+input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
+/* Slider: the track fills in m1 up to the value (--fill, set by the page), a white thumb ringed in m1. */
+.slider { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 999px; cursor: pointer;
+  background: linear-gradient(to right, var(--m1) var(--fill, 0%), var(--n-line-2) var(--fill, 0%)); }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px var(--m1); }
+.slider::-moz-range-thumb { width: 16px; height: 16px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px var(--m1); }
+.slider::-moz-range-track { background: transparent; }
+.slider:disabled { opacity: .4; cursor: not-allowed; }
 .n-kv { display: flex; justify-content: space-between; align-items: center; font-size: 13px; gap: 12px; }
 .n-kv .k { color: var(--n-text-3); }
 .n-kv .v { font-weight: 600; font-variant-numeric: tabular-nums; }
