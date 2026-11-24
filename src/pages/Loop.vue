@@ -19,7 +19,9 @@ const loop = computed(() => loopById(asset.value) ?? LOOPS[0]) // the open form'
 const coll = computed(() => tok(loop.value.collateral)) // also what funds the loop: only the borrowed debt is swapped into more
 const debt = computed(() => tok(loop.value.debt))
 const fundingAmount = ref('')
-watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, coll.value.decimals) })
+// At most 6 decimals, as every other panel: a 9-decimal token (oTFY) would show 0.047368319; Max leaves under 1e-6 behind.
+const inputDecimals = computed(() => Math.min(coll.value.decimals, 6))
+watch(fundingAmount, (v) => { fundingAmount.value = cleanAmount(v, inputDecimals.value) })
 const leverage = ref(loop.value.maxLeverage)
 watch(loop, (l) => { leverage.value = l.maxLeverage })
 const strategy = ref(null)
@@ -279,7 +281,7 @@ const est = computed(() => {
   }
 })
 const health = (hf) => (hf >= 1.8 ? ['ok', 'Safe'] : hf >= 1.3 ? ['warn', 'Medium'] : ['bad', 'Risky'])
-const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances[coll.value.token_id] ?? 0) * p) / 100, coll.value.decimals)) }
+const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances[coll.value.token_id] ?? 0) * p) / 100, inputDecimals.value)) }
 
 const quoted = computed(() => previewIsCurrent.value && !!preview.value)
 // The preview needs only an amount; opening also needs the Kamino setup and no blocker.
