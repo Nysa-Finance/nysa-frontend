@@ -21,9 +21,9 @@ import { confirmedTokenDeltas } from './token-deltas.js'
 import { assertRawWithdrawalWithinAllowance, requestedTokenBaseUnits, requestedWithdrawalBaseUnits } from './withdrawal.js'
 import { relaySignedTransaction } from './send-safety.js'
 import { obligationPair } from './positions.js'
+import { chainError } from './errors.js'
 
 const require = createRequire(import.meta.url)
-const klendErrors = require('@kamino-finance/klend-sdk/dist/@codegen/klend/errors/custom.js')
 const { decodeUserState } = require('@kamino-finance/farms-sdk')
 
 const MAX_TX_BYTES = 1232
@@ -125,7 +125,7 @@ export async function simulateAtomicTransaction({ compiled, accounts = [], token
     encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true,
     ...(addresses.length ? { accounts: { addresses, encoding: 'base64' } } : {}),
   }).send()
-  if (value.err) simulationError(value.logs ?? [])
+  if (value.err) simulationError(value.logs ?? [], value.err)
   const accountData = new Map(tracked.map((key, index) => {
     const encoded = value.accounts?.[index]?.data?.[0]
     return [key, typeof encoded === 'string' ? Uint8Array.from(Buffer.from(encoded, 'base64')) : null]
@@ -152,28 +152,11 @@ async function simulated(compiled) {
   const { withLimit, ...tuned } = used > 0 ? await compiled.withLimit(cuWithMargin(used)) : compiled
   return tuned
 }
-// Fees and rent are paid in SOL even for a USDC action: without SOL the simulation fails before any program runs
-// (no log to show), or when creating the first token account ("insufficient lamports").
-const NO_SOL = 'This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.'
-const NO_SOL_ERRORS = ['AccountNotFound', 'InsufficientFundsForFee', 'InsufficientFundsForRent']
-const KLEND_ERRORS = {
-  6008: 'There isn\'t enough liquidity in this market for that amount right now.',
-  6011: 'That\'s more than you can withdraw right now: your loan needs this collateral. Try a smaller amount.',
-  6013: 'That\'s above your borrow limit right now (prices and interest move every block). Try a slightly smaller amount.',
-  6093: 'That would bring your loan closer to liquidation than Kamino allows. Try a smaller amount.',
-  6119: 'That would make your loan liquidatable. Try a smaller amount.',
-  6098: 'This market is at Kamino\'s borrowing limit right now, so it can\'t lend that much. Try a smaller amount or lower leverage.',
-}
+// Fees and rent are paid in SOL even for a USDC action: without SOL the simulation fails before any program runs.
+// errors.js words every recognized failure; anything else shows the program's own last log line.
 function simulationError(logs, err) {
-  const code = typeof err === 'string' ? err : Object.keys(err ?? {})[0]
-  if (NO_SOL_ERRORS.includes(code) || logs.some((l) => /insufficient lamports/i.test(l))) throw new UserError(NO_SOL)
-  if (logs.some((l) => /ObligationHealthy|healthy and cannot be liquidated/i.test(l))) throw new UserError('This loan is healthy again (or was just liquidated), so it can\'t be liquidated right now.')
-  const failed = [...logs].reverse().find((l) => / failed: custom program error: 0x/.test(l))
-  if (failed?.startsWith(`Program ${PROGRAM_ID} `)) {
-    const n = parseInt(failed.split('0x')[1], 16)
-    const msg = KLEND_ERRORS[n] ?? klendErrors.fromCode(n)?.msg
-    if (msg) throw new UserError(msg)
-  }
+  const known = chainError(logs, err)
+  if (known) throw new UserError(known)
   const hint = [...logs].reverse().find((l) => /Error Message|failed|insufficient/i.test(l))
   throw new UserError(`Simulation failed${hint ? ': ' + hint.replace(/^Program log: /, '') : ''}`)
 }
@@ -453,7 +436,13 @@ export async function resolveTransactionStatus(signature, {
     s = historical?.value?.[0] ?? null
   }
   if (!s) return { status: 'pending' }
-  if (s.err) return { status: 'failed', error: JSON.stringify(s.err, (_, v) => (typeof v === 'bigint' ? String(v) : v)) }
+  if (s.err) {
+    // The logs name the failing program, so the user sees why (slippage, liquidity, ...) instead of a raw code.
+    let logs = []
+    try { logs = (await getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 }))?.meta?.logMessages ?? [] }
+    catch { /* the raw error below still reports the failure */ }
+    return { status: 'failed', error: chainError(logs, s.err) ?? JSON.stringify(s.err, (_, v) => (typeof v === 'bigint' ? String(v) : v)) }
+  }
   if (s.confirmationStatus === 'confirmed' || s.confirmationStatus === 'finalized') {
     Promise.resolve().then(() => onConfirmed(signature)).catch((e) => console.error('[tx] confirmation lookup failed', e?.message))
     let tokenDeltas = null
