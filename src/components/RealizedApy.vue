@@ -109,7 +109,7 @@ function onMove(e) {
 .n-stat .v.sm { font-size: 22px; }
 .ra-chart { margin-top: 18px; border: 1px solid var(--n-line); border-radius: 4px; padding: 18px 20px 14px; background: #000; }
 .legend { display: flex; align-items: center; gap: 20px; font-size: 12px; color: var(--n-text-3); margin-bottom: 14px; }
-.range { margin-left: auto; gap: 6px; }
+.range { margin-left: auto; display: inline-flex; padding: 3px; } /* the small Segmented, for chart ranges */
 .range button { flex: none; padding: 4px 12px; font-size: 12px; }
 .legend span { display: inline-flex; align-items: center; gap: 8px; }
 .line { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }

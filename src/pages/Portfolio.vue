@@ -117,8 +117,8 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   </div>
 
   <div class="n-seg toggle">
-    <button :class="{ on: view === 'deposits' }" @click="view = 'deposits'">Active Deposits</button>
-    <button :class="{ on: view === 'loans' }" @click="view = 'loans'">Active Loans</button>
+    <button :class="{ on: view === 'deposits' }" :aria-pressed="view === 'deposits'" @click="view = 'deposits'">Active deposits</button>
+    <button :class="{ on: view === 'loans' }" :aria-pressed="view === 'loans'" @click="view = 'loans'">Active loans</button>
   </div>
 
   <div v-if="view === 'deposits'" class="n-table">

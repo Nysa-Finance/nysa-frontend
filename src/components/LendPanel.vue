@@ -61,8 +61,8 @@ async function submit() {
   <div class="n-panel">
     <div v-if="withdrawOnly" class="n-label" style="margin-bottom: 16px; font-size: 15px; color: #fff">Withdraw from {{ market.name }}</div>
     <div v-else class="n-seg" style="margin-bottom: 22px">
-      <button :class="{ on: tab === 'lend' }" @click="tab = 'lend'">Deposit</button>
-      <button :class="{ on: tab === 'withdraw' }" @click="tab = 'withdraw'">Withdraw</button>
+      <button :class="{ on: tab === 'lend' }" :aria-pressed="tab === 'lend'" @click="tab = 'lend'">Deposit</button>
+      <button :class="{ on: tab === 'withdraw' }" :aria-pressed="tab === 'withdraw'" @click="tab = 'withdraw'">Withdraw</button>
     </div>
     <div class="n-label">{{ tab === 'withdraw' ? 'Asset to withdraw' : 'Asset to deposit' }}</div>
     <select v-model="assetId" class="n-select" style="margin-bottom: 14px">
