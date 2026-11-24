@@ -40,7 +40,9 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--n-green); flex-shrink: 0; }
 .n-pill.net .n-dot { background: #9945ff; }
 .n-btn-grad { padding: 10px 22px; border-radius: 999px; font-size: 13px; font-weight: 600; color: #fff; background: var(--grad); display: inline-flex; align-items: center; gap: 6px; transition: filter .15s, box-shadow .2s; }
-.n-btn-grad:hover { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }
+/* One hover for every gradient button (design system): brightness 110% plus the pink glow; one disabled state. */
+.n-btn-grad:hover:not(:disabled), .n-btn-sm:not(.ghost):hover:not(:disabled), .n-btn-block:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }
+.n-btn-grad:disabled { opacity: .4; cursor: not-allowed; }
 .n-menu { position: absolute; right: 0; top: calc(100% + 8px); min-width: 200px; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 12px; padding: 6px; font-size: 13px; }
 .n-menu a, .n-menu button { display: block; width: 100%; text-align: left; padding: 9px 12px; border-radius: 4px; color: var(--n-text-2); }
 .n-menu a:hover, .n-menu button:hover { background: var(--n-bg-3); color: #fff; }
@@ -99,10 +101,9 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-num { font-variant-numeric: tabular-nums; }
 .n-skel { display: inline-block; height: 1em; min-width: 46px; border-radius: 3px; background: #161616; animation: n-pulse 1.4s ease-in-out infinite; vertical-align: middle; }
 .n-actions { display: flex; gap: 8px; justify-content: flex-end; }
-.n-btn-sm { padding: 8px 18px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--n-grad); color: #fff; transition: filter .15s; }
-.n-btn-sm:hover:not(:disabled) { filter: brightness(1.1); }
+.n-btn-sm { padding: 8px 18px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; background: var(--n-grad); color: #fff; transition: filter .15s, box-shadow .2s; }
 .n-btn-sm.ghost { background: transparent; border: 1px solid var(--n-pink); color: var(--n-pink); }
-.n-btn-sm.ghost:hover:not(:disabled) { background: #ec008c1a; filter: none; }
+.n-btn-sm.ghost:hover:not(:disabled) { background: #ec008c1a; }
 .n-btn-sm:disabled { opacity: .4; cursor: not-allowed; }
 .n-stats { display: grid; gap: 1px; background: var(--n-line); border: 1px solid var(--n-line); border-radius: 4px; overflow: hidden; }
 .n-stat { background: #000; padding: 26px 30px; }
@@ -132,12 +133,11 @@ body { background: var(--n-bg); color: var(--n-text); font-family: Poppins, sans
 .n-kv .v { font-weight: 600; font-variant-numeric: tabular-nums; }
 .n-kv .v.accent { color: var(--n-pink); }
 .n-rule { border-top: 1px solid var(--n-line); }
-.n-btn-block { width: 100%; padding: 16px; border-radius: 999px; background: var(--n-grad); color: #fff; font-size: 15px; font-weight: 600; transition: filter .15s; }
-.n-btn-block:hover:not(:disabled) { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }
+.n-btn-block { width: 100%; padding: 16px; border-radius: 999px; background: var(--n-grad); color: #fff; font-size: 15px; font-weight: 600; transition: filter .15s, box-shadow .2s; }
 .n-btn-block:disabled { opacity: .4; cursor: not-allowed; }
 .n-quick { display: flex; gap: 6px; }
 .n-quick button { flex: 1; font-size: 12px; font-weight: 500; color: var(--n-text-3); background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 999px; padding: 7px 0; transition: .15s; }
-.n-quick button:hover:not(:disabled) { color: var(--n-pink); border-color: var(--n-pink); }
+.n-quick button:hover:not(:disabled), .n-quick button.on { color: var(--n-pink); border-color: var(--n-pink); }
 .n-quick button:disabled { opacity: .4; cursor: not-allowed; }
 .n-warn { font-size: 13px; color: var(--n-red); line-height: 1.5; }
 .n-note { font-size: 13px; color: var(--n-text-2); line-height: 1.5; background: var(--n-bg-2); border: 1px solid var(--n-line); border-radius: 4px; padding: 11px 13px; }

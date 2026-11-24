@@ -171,7 +171,7 @@ function openDd() {
           initial-tab="withdraw" :initial-asset="route.query.asset" withdraw-only
         />
         <div v-if="state.swapVisible && mode === 'withdraw'" class="n-note withdraw-swap-cta">
-          Withdrew {{ tok(m.pairs[0].collateral).name }}? <RouterLink :to="{ name: 'swap', query: { input: m.pairs[0].collateral, output: m.pairs[0].liability } }">Swap it to {{ tok(m.pairs[0].liability).name }}</RouterLink>.
+          Withdrew {{ tok(m.pairs[0].collateral).name }}? <RouterLink :to="{ name: 'swap', query: { input: m.pairs[0].collateral, output: m.pairs[0].liability } }">Sell {{ tok(m.pairs[0].collateral).name }} →</RouterLink>
         </div>
         <BorrowPanel
           v-if="mode !== 'withdraw'" :key="'b' + route.fullPath + geoBlocked" :market="m" :collateral-tokens="collateral" :loan-tokens="loans"

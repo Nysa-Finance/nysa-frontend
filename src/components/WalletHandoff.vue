@@ -93,7 +93,8 @@ async function checkLocalExpiry() {
 .ho-spin { width: 12px; height: 12px; flex: 0 0 auto; border: 2px solid var(--n-line-2); border-top-color: var(--n-pink); border-radius: 50%; animation: spin .8s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .ho-spin { animation: none; } }
 .ho-actions { margin-top: 12px; display: flex; align-items: center; gap: 16px; }
-.ho-btn { font-weight: 600; color: #fff; background: var(--grad); padding: 10px 18px; border-radius: 999px; }
+.ho-btn { font-weight: 600; color: #fff; background: var(--grad); padding: 10px 18px; border-radius: 999px; transition: filter .15s, box-shadow .2s; }
+.ho-btn:hover { filter: brightness(1.1); box-shadow: 0 12px 30px -8px #ec008cb3; }
 .ho-btn:disabled, .ho-link:disabled { opacity: .4; cursor: not-allowed; }
 .ho-link { color: var(--n-text-3); font-size: 13px; background: none; border: 0; padding: 0; cursor: pointer; }
 </style>
