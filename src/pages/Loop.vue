@@ -183,7 +183,10 @@ function friendly(e) {
   const message = e?.message ?? String(e ?? '')
   if (/reject|cancel/i.test(message) || e?.code === 'PENDING_TRANSACTION') return message
   if (MOVED.test(message)) return 'Prices moved while this was being prepared. Try again.'
-  if (/failed on-chain/i.test(message)) return 'The transaction failed on-chain, so nothing changed (only the network fee was spent). Try again.'
+  if (/failed on-chain/i.test(message)) {
+    const reason = message.split(/failed on-chain:?\s*/i)[1]
+    return `The transaction failed on-chain, so nothing changed (only the network fee was spent). ${reason && !reason.startsWith('{') ? reason : 'Try again.'}`
+  }
   return message
 }
 // Runs a loop action in the shared progress sheet; once, a "prices moved" answer rebuilds it with a fresh quote.
@@ -212,7 +215,8 @@ async function openLoop() {
     const actionPreview = preview.value
     const request = currentPreviewRequest()
     if (!openReadiness.value?.executionEnabled || !previewIsCurrent.value || !actionPreview?.previewId) {
-      throw new Error(previewError.value ?? 'This loop can\'t be opened right now. Try again in a moment.')
+      // The fresh quote's own reason (leverage, price impact, a busy quote provider), not a generic sentence.
+      throw new Error(status.value ?? previewError.value ?? 'This loop can\'t be opened right now. Try again in a moment.')
     }
     return sendLoopAction('loop-open', {
       market: l.market, amount: request.fundingAmount, leverage: request.leverage,
@@ -283,6 +287,8 @@ const est = computed(() => {
 const health = (hf) => (hf >= 1.8 ? ['ok', 'Safe'] : hf >= 1.3 ? ['warn', 'Medium'] : ['bad', 'Risky'])
 const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances[coll.value.token_id] ?? 0) * p) / 100, inputDecimals.value)) }
 
+const USER_REASONS = new Set(['borrow-capacity-exceeded', 'projected-ltv-cap', 'leverage-cap', 'price-impact-cap', 'slippage-cap', 'stale-quote',
+  'stale-oracle', 'risk-data-unavailable', 'swap-quotes-unavailable', 'market-data-stale', 'quote-unavailable', 'loop-preview-stale'])
 const quoted = computed(() => previewIsCurrent.value && !!preview.value)
 // The preview needs only an amount; opening also needs the Kamino setup and no blocker.
 const status = computed(() => {
@@ -295,9 +301,11 @@ const status = computed(() => {
   if (setupLoading.value) return 'Checking Kamino setup…'
   if (setupRequired.value) return 'Complete the one-time Kamino setup to open it.'
   if (!quoted.value) return previewError.value ?? 'Getting a quote…'
-  // The market can't lend that much right now: say how much it can, before the click.
-  const capacity = entryBlockers.value.find((reason) => reason.code === 'borrow-capacity-exceeded')
-  if (capacity) return capacity.message
+  // Reasons the user can act on (amount, leverage, a moving quote) are shown as they are, before the click; release and
+  // configuration gates stay behind the generic sentence.
+  const shown = entryBlockers.value.find((reason) => USER_REASONS.has(reason.code))
+  if (shown) return shown.message
+  if (entryBlockers.value.some((reason) => reason.code === 'carry-acknowledgement-required')) return 'Confirm the rate notice above to open this loop.'
   if (entryBlockers.value.length) return localForkMode.value ? 'This loop can\'t be opened on the local fork right now.' : 'Loops aren\'t open on Nysa yet.'
   return null
 })

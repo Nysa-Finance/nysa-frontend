@@ -26,8 +26,12 @@ assert.equal(landed.calls.length, 3, 'recent-cache miss triggers historical look
 assert.equal(landed.calls[1].config.searchTransactionHistory, true)
 
 const rejected = await runHistorical('old-failed', failed)
-assert.deepEqual(rejected.result, { status: 'failed', error: JSON.stringify(failed.err) })
-assert.equal(rejected.calls.length, 2, 'historical failure is definitive and needs no transaction-detail fetch')
+assert.deepEqual(rejected.result, { status: 'failed', error: JSON.stringify(failed.err) }, 'unreadable logs keep the raw chain error')
+assert.equal(rejected.calls.length, 3, 'historical failure reads the transaction logs to explain itself')
+
+const slipped = await runHistorical('slipped', { slot: 44, err: { InstructionError: [2, { Custom: 6001 }] }, confirmationStatus: 'confirmed' },
+  { slot: 44, meta: { logMessages: ['Program JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4 failed: custom program error: 0x1771'] } })
+assert.match(slipped.result.error, /slippage/, 'a failed swap reports its reason instead of a raw instruction error')
 
 const unknown = await runHistorical('never-seen', null)
 assert.deepEqual(unknown.result, { status: 'pending' }, 'no recent or historical record remains pending, never assumed failed')

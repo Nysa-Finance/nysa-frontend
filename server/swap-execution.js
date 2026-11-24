@@ -10,6 +10,7 @@ import { fetchAddressLookupTable } from '@solana-program/address-lookup-table'
 import { TOKENS } from '../src/config.js'
 import { ataOf } from './account.js'
 import { rpc } from './rpc.js'
+import { chainError } from './errors.js'
 import { parseSwapQuoteRequest, publicSwapQuote, SWAP_QUOTE_MAX_AGE_MS } from './swap-routes.js'
 import { evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
 import { TransactionIntentError } from './tx-intent.js'
@@ -785,7 +786,7 @@ export async function simulateSwapTransaction({ request, built, compiled, rpcCli
   const simulation = response?.value
   if (!simulation || simulation.err) {
     const hint = (simulation?.logs ?? []).find((line) => /error|failed/i.test(line))
-    throw new SwapExecutionError(`Swap simulation failed${hint ? `: ${hint.replace(/^Program log: /, '')}` : '.'}`)
+    throw new SwapExecutionError(chainError(simulation?.logs, simulation?.err) ?? `Swap simulation failed${hint ? `: ${hint.replace(/^Program log: /, '')}` : '.'}`)
   }
   if (!Array.isArray(simulation.accounts) || simulation.accounts.length !== simulationAccounts.length) {
     throw new SwapExecutionError('Swap simulation returned incomplete token-account balances.')

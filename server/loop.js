@@ -531,7 +531,16 @@ export function buildLoopPreview({
     || (strategy?.carry?.requiresAcknowledgement === true
       && unavailableReasons.length > 0
       && unavailableReasons.every((item) => item?.code === 'carry-acknowledgement-required'))
-  for (const violation of violations) unavailableReasons.push({ code: violation, message: 'The preview cannot confirm that this request is within the current loop risk limits.' })
+  const riskMessages = {
+    'projected-ltv-cap': `At this leverage the loan would pass Kamino's ${Number(ltvLimitPct)}% LTV limit once swap costs are counted. Lower the leverage a little.`,
+    'leverage-cap': `Loops go up to ${DEFAULT_LOOP_LIMITS.maxLeverage}x.`,
+    'price-impact-cap': `This size would move the pool price by more than ${DEFAULT_LOOP_LIMITS.maxPriceImpactPct}%. Try a smaller amount or lower leverage.`,
+    'slippage-cap': 'The swap needs more slippage than loops allow right now. Try a smaller amount or lower leverage.',
+    'stale-quote': 'The quote is refreshing. Try again in a moment.',
+    'stale-oracle': 'Kamino\'s price feed for this market is refreshing. Try again in a few seconds.',
+    'risk-data-unavailable': 'Market risk data is still loading. Try again in a few seconds.',
+  }
+  for (const violation of violations) unavailableReasons.push({ code: violation, message: riskMessages[violation] })
   if (fees.length !== 1) unavailableReasons.push({ code: 'swap-quotes-unavailable', message: 'The loop swap needs a fee-aware provider quote.' })
   const preview = {
     available: strategyExecutionEligible && violations.length === 0 && fees.length === 1,

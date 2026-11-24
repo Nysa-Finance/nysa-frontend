@@ -31,6 +31,7 @@ import { LOOP_PROGRAMS } from './program-policy.js'
 import { DefiniteSendRefusal, SendOutcomeUnknownError } from './send-safety.js'
 import { createLoopExecutionService, LoopExecutionError } from './loop-execution.js'
 import { compileAtomicTransaction } from './tx.js'
+import { explain, isTransient } from './errors.js'
 import { PROGRAM_ID as KAMINO_LENDING_PROGRAM_ID } from '@kamino-finance/klend-sdk'
 import { createLocalForkRouteVerifier, isLocalForkWallet, localForkExecutionEnabled, localForkTreasuryAuthority } from './local-fork-execution.js'
 
@@ -452,8 +453,8 @@ const routes = [
             return send(res, status, { error: error.message })
           }
           if (error instanceof SwapError) return send(res, 502, { error: error.message })
-          console.error('[swap] quote failed', error?.message)
-          return send(res, 502, { error: 'Could not load a swap quote, please try again.' })
+          const { status, error: message } = explain(error, 'swap quote', 'Could not load a swap quote, please try again.')
+          return send(res, status, { error: message })
         }
       })
     } catch (error) {
@@ -479,8 +480,8 @@ const routes = [
       if (error instanceof SwapExecutionError) return send(res, 503, { error: error.message })
       if (error instanceof SwapRouteError) return send(res, 503, { error: error.message })
       if (error instanceof SwapError) return send(res, 502, { error: error.message })
-      console.error('[swap] build failed', error?.message)
-      return send(res, 502, { error: 'Could not build a swap transaction, please try again.' })
+      const { status, error: message } = explain(error, 'swap build', 'Could not build a swap transaction, please try again.')
+      return send(res, status, { error: message })
     }
   }],
   ['POST', /^\/api\/swap-send$/, async (req, res) => {
@@ -494,8 +495,8 @@ const routes = [
       if (error instanceof SendOutcomeUnknownError) return send(res, 502, { error: error.message, signature: error.signature, outcome: 'unknown' })
       if (error instanceof SwapExecutionError) return send(res, 400, { error: error.message })
       if (error instanceof UserError) throw error
-      console.error('[swap] relay failed', error?.message)
-      return send(res, 502, { error: 'Could not relay the signed swap, please rebuild it and try again.' })
+      const { error: message } = explain(error, 'swap relay', 'Could not relay the signed swap, please rebuild it and try again.', 'The Solana network connection is busy right now, so nothing was sent. Rebuild it and try again.')
+      return send(res, 502, { error: message })
     }
   }],
   ['GET', /^\/api\/loop-strategies$/, (req, res) => {
@@ -541,12 +542,19 @@ const routes = [
     try {
       return await runWithRequestAbortSignal(req, res, async (signal) => {
         try {
-          const preview = await buildReadOnlyLoopPreview({
+          const previewOnce = () => buildReadOnlyLoopPreview({
             marketId: body.marketId, wallet: body.wallet, fundingAmount: body.fundingAmount, leverage: Number(body.leverage), snapshot, strategy, signal,
             localForkSimulation: localForkDappEnabled && isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL }),
             localForkRpcUrl: RPC_URL,
             localRouteProgramVerifier: verifyLocalForkRoute,
             onApplicationContext: (context) => { applicationContext = context },
+          })
+          // Back-to-back quotes (the auto-refresh, then the fresh one taken on click) can hit the provider's rate limit:
+          // a read-only preview is safe to ask once more.
+          const preview = await previewOnce().catch(async (error) => {
+            if (!isTransient(error) || signal.aborted) throw error
+            await new Promise((resolve) => setTimeout(resolve, 1500))
+            return previewOnce()
           })
           if (signal.aborted || res.destroyed) return
           const actionReadiness = evaluateLoopActionReadiness({
@@ -591,7 +599,7 @@ const routes = [
             readOnly: true,
             executionEnabled: false,
             available: false,
-            unavailableReasons: [...strategy.unavailableReasons, { code: 'quote-unavailable', message: 'Live fee-aware route or Kamino preview is unavailable.' }],
+            unavailableReasons: [...strategy.unavailableReasons, { code: 'quote-unavailable', message: 'Couldn\'t get a live swap quote right now. Try again in a moment.' }],
           })
         }
       })
@@ -658,8 +666,8 @@ const routes = [
         if (error instanceof LoopPreviewError) return send(res, 409, { error: error.message }) // e.g. a loop is already open
         // The simulation's own reason, already worded for the user (e.g. the market's liquidity or borrowing limit).
         if (error instanceof UserError) return send(res, 409, { error: error.message })
-        console.error('[loop] atomic build failed', error?.message)
-        return send(res, 503, { error: 'Atomic loop transaction building is unavailable; no transaction was handed to the wallet.' })
+        const { status, error: message } = explain(error, 'loop build', 'Could not prepare the loop transaction; nothing was sent to your wallet.')
+        return send(res, status, { error: message })
       }
     }
     try {
@@ -671,8 +679,8 @@ const routes = [
       }))
     } catch (e) {
       if (e instanceof UserError) throw e
-      console.error('[tx] build failed', b.kind, e) // details stay in the logs (RPC errors can carry provider info)
-      send(res, 502, { error: 'Could not build the transaction, please try again.' })
+      const { status, error: message } = explain(e, `tx build ${b.kind}`, 'Could not build the transaction, please try again.')
+      send(res, status, { error: message })
     }
   }],
   ['POST', /^\/api\/loop-send$/, async (req, res) => {
@@ -688,8 +696,8 @@ const routes = [
       if (error instanceof DefiniteSendRefusal) return send(res, 400, { error: error.message, outcome: 'rejected' })
       if (error instanceof SendOutcomeUnknownError) return send(res, 502, { error: error.message, signature: error.signature, outcome: 'unknown' })
       if (error instanceof LoopExecutionError) return send(res, error.status, { error: error.message, ...(error.unavailableReasons.length ? { unavailableReasons: error.unavailableReasons } : {}) })
-      console.error('[loop] authorized relay failed', error?.message)
-      return send(res, 502, { error: 'Could not relay the authorized loop transaction; its outcome may be unknown.' })
+      const { error: message } = explain(error, 'loop relay', 'Could not relay the authorized loop transaction; its outcome may be unknown.', 'The Solana network connection is busy right now, so nothing was sent. Rebuild it and try again.')
+      return send(res, 502, { error: message })
     }
   }],
   ['POST', /^\/api\/tx\/send$/, async (req, res) => {
@@ -829,8 +837,8 @@ const server = http.createServer(async (req, res) => {
     await serveStatic(pathname === '/' ? '/index.html' : pathname, res)
   } catch (e) {
     if (e instanceof UserError) return send(res, 400, { error: e.message })
-    console.error('[server]', req.method, req.url, e)
-    if (!res.headersSent) send(res, 500, { error: 'Internal error' })
+    const { status, error: message } = explain(e, `server ${req.method} ${req.url}`, 'Something went wrong on our side.')
+    if (!res.headersSent) send(res, status === 502 ? 500 : status, { error: message })
     else res.end()
   }
 })
