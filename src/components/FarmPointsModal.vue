@@ -68,10 +68,10 @@ onUnmounted(() => removeEventListener('keydown', onKey))
 .fp-modal { max-width: 560px; }
 .fp-you { display: flex; align-items: center; gap: 24px; margin: 20px 0 16px; padding: 16px 18px; border: 1px solid var(--n-line); border-radius: 4px; background: #000; min-height: 62px; }
 .fp-you.ranked { border-color: #ec008c73; background: #ec008c0f; }
-.fp-you-rank { font-size: 26px; font-weight: 600; color: var(--n-pink); }
+.fp-you-rank { font-size: 28px; font-weight: 600; color: var(--n-pink); }
 .fp-you-k { color: var(--n-text-3); font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
-.fp-you-v { font-size: 20px; font-weight: 600; margin-top: 2px; }
-.fp-you-v.sm { font-size: 16px; color: var(--n-text-2); }
+.fp-you-v { font-size: 22px; font-weight: 600; margin-top: 2px; }
+.fp-you-v.sm { font-size: 15px; color: var(--n-text-2); }
 .fp-you-note { color: var(--n-text-3); font-size: 13px; }
 .fp-connect { color: var(--n-pink); font-weight: 500; }
 .fp-connect:hover { text-decoration: underline; }
@@ -87,7 +87,7 @@ onUnmounted(() => removeEventListener('keydown', onKey))
 .fp-addr { display: flex; align-items: center; gap: 8px; }
 .fp-link { color: var(--n-text-2); font-family: var(--mono); font-size: 13px; }
 .fp-link:hover { color: var(--n-pink); text-decoration: underline; }
-.fp-tag { padding: 1px 7px; border: 1px solid rgba(236,0,140,.45); border-radius: 999px; background: #ec008c1f; color: var(--n-pink); font-size: 10px; font-weight: 600; }
-.fp-foot { margin-top: 14px; color: var(--n-text-4); font-size: 11.5px; text-align: right; }
+.fp-tag { padding: 1px 7px; border: 1px solid rgba(236,0,140,.45); border-radius: 999px; background: #ec008c1f; color: var(--n-pink); font-size: 11px; font-weight: 600; }
+.fp-foot { margin-top: 14px; color: var(--n-text-4); font-size: 12px; text-align: right; }
 .fp-foot .warn { color: var(--n-amber); }
 </style>

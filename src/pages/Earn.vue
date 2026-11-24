@@ -91,9 +91,9 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
 .ea-card:hover, .ea-card:focus-visible { border-color: var(--n-line-2); }
 .ea-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-bottom: 18px; border-bottom: 1px solid var(--n-line); }
 .ea-head .vault-id { align-items: flex-start; }
-.ea-head .name { font-size: 17px; white-space: nowrap; line-height: 32px; }
+.ea-head .name { font-size: 18px; white-space: nowrap; line-height: 32px; }
 .arrow { margin-left: 4px; color: var(--n-text-3); font-weight: 400; }
-.ea-apy { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ea-apy { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ea-apy .k { font-size: 11px; font-weight: 400; }
 .k { color: var(--n-text-3); }
 .ea-rows { padding-top: 8px; }

@@ -146,7 +146,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
 .addr-link { display: inline-flex; align-items: center; gap: 8px; min-width: 0; transition: color .15s; }
 .addr-link:hover { color: var(--n-pink); }
 .ext { color: var(--n-text-3); font-size: 12px; }
-.addr-full, .addr-short { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+.addr-full, .addr-short { font-family: var(--mono); font-size: 13px; white-space: nowrap; }
 .addr-short { display: none; }
 @media (max-width: 1320px) { .addr-full { display: none; } .addr-short { display: inline; } }
 @media (max-width: 860px) {

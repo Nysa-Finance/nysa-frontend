@@ -80,8 +80,8 @@ const C = 90, R = 84, RI = 56
 .ex-chart svg { width: 100%; height: 100%; }
 .ex-chart path { transition: opacity .15s; cursor: default; }
 .ex-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; pointer-events: none; padding: 0 44px; }
-.ex-center b { font-size: 20px; font-weight: 600; }
-.ex-center span { font-size: 11.5px; color: var(--n-text-3); margin-top: 2px; }
+.ex-center b { font-size: 22px; font-weight: 600; }
+.ex-center span { font-size: 12px; color: var(--n-text-3); margin-top: 2px; }
 .ex-legend { list-style: none; display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 200px; }
 .ex-legend li { display: flex; align-items: center; gap: 10px; font-size: 14px; }
 .ex-legend i, .dot { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; display: inline-block; }
@@ -91,7 +91,7 @@ const C = 90, R = 84, RI = 56
 .n-thead { font-size: 11px; padding: 14px 20px; }
 .n-tr.sm { padding: 14px 20px; font-size: 14px; }
 .ex-grid { grid-template-columns: 1.6fr .9fr .9fr .9fr 1fr .9fr; }
-.cap { display: block; font-size: 11.5px; color: var(--n-text-4); }
+.cap { display: block; font-size: 12px; color: var(--n-text-4); }
 .ex-link:hover { color: var(--n-pink); }
 .mono { font-family: var(--mono); font-size: 13px; }
 .hint { margin-top: 12px; color: var(--n-text-4); font-size: 12px; line-height: 1.6; }
