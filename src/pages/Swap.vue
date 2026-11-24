@@ -15,6 +15,7 @@ const route = useRoute()
 // Loan token first, so the page opens on buying collateral.
 const PAIRS = LIVE.flatMap((market) => market.pairs ?? []).flatMap(({ collateral, liability }) => [[liability, collateral], [collateral, liability]])
 const tokens = [...new Set(PAIRS.map(([id]) => id))].map((id) => TOKENS[id])
+const COLLATERAL = new Set(LIVE.flatMap((market) => market.pairs.map((pair) => pair.collateral)))
 const inputId = ref(tokens.some((token) => token.token_id === route.query.input) ? route.query.input : tokens[0].token_id)
 const outputId = ref(route.query.output)
 const outputs = computed(() => [...new Set(PAIRS.filter(([id]) => id === inputId.value).map(([, id]) => id))].map((id) => TOKENS[id]))
@@ -54,7 +55,8 @@ const action = computed(() => {
   if (!amountBaseUnits.value) return { label: 'Enter an amount' }
   if (insufficient.value) return { label: `Insufficient ${input.value.name}` }
   if (!quote.value) return { label: quoting.value ? 'Finding the best route…' : 'No route available' }
-  return { label: 'Swap', run: swap }
+  // The submit names the outcome: buying collateral, or selling it back.
+  return { label: COLLATERAL.has(output.value.token_id) ? `Buy ${output.value.name}` : `Sell ${input.value.name}`, run: swap }
 })
 
 async function readJson(path, init) {
@@ -175,11 +177,9 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
 
     <div class="row bar">
       <span v-if="quote" class="chip">1 {{ input.name }} ≈ {{ rate.toFixed(4) }} {{ output.name }}</span><span v-else />
-      <label class="chip">Slippage
-        <select v-model.number="slippageBps" :disabled="busy" aria-label="Maximum slippage">
-          <option v-for="bps in SLIPPAGES" :key="bps" :value="bps">{{ (bps / 100).toFixed(2) }}%</option>
-        </select>
-      </label>
+      <span class="slip n-quick" role="group" aria-label="Maximum slippage"><span>Slippage</span>
+        <button v-for="bps in SLIPPAGES" :key="bps" :class="{ on: slippageBps === bps }" :aria-pressed="slippageBps === bps" :disabled="busy" @click="slippageBps = bps">{{ bps / 100 }}%</button>
+      </span>
     </div>
 
     <button class="n-btn-block" :disabled="!action.run" @click="action.run?.()">{{ action.label }}</button>
@@ -208,14 +208,16 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
 .row.small .n-quick button { padding: 3px 10px; }
 .token select { color: var(--n-text); font-weight: 600; cursor: pointer; }
 .token select option { background: var(--n-bg-2); }
-.token { display: inline-flex; align-items: center; gap: 8px; color: var(--n-text); font-size: 17px; font-weight: 600; }
-.box input, .box output { min-width: 0; width: 100%; text-align: right; color: var(--n-text); font-size: 26px; font-variant-numeric: tabular-nums; outline: 0; }
+.token { display: inline-flex; align-items: center; gap: 8px; color: var(--n-text); font-size: 18px; font-weight: 600; }
+.box input, .box output { min-width: 0; width: 100%; text-align: right; color: var(--n-text); font-size: 22px; font-variant-numeric: tabular-nums; outline: 0; } /* the amount style */
 .box output.dim { color: var(--n-text-4); }
 .flip { align-self: center; margin: -18px 0; z-index: 1; width: 36px; height: 36px; border: 1px solid var(--n-line-2); border-radius: 999px; background: var(--n-bg-3); color: var(--n-text-2); font-size: 18px; }
 .flip:hover:not(:disabled) { color: var(--n-pink); border-color: var(--n-pink); }
 .bar { margin: 4px 0; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--n-line-2); border-radius: 999px; color: var(--n-text-2); font-size: 12px; }
-.chip select { color: var(--n-text); background: var(--n-bg-2); cursor: pointer; }
+.slip { align-items: center; color: var(--n-text-3); font-size: 12px; }
+.slip > span { margin-right: 2px; }
+.slip button { flex: none; padding: 4px 12px; }
 .reasons { padding-left: 18px; }
 .details { display: grid; gap: 8px; margin-top: 8px; padding: 14px 16px; border: 1px solid var(--n-line); border-radius: 12px; }
 </style>

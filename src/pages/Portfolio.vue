@@ -112,7 +112,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
     <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
   </div>
   <div v-if="state.swapVisible && loanPair" class="n-banner swap-portfolio-cta">
-    Want {{ tok(loanPair.collateral).name }} after borrowing {{ tok(loanPair.liability).name }}? <RouterLink :to="{ name: 'swap', query: { input: loanPair.liability, output: loanPair.collateral } }" class="link">Swap {{ tok(loanPair.liability).name }} to {{ tok(loanPair.collateral).name }}</RouterLink>.
+    Want {{ tok(loanPair.collateral).name }} after borrowing {{ tok(loanPair.liability).name }}? <RouterLink :to="{ name: 'swap', query: { input: loanPair.liability, output: loanPair.collateral } }" class="link">Buy {{ tok(loanPair.collateral).name }} →</RouterLink>
     Locked collateral is never used for a swap.
   </div>
 
@@ -168,7 +168,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
 .swap-portfolio-cta { line-height: 1.6; }
 .loop-position-panel { margin: 22px 0; }
 .loop-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
-.loop-heading h2 { margin: 0 0 6px; font-size: 17px; }
+.loop-heading h2 { margin: 0 0 6px; font-size: 18px; }
 .loop-heading p { margin: 0; }
 .loop-position-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr .7fr auto; gap: 16px; align-items: center; padding: 14px 0; border-top: 1px solid var(--n-border); }
 .loop-market { font-weight: 600; }

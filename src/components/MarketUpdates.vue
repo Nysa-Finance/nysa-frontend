@@ -37,7 +37,7 @@ const when = (ts) => new Date(ts * 1000).toLocaleString('en-US', { month: 'short
 .n-tr.sm { padding: 14px 20px; font-size: 14px; }
 .mu-action { font-weight: 500; overflow-wrap: anywhere; }
 .mu-value { color: var(--n-text-2); font-weight: 400; }
-.mu-link { font-family: var(--mono); font-size: 12.5px; color: var(--n-text-2); white-space: nowrap; }
+.mu-link { font-family: var(--mono); font-size: 13px; color: var(--n-text-2); white-space: nowrap; }
 .mu-link:hover { color: var(--n-pink); }
 .mu-more { margin-top: 14px; }
 .hint { margin-top: 12px; color: var(--n-text-4); font-size: 12px; line-height: 1.6; }
