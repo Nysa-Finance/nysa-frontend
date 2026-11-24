@@ -132,7 +132,7 @@ async function submitRepay() {
       <div class="n-rule" style="padding-top: 20px">
         <div class="n-kv" style="margin-bottom: 12px"><span class="k">Collateral value</span><span class="v">{{ usdFull(collUsd) }}</span></div>
         <div class="n-kv" style="margin-bottom: 10px"><span class="k">Loan-to-Value</span><span class="v accent">{{ pct(ltv, 1) }}</span></div>
-        <input class="slider" type="range" min="0" :max="Math.max(maxLtv, 1)" step="0.5" :value="Math.min(ltv, maxLtv)" :disabled="collUsd <= 0" @input="setLtv(+$event.target.value)" />
+        <input class="slider" type="range" min="0" :max="Math.max(maxLtv, 1)" step="0.5" :value="Math.min(ltv, maxLtv)" :disabled="collUsd <= 0" :style="{ '--fill': `${(Math.min(ltv, maxLtv) / Math.max(maxLtv, 1)) * 100}%` }" @input="setLtv(+$event.target.value)" />
         <div class="scale"><span>0%</span><span>Max {{ pct(maxLtv, 0) }}</span></div>
       </div>
 
@@ -187,8 +187,6 @@ async function submitRepay() {
 .buy { margin: -10px 0 22px; }
 .buy a { color: var(--n-pink); font-weight: 500; white-space: nowrap; }
 .buy a:hover { text-decoration: underline; }
-.slider { width: 100%; accent-color: var(--m1); }
-.slider:disabled { opacity: .4; }
 .to-withdraw { margin-top: 20px; padding-top: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--n-text-3); }
 .to-withdraw a { color: var(--n-pink); font-weight: 500; width: fit-content; }
 .to-withdraw a:hover { text-decoration: underline; }
