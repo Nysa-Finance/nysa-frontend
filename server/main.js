@@ -195,6 +195,10 @@ const overLoopCap = (amount, marketId) => {
   const price = Number(getSnapshot()?.reserves?.[marketId]?.[collateral]?.price) || TOKENS[collateral].price
   return Number(amount) * price > LOOP_MAX_FUNDING
 }
+// A loop is funded in its collateral, so an amount may carry up to that token's decimals (oTFY has 9), as the panel
+// lets you type and as Jupiter truncates: more would not fit in base units.
+const loopAmountValid = (amount, marketId) => typeof amount === 'string'
+  && new RegExp(`^\\d+(?:\\.\\d{1,${TOKENS[loopByMarket(marketId).collateral].decimals}})?$`).test(amount)
 const LOOP_CAP_ERROR = () => `Loops are capped at $${LOOP_MAX_FUNDING} during the beta.`
 
 // A `priceYield` collateral (USDY) earns through its price, not Kamino's supply APR, so the loop's carry adds it: the
@@ -521,7 +525,7 @@ const routes = [
     if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
     if (!loopOpenTo(body.wallet, body.marketId)) return send(res, 403, LOOP_NOT_ENABLED)
     if (overLoopCap(body.fundingAmount, body.marketId)) throw new UserError(LOOP_CAP_ERROR())
-    if (typeof body.fundingAmount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(body.fundingAmount)) throw new UserError('Invalid funding amount')
+    if (!loopAmountValid(body.fundingAmount, body.marketId)) throw new UserError('Invalid funding amount')
     if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage) throw new UserError('Funding amount or leverage is outside the preview range')
     const snapshot = getSnapshot()
     const strategy = loopStrategyForAction(snapshot, body.marketId, Number(body.leverage))
@@ -624,7 +628,7 @@ const routes = [
         return send(res, 503, { error: 'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.' })
       }
       if (!loopByMarket(b.market)) throw new UserError('Unknown loop strategy')
-      if (b.kind === 'loop-open' && (typeof b.amount !== 'string' || !/^\d+(?:\.\d{1,6})?$/.test(b.amount)
+      if (b.kind === 'loop-open' && (!loopAmountValid(b.amount, b.market)
         || !Number.isFinite(Number(b.amount)) || Number(b.amount) <= 0
         || !Number.isFinite(Number(b.leverage)) || Number(b.leverage) <= 1 || Number(b.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage)) {
         throw new UserError('Funding amount or leverage is outside the loop range')
