@@ -287,7 +287,7 @@ const est = computed(() => {
 const health = (hf) => (hf >= 1.8 ? ['ok', 'Safe'] : hf >= 1.3 ? ['warn', 'Medium'] : ['bad', 'Risky'])
 const setPct = (p) => { fundingAmount.value = String(floorTo(((state.balances[coll.value.token_id] ?? 0) * p) / 100, inputDecimals.value)) }
 
-const USER_REASONS = new Set(['borrow-capacity-exceeded', 'projected-ltv-cap', 'leverage-cap', 'price-impact-cap', 'slippage-cap', 'stale-quote',
+const USER_REASONS = new Set(['borrow-capacity-exceeded', 'flash-liquidity-exceeded', 'projected-ltv-cap', 'leverage-cap', 'price-impact-cap', 'slippage-cap', 'stale-quote',
   'stale-oracle', 'risk-data-unavailable', 'swap-quotes-unavailable', 'market-data-stale', 'quote-unavailable', 'loop-preview-stale'])
 const quoted = computed(() => previewIsCurrent.value && !!preview.value)
 // The preview needs only an amount; opening also needs the Kamino setup and no blocker.

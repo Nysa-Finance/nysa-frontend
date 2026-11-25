@@ -1487,12 +1487,19 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
   })
   const needed = n(sdkPreview.initialInputs.calcs.debtTokenToBorrow) * (1 + n(debtReserve.getBorrowFee()))
   result.borrowCapacity = capacity
-  if (needed > capacity) {
-    const fits = leverageWithin(capacity, needed, Number(leverage))
+  // Multiply flash-borrows the collateral itself (flashBorrowType 'coll'), so the collateral reserve must hold that much
+  // right now too: a collateral-only reserve holds just its depositors' tokens (Kamino 6008 otherwise, at the build).
+  const flashAvailable = n(collReserve.getLiquidityAvailableAmount()) / n(collReserve.getMintFactor())
+  const flashNeeded = n(sdkPreview.initialInputs.calcs.flashBorrowInCollToken)
+  const blocked = (code, have, need, name, intro) => {
+    // Swap costs grow a little faster than leverage: suggest against 98% of what is there, so the suggestion fits.
+    const fits = leverageWithin(have * 0.98, need, Number(leverage))
     result.available = false
-    result.unavailableReasons = [...(result.unavailableReasons ?? []), { code: 'borrow-capacity-exceeded',
-      message: `Kamino can lend at most ${capacity.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${liability.name} in this market right now${fits >= 1.1 ? `: try ${fits}× or less, or a smaller amount.` : '. Try again later.'}` }]
+    result.unavailableReasons = [...(result.unavailableReasons ?? []), { code,
+      message: `${intro} ${have.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${name} in this market right now${fits >= 1.1 ? `: try ${fits}× or less, or a smaller amount.` : '. Try again later.'}` }]
   }
+  if (needed > capacity) blocked('borrow-capacity-exceeded', capacity, needed, liability.name, 'Kamino can lend at most')
+  else if (flashNeeded > flashAvailable) blocked('flash-liquidity-exceeded', flashAvailable, flashNeeded, collateral.name, 'To build this loop Kamino lends the collateral for a moment, and it has only')
   if (typeof onApplicationContext === 'function' && wallet) {
     await onApplicationContext({
       wallet,
