@@ -106,7 +106,7 @@ services:
 
   plausible_events_db:
     # Plausible CE ships 24.12; this data already ran on 26.6 (Dependabot), and going back two majors is riskier than staying.
-    image: clickhouse/clickhouse-server:26.10.4.207-alpine@sha256:4c6cdbec53caac1e8c12be4bd618039c3d46d3f7a9471d8b23b59229c3605340
+    image: clickhouse/clickhouse-server:26.10.11.12-alpine@sha256:6a9dfe0692beb44dc9538dd7f5c234b646113ef9f06f7faf2533659338358bc6
     environment:
       CLICKHOUSE_SKIP_USER_SETUP: 1
     volumes:
