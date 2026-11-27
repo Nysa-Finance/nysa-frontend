@@ -1,8 +1,7 @@
-import { getTransactionDecoder, isAddress } from '@solana/kit'
+import { TRANSACTION_SIZE_LIMIT, getTransactionDecoder, isAddress } from '@solana/kit'
 import { createSwapIntentStore, TransactionIntentError } from './tx-intent.js'
 import { loopByMarket } from '../src/config.js'
 
-const MAX_TX_BYTES = 1232
 const ACTIONS = new Set(['loop-open', 'loop-close', 'loop-setup'])
 const messageDecoder = getTransactionDecoder()
 
@@ -139,7 +138,7 @@ export function createLoopExecutionService({
       market: context.market,
     })
     if (typeof compiled?.tx !== 'string' || !(compiled.messageBytes instanceof Uint8Array)
-      || !Number.isSafeInteger(compiled.size) || compiled.size <= 0 || compiled.size > MAX_TX_BYTES) {
+      || !Number.isSafeInteger(compiled.size) || compiled.size <= 0 || compiled.size > TRANSACTION_SIZE_LIMIT) {
       throw new LoopExecutionError('Atomic loop transaction could not be compiled within Solana transaction limits.', { status: 503 })
     }
     const simulation = await simulate({ ...context, built, compiled, request: body })

@@ -1,14 +1,18 @@
 import {
   AccountRole, address, appendTransactionMessageInstructions, compressTransactionMessageUsingAddressLookupTables,
   compileTransaction, createTransactionMessage, fetchEncodedAccounts, getBase64EncodedWireTransaction,
-  getAddressDecoder, getCompiledTransactionMessageDecoder, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash,
+  getCompiledTransactionMessageDecoder, getTransactionDecoder, getTransactionEncoder, pipe, setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash, TRANSACTION_SIZE_LIMIT,
 } from '@solana/kit'
-import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
+import { TOKEN_PROGRAM_ADDRESS, getTokenDecoder } from '@solana-program/token'
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
 import { fetchAddressLookupTable } from '@solana-program/address-lookup-table'
+import {
+  COMPUTE_BUDGET_PROGRAM_ADDRESS, ComputeBudgetInstruction,
+  getSetComputeUnitLimitInstructionDataDecoder, getSetComputeUnitPriceInstructionDataDecoder,
+} from '@solana-program/compute-budget'
 import { TOKENS } from '../src/config.js'
-import { ataOf } from './account.js'
+import { TOKEN_PROGRAMS, ataOf } from './account.js'
 import { rpc } from './rpc.js'
 import { chainError } from './errors.js'
 import { parseSwapQuoteRequest, publicSwapQuote, SWAP_QUOTE_MAX_AGE_MS } from './swap-routes.js'
@@ -16,15 +20,15 @@ import { evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-pol
 import { TransactionIntentError } from './tx-intent.js'
 import { FEE_BPS } from './swap.js'
 
-const MAX_TX_BYTES = 1232
 const SYSTEM_PROGRAM = '11111111111111111111111111111111'
 const RENT_SYSVAR = 'SysvarRent111111111111111111111111111111111'
-const TOKEN_PROGRAMS = new Set([String(TOKEN_PROGRAM_ADDRESS), String(TOKEN_2022_PROGRAM_ADDRESS)])
 const ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
 // Token-2022 only for the mints config.js marks `token2022` (sUSDai, whose transfer hook is unset). A hook would add
 // accounts to WhirlpoolSwapV2, which its fixed account count refuses.
 const tokenProgramOf = (mint) => (Object.values(TOKENS).some((t) => t.mint === String(mint) && t.token2022) ? TOKEN_2022_PROGRAM_ADDRESS : TOKEN_PROGRAM_ADDRESS)
-const COMPUTE_BUDGET_PROGRAM = 'ComputeBudget111111111111111111111111111111'
+const { SetComputeUnitLimit: SET_CU_LIMIT, SetComputeUnitPrice: SET_CU_PRICE } = ComputeBudgetInstruction
+const computeUnitLimit = (data) => getSetComputeUnitLimitInstructionDataDecoder().decode(data).units
+const computeUnitPrice = (data) => getSetComputeUnitPriceInstructionDataDecoder().decode(data).microLamports
 const JUPITER_V6_PROGRAM = 'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4'
 const JUPITER_V6_EVENT_AUTHORITY = 'D8cy77BBepLMngZx6ZukaTff5hCt1HrWyKk3Hnd9oitf'
 const JUPITER_ROUTE_V2_DISCRIMINATOR = Buffer.from('bb64facc31c4af14', 'hex')
@@ -97,11 +101,11 @@ function instructionEquals(left, right) {
 function validateComputeBudgetInstruction(instruction, seen) {
   if (instruction.accounts.length !== 0 || instruction.data.length === 0) throw new SwapExecutionError('Swap route contains malformed compute-budget instructions.')
   const [opcode] = instruction.data
-  if (opcode === 2 && instruction.data.length === 5 && !seen.limit) {
-    const units = new DataView(instruction.data.buffer, instruction.data.byteOffset, instruction.data.byteLength).getUint32(1, true)
+  if (opcode === SET_CU_LIMIT && instruction.data.length === 5 && !seen.limit) {
+    const units = computeUnitLimit(instruction.data)
     if (units <= 0 || units > MAX_COMPUTE_UNITS) throw new SwapExecutionError('Swap route compute-unit limit is outside Solana bounds.')
     seen.limit = true
-  } else if (opcode === 3 && instruction.data.length === 9 && !seen.price) {
+  } else if (opcode === SET_CU_PRICE && instruction.data.length === 9 && !seen.price) {
     seen.price = true
   } else {
     throw new SwapExecutionError('Swap route contains an unsupported or duplicate compute-budget instruction.')
@@ -110,29 +114,13 @@ function validateComputeBudgetInstruction(instruction, seen) {
 
 const roleIs = (meta, role) => meta?.role === role
 
-function readRouteByte(data, cursor, label) {
-  if (cursor.offset >= data.length) throw new SwapExecutionError(`Jupiter V6 route data is truncated at ${label}.`)
-  return data[cursor.offset++]
-}
+const DATA_VIEW_READERS = { 1: 'getUint8', 2: 'getUint16', 4: 'getUint32', 8: 'getBigUint64' }
 
-function readRouteU32(data, cursor, label) {
-  if (cursor.offset + 4 > data.length) throw new SwapExecutionError(`Jupiter V6 route data is truncated at ${label}.`)
-  const value = new DataView(data.buffer, data.byteOffset + cursor.offset, 4).getUint32(0, true)
-  cursor.offset += 4
-  return value
-}
-
-function readRouteU16(data, cursor, label) {
-  if (cursor.offset + 2 > data.length) throw new SwapExecutionError(`Jupiter V6 route data is truncated at ${label}.`)
-  const value = new DataView(data.buffer, data.byteOffset + cursor.offset, 2).getUint16(0, true)
-  cursor.offset += 2
-  return value
-}
-
-function readRouteU64(data, cursor, label) {
-  if (cursor.offset + 8 > data.length) throw new SwapExecutionError(`Jupiter V6 route data is truncated at ${label}.`)
-  const value = new DataView(data.buffer, data.byteOffset + cursor.offset, 8).getBigUint64(0, true)
-  cursor.offset += 8
+// Reads the next little-endian integer of `size` bytes from the Jupiter route data and moves the cursor past it.
+function readRoute(data, cursor, size, label) {
+  if (cursor.offset + size > data.length) throw new SwapExecutionError(`Jupiter V6 route data is truncated at ${label}.`)
+  const value = new DataView(data.buffer, data.byteOffset + cursor.offset, size)[DATA_VIEW_READERS[size]](0, true)
+  cursor.offset += size
   return value
 }
 
@@ -153,7 +141,7 @@ function routeStepMints(routePlan, request) {
 }
 
 function readV2RoutePlan(data, cursor, built, request) {
-  const count = readRouteU32(data, cursor, 'V2 route-plan length')
+  const count = readRoute(data, cursor, 4, 'V2 route-plan length')
   if (count < 1 || count > 32 || count !== built.routePlan.length) {
     throw new SwapExecutionError('Jupiter V6 route-plan length does not match the provider route.')
   }
@@ -161,7 +149,7 @@ function readV2RoutePlan(data, cursor, built, request) {
   let totalBps = 0
   const routeSteps = []
   for (let index = 0; index < count; index++) {
-    const variant = readRouteByte(data, cursor, 'V2 DEX variant')
+    const variant = readRoute(data, cursor, 1, 'V2 DEX variant')
     // Only WhirlpoolSwapV2 (47, with its direction and no remaining-account metadata) and Raydium CLMM (26, no args).
     const label = built.routePlan[index]?.swapInfo?.label
     if (!(variant === 47 && label === 'Whirlpool') && !(variant === 26 && label === 'Raydium CLMM')) {
@@ -169,15 +157,15 @@ function readV2RoutePlan(data, cursor, built, request) {
     }
     let direction = null
     if (variant === 47) {
-      direction = readRouteByte(data, cursor, 'WhirlpoolSwapV2 direction')
-      const hasRemainingAccountsInfo = readRouteByte(data, cursor, 'WhirlpoolSwapV2 remaining-account option')
+      direction = readRoute(data, cursor, 1, 'WhirlpoolSwapV2 direction')
+      const hasRemainingAccountsInfo = readRoute(data, cursor, 1, 'WhirlpoolSwapV2 remaining-account option')
       if (direction > 1 || hasRemainingAccountsInfo !== 0) {
         throw new SwapExecutionError('Jupiter V6 route_v2 contains unsupported WhirlpoolSwapV2 account metadata.')
       }
     }
-    const bps = readRouteU16(data, cursor, 'V2 route allocation')
-    const inputIndex = readRouteByte(data, cursor, 'V2 route input index')
-    const outputIndex = readRouteByte(data, cursor, 'V2 route output index')
+    const bps = readRoute(data, cursor, 2, 'V2 route allocation')
+    const inputIndex = readRoute(data, cursor, 1, 'V2 route input index')
+    const outputIndex = readRoute(data, cursor, 1, 'V2 route output index')
     const leg = built.routePlan[index]
     if (bps < 1 || bps > 10_000 || bps !== leg.bps
       || inputIndex !== indices[index].inputIndex || outputIndex !== indices[index].outputIndex) {
@@ -200,11 +188,11 @@ export function decodeJupiterV6RouteInstruction(instruction, request, built) {
     throw new SwapExecutionError('Jupiter V6 instruction discriminator is unsupported; only exact-input route_v2 is admitted.')
   }
   const cursor = { offset: 8 }
-  const inputAmount = readRouteU64(data, cursor, 'input amount')
-  const quotedOutput = readRouteU64(data, cursor, 'quoted output amount')
-  const slippageBps = readRouteU16(data, cursor, 'slippage bps')
-  const platformFeeBps = readRouteU16(data, cursor, 'platform fee bps')
-  if (readRouteU16(data, cursor, 'positive slippage bps') !== 0) throw new SwapExecutionError('Jupiter V6 positive slippage is not authorized.')
+  const inputAmount = readRoute(data, cursor, 8, 'input amount')
+  const quotedOutput = readRoute(data, cursor, 8, 'quoted output amount')
+  const slippageBps = readRoute(data, cursor, 2, 'slippage bps')
+  const platformFeeBps = readRoute(data, cursor, 2, 'platform fee bps')
+  if (readRoute(data, cursor, 2, 'positive slippage bps') !== 0) throw new SwapExecutionError('Jupiter V6 positive slippage is not authorized.')
   const routeSteps = readV2RoutePlan(data, cursor, built, request)
   if (cursor.offset !== data.length) throw new SwapExecutionError('Jupiter V6 route data has unsupported or trailing fields.')
   const requestedAmount = positiveRaw(request.amountBaseUnits, 'requested input amount')
@@ -442,7 +430,7 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
   const compute = built.computeBudgetInstructions ?? []
   const setup = built.setupInstructions ?? []
   if (!Array.isArray(compute) || !Array.isArray(setup)) throw new SwapExecutionError('Swap provider returned invalid instruction groups.')
-  if (compute.some((instruction) => String(instruction?.programAddress) !== COMPUTE_BUDGET_PROGRAM)) {
+  if (compute.some((instruction) => String(instruction?.programAddress) !== COMPUTE_BUDGET_PROGRAM_ADDRESS)) {
     throw new SwapExecutionError('Swap compute group may contain only Compute Budget instructions.')
   }
   if (setup.some((instruction) => String(instruction?.programAddress) !== ASSOCIATED_TOKEN_PROGRAM)) {
@@ -469,10 +457,10 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
     try { program = String(address(instruction?.programAddress)) } catch { throw new SwapExecutionError('Swap provider returned an invalid instruction program.') }
     if (program === SYSTEM_PROGRAM) throw new SwapExecutionError('Swap route contains a native System transfer or account instruction.')
     if (TOKEN_PROGRAMS.has(program)) throw new SwapExecutionError('Swap route contains an unrelated top-level token economic instruction.')
-    if (program !== routerProgram && program !== ASSOCIATED_TOKEN_PROGRAM && program !== COMPUTE_BUDGET_PROGRAM) {
+    if (program !== routerProgram && program !== ASSOCIATED_TOKEN_PROGRAM && program !== COMPUTE_BUDGET_PROGRAM_ADDRESS) {
       throw new SwapExecutionError('Swap route contains an extra DEX or other top-level economic instruction.')
     }
-    if (!declaredPrograms.has(program) && program !== ASSOCIATED_TOKEN_PROGRAM && program !== COMPUTE_BUDGET_PROGRAM) {
+    if (!declaredPrograms.has(program) && program !== ASSOCIATED_TOKEN_PROGRAM && program !== COMPUTE_BUDGET_PROGRAM_ADDRESS) {
       throw new SwapExecutionError('Swap route contains an unlisted instruction program.')
     }
     if (!Array.isArray(instruction.accounts) || !(instruction.data instanceof Uint8Array)) {
@@ -493,7 +481,7 @@ export async function validateProviderSwapInstructions(request, built, { deriveA
       const ata = await validateAssociatedTokenCreate(request, instruction, deriveAta)
       if (pairAtas.has(ata)) throw new SwapExecutionError('Swap setup creates the same associated-token account more than once.')
       pairAtas.add(ata)
-    } else if (program === COMPUTE_BUDGET_PROGRAM && !compute.includes(instruction)) {
+    } else if (program === COMPUTE_BUDGET_PROGRAM_ADDRESS && !compute.includes(instruction)) {
       throw new SwapExecutionError('Compute-budget instructions are allowed only in the provider compute group.')
     }
   }
@@ -527,7 +515,7 @@ function validateCompiledSwapMessage(messageBytes, request, built, resolvedLooku
     if (program === SYSTEM_PROGRAM || TOKEN_PROGRAMS.has(program)) {
       throw new SwapExecutionError('Compiled swap transaction contains native transfer or unrelated token economics.')
     }
-    if (!allowedPrograms.has(program) && program !== ASSOCIATED_TOKEN_PROGRAM && program !== COMPUTE_BUDGET_PROGRAM) {
+    if (!allowedPrograms.has(program) && program !== ASSOCIATED_TOKEN_PROGRAM && program !== COMPUTE_BUDGET_PROGRAM_ADDRESS) {
       throw new SwapExecutionError('Compiled swap transaction contains an unapproved instruction program.')
     }
   }
@@ -659,16 +647,17 @@ export function swapCostDisclosure({ totalNetworkFeeLamports, priorityFeeLamport
 function priorityFeeLamports(instructions) {
   let price = null, limit = null
   for (const instruction of instructions) {
-    if (String(instruction.programAddress) !== COMPUTE_BUDGET_PROGRAM) continue
+    if (String(instruction.programAddress) !== COMPUTE_BUDGET_PROGRAM_ADDRESS) continue
     const data = instruction.data
     if (!(data instanceof Uint8Array) || data.length === 0) return null
-    if (data[0] === 2 && data.length === 5 && limit == null) limit = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(1, true)
-    else if (data[0] === 3 && data.length === 9 && price == null) price = new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(1, true)
-    else if (data[0] === 2 || data[0] === 3) return null
+    const [opcode] = data
+    if (opcode === SET_CU_LIMIT && data.length === 5 && limit == null) limit = computeUnitLimit(data)
+    else if (opcode === SET_CU_PRICE && data.length === 9 && price == null) price = computeUnitPrice(data)
+    else if (opcode === SET_CU_LIMIT || opcode === SET_CU_PRICE) return null
   }
   if (price == null) return 0n
   // Without an explicit limit Solana requests 200k compute units per non-compute-budget instruction, up to 1.4M.
-  limit ??= Math.min(200_000 * instructions.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET_PROGRAM).length, MAX_COMPUTE_UNITS)
+  limit ??= Math.min(200_000 * instructions.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET_PROGRAM_ADDRESS).length, MAX_COMPUTE_UNITS)
   if (limit <= 0) return null
   const product = BigInt(limit) * price
   return (product + 999_999n) / 1_000_000n
@@ -704,20 +693,12 @@ export async function estimateSwapCosts(built, compiled, rpcClient) {
   })
 }
 
-const addressDecoder = getAddressDecoder()
-const tokenBalance = (bytes) => {
-  if (!bytes || bytes.length < 72) return 0n
-  return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getBigUint64(64, true)
-}
 
 function tokenAccountDetails(account) {
   if (!account?.exists || !TOKEN_PROGRAMS.has(String(account.programAddress)) || !(account.data instanceof Uint8Array) || account.data.length < 165) return null
   try {
-    return {
-      mint: addressDecoder.decode(account.data.slice(0, 32)),
-      owner: addressDecoder.decode(account.data.slice(32, 64)),
-      amount: tokenBalance(account.data),
-    }
+    const { mint, owner, amount } = getTokenDecoder().decode(account.data)
+    return { mint, owner, amount }
   } catch { return null }
 }
 
@@ -737,7 +718,7 @@ export async function compileSwapTransaction({ request, built, rpcClient = rpc, 
   const transaction = compileTransaction(message)
   const encoded = getTransactionEncoder().encode(transaction)
   const size = encoded.length
-  if (size > MAX_TX_BYTES) throw new SwapExecutionError(`Swap transaction is ${size} bytes, over Solana’s ${MAX_TX_BYTES}-byte limit.`)
+  if (size > TRANSACTION_SIZE_LIMIT) throw new SwapExecutionError(`Swap transaction is ${size} bytes, over Solana’s ${TRANSACTION_SIZE_LIMIT}-byte limit.`)
   const compiled = {
     tx: getBase64EncodedWireTransaction(transaction),
     messageBytes: getTransactionDecoder().decode(encoded).messageBytes,
@@ -852,7 +833,7 @@ export function createSwapExecutionService({
       }
       const compiled = await compile({ request, built })
       if (!compiled || typeof compiled.tx !== 'string' || !(compiled.messageBytes instanceof Uint8Array)
-        || !Number.isSafeInteger(compiled.size) || compiled.size <= 0 || compiled.size > MAX_TX_BYTES) {
+        || !Number.isSafeInteger(compiled.size) || compiled.size <= 0 || compiled.size > TRANSACTION_SIZE_LIMIT) {
         throw new SwapExecutionError('Swap transaction exceeds Solana’s supported transaction size.')
       }
       let compiledWire

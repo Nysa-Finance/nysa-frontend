@@ -2,6 +2,8 @@
 import { createRequire } from 'node:module'
 import { VanillaObligation, ObligationTypeTag, PROGRAM_ID, getObligationType, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress, some } from '@solana/kit'
+import { TOKEN_PROGRAM_ADDRESS, getTokenDecoder } from '@solana-program/token'
+import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
 import Decimal from 'decimal.js'
 import { MARKETS, TOKENS, VAULTS, loopByMarket, tokensOf } from '../src/config.js'
 import { rpc } from './rpc.js'
@@ -79,8 +81,10 @@ export async function ataOf(owner, mint, tokenProgram) {
   return ata
 }
 
-// u64 at byte 64; same layout for Token-2022 accounts
-const tokenAmount = (acc) => (acc?.exists ? Number(new DataView(acc.data.buffer, acc.data.byteOffset).getBigUint64(64, true)) : 0)
+export const TOKEN_PROGRAMS = new Set([TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS])
+
+// The balance of a token account (Token-2022 shares the layout); 0n when the account is missing.
+export const tokenAccountAmount = (data) => (data?.length >= 165 ? getTokenDecoder().decode(data).amount : 0n)
 
 export function maxWithdrawBaseUnits({ maxWithdrawAmountScaled, suppliedAmountScaled, mintFactor, decimals } = {}) {
   if (!Number.isSafeInteger(decimals) || decimals < 0 || decimals > 18) throw new TypeError('Invalid token decimals.')
@@ -103,10 +107,6 @@ export function maxWithdrawFromObligation({ obligation, market, reserve, instant
   catch { throw new TypeError('Could not calculate the fresh withdrawal allowance.') }
   return maxWithdrawBaseUnits({ maxWithdrawAmountScaled, suppliedAmountScaled, mintFactor, decimals })
 }
-
-const tokenAmountBaseUnits = (acc) => (acc?.exists
-  ? String(new DataView(acc.data.buffer, acc.data.byteOffset).getBigUint64(64, true))
-  : '0')
 
 export function pendingRewards(farmStates, userStates) {
   const out = []
@@ -143,7 +143,7 @@ async function readAccount(wallet) {
     const self = accounts.at(-1) // the wallet itself: its SOL pays every transaction's fees
     sol = self.exists ? Number(self.lamports) / 1e9 : 0
     tokens.forEach((t, i) => {
-      balancesBaseUnits[t.token_id] = tokenAmountBaseUnits(accounts[i])
+      balancesBaseUnits[t.token_id] = String(tokenAccountAmount(accounts[i]?.data))
       balances[t.token_id] = Number(balancesBaseUnits[t.token_id]) / 10 ** t.decimals
     })
     const users = farmAddrs.map((f, i) => {
@@ -186,7 +186,7 @@ export async function vaultShares(live, owners, config) {
   for (let i = 0; i < keys.length; i += 100) accounts.push(...await fetchEncodedAccounts(rpc, keys.slice(i, i + 100), config)) // RPC limit
   return new Map(owners.map((o, i) => {
     const user = pdas.length && accounts[atas.length + i]?.exists ? decodeUserState(accounts[atas.length + i]).data : null
-    return [o, { wallet: tokenAmount(accounts[i]) / 10 ** dec, staked: user ? stakedShares(user, dec) : 0 }]
+    return [o, { wallet: Number(tokenAccountAmount(accounts[i]?.data)) / 10 ** dec, staked: user ? stakedShares(user, dec) : 0 }]
   }))
 }
 // Farm stakes are WAD-scaled lamports (farms-sdk scaleDownWads).

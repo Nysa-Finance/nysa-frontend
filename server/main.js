@@ -534,16 +534,20 @@ const routes = [
     if (marketById(body.marketId)?.geoBlocked && geoBlocked(req)) return send(res, 403, GEO_REFUSED)
     if (overLoopCap(body.fundingAmount, body.marketId)) throw new UserError(LOOP_CAP_ERROR())
     if (!loopAmountValid(body.fundingAmount, body.marketId)) throw new UserError('Invalid funding amount')
-    if (!Number.isFinite(Number(body.fundingAmount)) || !(Number(body.fundingAmount) > 0) || !Number.isFinite(Number(body.leverage)) || Number(body.leverage) <= 1 || Number(body.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage) throw new UserError('Funding amount or leverage is outside the preview range')
+    const fundingAmount = Number(body.fundingAmount)
+    const leverage = Number(body.leverage)
+    const amountInRange = Number.isFinite(fundingAmount) && fundingAmount > 0
+    const leverageInRange = leverage > 1 && leverage <= DEFAULT_LOOP_LIMITS.maxLeverage
+    if (!amountInRange || !leverageInRange) throw new UserError('Funding amount or leverage is outside the preview range')
     const snapshot = getSnapshot()
-    const strategy = loopStrategyForAction(snapshot, body.marketId, Number(body.leverage))
+    const strategy = loopStrategyForAction(snapshot, body.marketId, leverage)
     const previewId = randomUUID()
     let applicationContext = null
     try {
       return await runWithRequestAbortSignal(req, res, async (signal) => {
         try {
           const previewOnce = () => buildReadOnlyLoopPreview({
-            marketId: body.marketId, wallet: body.wallet, fundingAmount: body.fundingAmount, leverage: Number(body.leverage), snapshot, strategy, signal,
+            marketId: body.marketId, wallet: body.wallet, fundingAmount: body.fundingAmount, leverage, snapshot, strategy, signal,
             localForkSimulation: localForkDappEnabled && isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL }),
             localForkRpcUrl: RPC_URL,
             localRouteProgramVerifier: verifyLocalForkRoute,
@@ -580,7 +584,7 @@ const routes = [
               wallet: body.wallet,
               marketId: body.marketId,
               fundingAmount: body.fundingAmount,
-              leverage: Number(body.leverage),
+              leverage,
               expiresAt,
               applicationContext,
             }

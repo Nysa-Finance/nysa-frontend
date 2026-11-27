@@ -1,9 +1,9 @@
-import { AccountRole, address, fetchEncodedAccount, getAddressDecoder, getBase58Decoder } from '@solana/kit'
+import { AccountRole, address, fetchEncodedAccount, getBase58Decoder } from '@solana/kit'
 import { MARKETS, TOKENS, swapTokens } from '../src/config.js'
 import { calculateSwapFeeBaseUnits } from '../src/swap-fees.js'
 import { APPROVED_PROGRAMS, evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
-import { TOKEN_PROGRAM_ADDRESS } from '@solana-program/token'
-import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
+import { AccountState, getTokenDecoder } from '@solana-program/token'
+import { TOKEN_PROGRAMS } from './account.js'
 import { rpc } from './rpc.js'
 
 // Nysa's swap fee in basis points (NYSA_FEE_BPS). Empty or 0 = no fee: no fee account is passed to Jupiter and no
@@ -20,8 +20,6 @@ const MAX_ROUTE_LEGS = 32
 const KEYLESS_PROVIDER_INTERVAL_MS = 2_100
 const KEYLESS_PROVIDER_MAX_PENDING = 4
 const KEYLESS_PROVIDER_MAX_WAIT_MS = 10_000
-const TOKEN_PROGRAMS = new Set([TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS])
-const addressDecoder = getAddressDecoder()
 
 // Jupiter's documented 0.5-RPS keyless limit, across every request from this process.
 export function createKeylessRateLimiter({
@@ -74,11 +72,9 @@ export class SwapError extends Error {}
 export function inspectFeeTokenAccount(account) {
   if (!account?.exists || !account.data || account.data.length < 165 || !TOKEN_PROGRAMS.has(String(account.programAddress))) return null
   try {
-    const mint = addressDecoder.decode(account.data.slice(0, 32))
-    const authority = addressDecoder.decode(account.data.slice(32, 64))
-    const initialized = account.data[108] === 1
-    if (!initialized) return null
-    return { mint, authority, tokenProgram: String(account.programAddress), initialized }
+    const { mint, owner, state } = getTokenDecoder().decode(account.data)
+    if (state !== AccountState.Initialized) return null
+    return { mint, authority: owner, tokenProgram: String(account.programAddress), initialized: true }
   } catch {
     return null
   }

@@ -106,7 +106,12 @@ onBeforeUnmount(() => { clearInterval(ticker); clearTimeout(quoteTimer) })
 watch(() => state.address, () => {
   invalidatePreview()
   if (state.address) loadSetupStatus()
-  else { setupStatusSequence++; setupRequired.value = false; setupLoading.value = false; setupError.value = null }
+  else {
+    setupStatusSequence++
+    setupRequired.value = false
+    setupLoading.value = false
+    setupError.value = null
+  }
 })
 
 async function loadStrategies() {
@@ -123,7 +128,11 @@ async function loadStrategies() {
 async function loadSetupStatus() {
   const wallet = state.address
   const requestId = ++setupStatusSequence
-  if (!wallet) { setupRequired.value = false; setupLoading.value = false; return }
+  if (!wallet) {
+    setupRequired.value = false
+    setupLoading.value = false
+    return
+  }
   setupLoading.value = true
   setupError.value = null
   try {
@@ -257,6 +266,7 @@ const ratesOf = (l) => {
 const rates = computed(() => ratesOf(loop.value))
 const netApyOf = (l, L) => { const r = ratesOf(l); return r.borrow == null ? null : r.hold * L - r.borrow * (L - 1) }
 const netApyAt = (L) => netApyOf(loop.value, L)
+const maxNetApy = computed(() => netApyAt(loop.value.maxLeverage))
 const reserve = (l, id) => state.reserves[l.market]?.[id]
 const marketOf = (l) => ({
   deposited: reserve(l, l.collateral)?.supplyUsd,
@@ -313,19 +323,24 @@ const canAct = computed(() => !acting.value && !status.value && !!openReadiness.
 const quoteAge = computed(() => (quotedAt.value && quoted.value ? Math.max(0, Math.round((clock.value - quotedAt.value) / 1000)) : null))
 
 const positionView = (position) => {
-  const l = loopByMarket(position.market.id), r = ratesOf(l)
-  const coll = Number(position.collateral.amount), debt = Number(position.liability.amount)
-  const collUsd = coll * priceOf(position.collateral.tokenId), debtUsd = debt * priceOf(position.liability.tokenId), net = collUsd - debtUsd
+  const loopConfig = loopByMarket(position.market.id)
+  const rates = ratesOf(loopConfig)
+  const coll = Number(position.collateral.amount)
+  const collUsd = coll * priceOf(position.collateral.tokenId)
+  const debtUsd = Number(position.liability.amount) * priceOf(position.liability.tokenId)
+  const net = collUsd - debtUsd
+  const fullClose = strategyOf(loopConfig)?.actions?.fullClose ?? null
   return {
     net, coll,
     leverage: net > 0 ? collUsd / net : null,
-    netApy: net > 0 && r.borrow != null ? (r.hold * collUsd - r.borrow * debtUsd) / net : null,
-    liqPrice: coll > 0 ? debtUsd / (coll * (liqLtvOf(l) / 100)) : null,
+    netApy: net > 0 && rates.borrow != null ? (rates.hold * collUsd - rates.borrow * debtUsd) / net : null,
+    liqPrice: coll > 0 ? debtUsd / (coll * (liqLtvOf(loopConfig) / 100)) : null,
     hf: Number(position.healthFactor),
     ltv: collUsd > 0 ? (debtUsd / collUsd) * 100 : 0,
-    readiness: selectedLoopCloseReadiness(strategyOf(l)?.actions?.fullClose ?? null, position, state.address, state.loopPositionReadStatus),
+    readiness: selectedLoopCloseReadiness(fullClose, position, state.address, state.loopPositionReadStatus),
   }
 }
+const positionCards = computed(() => positions.value.map((position) => ({ position, view: positionView(position) })))
 onMounted(() => { loadStrategies(); loadSetupStatus() })
 </script>
 
@@ -357,20 +372,20 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
 
     <template v-else>
       <div v-if="!positions.length" class="n-table"><div class="n-empty">No open loops yet. <button class="link" @click="tab = 'loops'">Explore loops</button></div></div>
-      <section v-for="position in positions" :key="position.id" class="n-panel position" :class="{ picked: route.query.position === position.id || highlight === position.id }">
+      <section v-for="{ position, view } in positionCards" :key="position.id" class="n-panel position" :class="{ picked: route.query.position === position.id || highlight === position.id }">
         <div class="panel-h">
           <span class="pair"><TokenIcon :token="tok(position.collateral.tokenId)" size="sm" />{{ tok(position.collateral.tokenId).name }} / <TokenIcon :token="tok(position.liability.tokenId)" size="sm" />{{ tok(position.liability.tokenId).name }}</span>
         </div>
         <div class="n-stats pos-stats">
-          <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(positionView(position).net) }}</div></div>
-          <div class="n-stat"><div class="k">Net APY</div><div class="v" :class="positionView(position).netApy < 0 ? 'neg' : 'accent'">{{ pct(positionView(position).netApy) }}</div></div>
-          <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ positionView(position).leverage ? lev(positionView(position).leverage) : '—' }}</div></div>
-          <div class="n-stat"><div class="k">Liquidation price</div><div class="v">{{ positionView(position).liqPrice ? `$${positionView(position).liqPrice.toFixed(4)}` : '—' }}</div></div>
-          <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(positionView(position).hf) }} <span v-if="Number.isFinite(positionView(position).hf)" class="n-chip" :class="health(positionView(position).hf)[0]">{{ health(positionView(position).hf)[1] }}</span></div></div>
+          <div class="n-stat"><div class="k">Net value</div><div class="v">{{ usdFull(view.net) }}</div></div>
+          <div class="n-stat"><div class="k">Net APY</div><div class="v" :class="view.netApy < 0 ? 'neg' : 'accent'">{{ pct(view.netApy) }}</div></div>
+          <div class="n-stat"><div class="k">Leverage</div><div class="v">{{ view.leverage ? lev(view.leverage) : '—' }}</div></div>
+          <div class="n-stat"><div class="k">Liquidation price</div><div class="v">{{ view.liqPrice ? `$${view.liqPrice.toFixed(4)}` : '—' }}</div></div>
+          <div class="n-stat"><div class="k">Health factor</div><div class="v">{{ hfText(view.hf) }} <span v-if="Number.isFinite(view.hf)" class="n-chip" :class="health(view.hf)[0]">{{ health(view.hf)[1] }}</span></div></div>
         </div>
         <div class="close">
-          <button class="n-btn-grad" :disabled="acting || !positionView(position).readiness?.executionEnabled" @click="closeLoop(position)">{{ acting ? 'Preparing…' : 'Close loop' }}</button>
-          <span v-if="!positionView(position).readiness?.executionEnabled" class="why">Closing isn't available yet.</span>
+          <button class="n-btn-grad" :disabled="acting || !view.readiness?.executionEnabled" @click="closeLoop(position)">{{ acting ? 'Preparing…' : 'Close loop' }}</button>
+          <span v-if="!view.readiness?.executionEnabled" class="why">Closing isn't available yet.</span>
         </div>
       </section>
     </template>
@@ -389,7 +404,7 @@ onMounted(() => { loadStrategies(); loadSetupStatus() })
         </div>
         <p class="n-sub blurb">{{ loop.blurb }} A loop deposits your {{ coll.name }} on Kamino and borrows {{ debt.name }} against it to buy more, in one transaction.</p>
         <div class="n-stats d-stats">
-          <div class="n-stat"><div class="k">Max net APY</div><div class="v" :class="netApyAt(loop.maxLeverage) < 0 ? 'neg' : 'up'">{{ netApyAt(loop.maxLeverage) == null ? '—' : pct(netApyAt(loop.maxLeverage)) }}</div></div>
+          <div class="n-stat"><div class="k">Max net APY</div><div class="v" :class="maxNetApy < 0 ? 'neg' : 'up'">{{ maxNetApy == null ? '—' : pct(maxNetApy) }}</div></div>
           <div class="n-stat"><div class="k">Max leverage</div><div class="v">{{ lev(loop.maxLeverage) }}</div></div>
           <div class="n-stat"><div class="k">Total deposits</div><div class="v">{{ usd(market.deposited) }}</div></div>
           <div class="n-stat"><div class="k">Available liquidity</div><div class="v">{{ usd(market.liquidity) }}</div></div>

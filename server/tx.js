@@ -1,13 +1,14 @@
 // The server never holds keys: it builds and simulates, the wallet signs. First-time setup (Kamino user accounts) or an
 // oversized transaction comes back in two steps: the setup first, then, asked again, the action (`final: true`).
 import Decimal from 'decimal.js'
+import { COMPUTE_BUDGET_PROGRAM_ADDRESS, getSetComputeUnitLimitInstruction, getSetComputeUnitPriceInstruction } from '@solana-program/compute-budget'
 import { pointFlashRepayAtBorrow } from './loop-composition.js'
 import { KaminoAction, KaminoVault, U64_MAX, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import {
   address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables, compileTransaction, getTransactionEncoder,
-  getBase64EncodedWireTransaction, getTransactionDecoder, fetchEncodedAccounts,
+  getBase64EncodedWireTransaction, getTransactionDecoder, fetchEncodedAccounts, TRANSACTION_SIZE_LIMIT,
 } from '@solana/kit'
 import { createRequire } from 'node:module'
 import { LIVE, marketById, vaultById, tokensOf, tok } from '../src/config.js'
@@ -15,7 +16,7 @@ import { floorTo } from '../src/logic.js'
 import { rpc, NONE } from './rpc.js'
 import { getLive, getVault, reserveOf, farms, refreshSoon, refreshMarketForExecution, obligationByWallet } from './market.js'
 import { vaultClient } from './vault.js'
-import { obligationType, pendingRewards, ataOf, vaultShares, maxWithdrawFromObligation, maxOf } from './account.js'
+import { obligationType, pendingRewards, ataOf, vaultShares, maxWithdrawFromObligation, maxOf, tokenAccountAmount } from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
 import { confirmedTokenDeltas } from './token-deltas.js'
 import { assertRawWithdrawalWithinAllowance, requestedTokenBaseUnits, requestedWithdrawalBaseUnits } from './withdrawal.js'
@@ -26,7 +27,6 @@ import { chainError } from './errors.js'
 const require = createRequire(import.meta.url)
 const { decodeUserState } = require('@kamino-finance/farms-sdk')
 
-const MAX_TX_BYTES = 1232
 const SPLIT_ABOVE = 1100 // leave wallet headroom (Phantom adds a guard instruction)
 const safeSlotNumber = (value) => typeof value === 'bigint'
   ? value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null
@@ -56,12 +56,8 @@ async function fetchLuts(luts) {
 
 // Without a priority fee, wallets set their own compute limit, some to exactly what their simulation used, and a borrow
 // that needs a little more at execution fails ("exceeded CUs meter"). Ours always has a margin and a priority fee.
-const COMPUTE_BUDGET = 'ComputeBudget111111111111111111111111111111'
 const MAX_CU = 1_400_000 // Solana's per-transaction maximum: the first simulation never runs out
 const cuWithMargin = (used) => Math.min(MAX_CU, Math.ceil(used * 1.3) + 20_000)
-const budgetIx = (data) => ({ programAddress: address(COMPUTE_BUDGET), accounts: [], data })
-function cuLimitIx(units) { const d = new Uint8Array(5); d[0] = 2; new DataView(d.buffer).setUint32(1, units, true); return budgetIx(d) }
-function cuPriceIx(microLamports) { const d = new Uint8Array(9); d[0] = 3; new DataView(d.buffer).setBigUint64(1, BigInt(microLamports), true); return budgetIx(d) }
 
 // 75th percentile of recent fees on our reserves, clamped (300k CU at 10,000 = 0.000003 SOL).
 const PRIORITY_MIN = 10_000, PRIORITY_MAX = 1_000_000
@@ -78,13 +74,14 @@ async function priorityFee() {
 
 // klend-sdk adds its own compute-budget instruction: ours replaces it.
 async function compile(owner, ixs, luts, units = MAX_CU) {
-  const body = ixs.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET)
+  const body = ixs.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET_PROGRAM_ADDRESS)
   const [{ context, value: blockhash }, price] = await Promise.all([rpc.getLatestBlockhash({ commitment: 'confirmed' }).send(), priorityFee()])
+  const budget = [getSetComputeUnitLimitInstruction({ units }), getSetComputeUnitPriceInstruction({ microLamports: price })]
   const msg = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayer(owner, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstructions(pointFlashRepayAtBorrow([cuLimitIx(units), cuPriceIx(price), ...body]), m),
+    (m) => appendTransactionMessageInstructions(pointFlashRepayAtBorrow([...budget, ...body]), m),
     (m) => (Object.keys(luts).length ? compressTransactionMessageUsingAddressLookupTables(m, luts) : m),
   )
   const tx = compileTransaction(msg)
@@ -105,13 +102,9 @@ export async function compileAtomicTransaction({ wallet, instructions, lookupTab
   const addresses = lookupTables.map((table) => typeof table === 'string' ? table : String(table?.address ?? ''))
   if (addresses.some((table) => !table)) throw new UserError('Atomic transaction has an invalid lookup-table address.')
   const compiled = await compile(address(wallet), instructions, await fetchLuts([...new Set(addresses)]))
-  if (compiled.size > MAX_TX_BYTES) throw new UserError(`Atomic transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
+  if (compiled.size > TRANSACTION_SIZE_LIMIT) throw new UserError(`Atomic transaction is ${compiled.size} bytes, over Solana's ${TRANSACTION_SIZE_LIMIT}-byte limit`)
   return compiled
 }
-
-const tokenAccountRawAmount = (data) => data instanceof Uint8Array && data.length >= 72
-  ? new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(64, true)
-  : 0n
 
 export async function simulateAtomicTransaction({ compiled, accounts = [], tokenAccounts = [] } = {}) {
   if (!rpc || typeof compiled?.tx !== 'string' || !Array.isArray(accounts) || !Array.isArray(tokenAccounts)) {
@@ -134,8 +127,8 @@ export async function simulateAtomicTransaction({ compiled, accounts = [], token
   const tokenDeltas = tokenAccounts.map((item) => {
     const key = String(item.account)
     const index = tracked.indexOf(key)
-    const prior = before[index]?.exists ? tokenAccountRawAmount(before[index].data) : 0n
-    const after = tokenAccountRawAmount(accountData.get(key))
+    const prior = before[index]?.exists ? tokenAccountAmount(before[index].data) : 0n
+    const after = tokenAccountAmount(accountData.get(key))
     return { account: key, mint: String(item.mint), deltaBaseUnits: String(after - prior) }
   })
   return { ok: true, accountData, accountOwners, tokenDeltas }
@@ -145,7 +138,7 @@ const LIQ_SLIPPAGE = 0.01 // minimum collateral payout, against the simulation
 
 // Simulated first, so a failing transaction shows a readable error instead of a wallet warning, and is never sent.
 async function simulated(compiled) {
-  if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
+  if (compiled.size > TRANSACTION_SIZE_LIMIT) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${TRANSACTION_SIZE_LIMIT}-byte limit`)
   const { value } = await rpc.simulateTransaction(compiled.tx, { encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true }).send()
   if (value.err) simulationError(value.logs ?? [], value.err)
   const used = Number(value.unitsConsumed ?? 0)
@@ -162,7 +155,7 @@ function simulationError(logs, err) {
 }
 
 async function simulatedBalances(compiled, accounts) {
-  if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
+  if (compiled.size > TRANSACTION_SIZE_LIMIT) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${TRANSACTION_SIZE_LIMIT}-byte limit`)
   const { value } = await rpc.simulateTransaction(compiled.tx, {
     encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true,
     accounts: { addresses: accounts, encoding: 'base64' },
