@@ -11,15 +11,24 @@ message[0] = 9
 assert.equal(issued.id, 'intent-1')
 assert.equal(issued.expiresAt, 1_050)
 assert.deepEqual(issued.metadata, { inputMint: 'USDC', amount: '100' })
-assert.throws(() => store.assertAndConsume(issued.id, '22222222222222222222222222222222', Uint8Array.from([1, 2, 3, 4])), TransactionIntentError)
+assert.throws(
+  () => store.assertAndConsume(issued.id, '22222222222222222222222222222222', Uint8Array.from([1, 2, 3, 4])),
+  TransactionIntentError,
+)
 assert.equal(store.size(), 1, 'wallet mismatch must not consume a valid intent')
 assert.throws(() => store.assertAndConsume(issued.id, wallet, Uint8Array.from([1, 2, 3, 5])), /transaction changed/i)
 assert.equal(store.size(), 1, 'message mismatch must not consume a valid intent')
 assert.deepEqual(store.assertAndConsume(issued.id, wallet, Uint8Array.from([1, 2, 3, 4])), {
-  id: issued.id, wallet, expiresAt: 1_050, metadata: { inputMint: 'USDC', amount: '100' },
+  id: issued.id,
+  wallet,
+  expiresAt: 1_050,
+  metadata: { inputMint: 'USDC', amount: '100' },
 })
 assert.equal(store.size(), 0)
-assert.throws(() => store.assertAndConsume(issued.id, wallet, Uint8Array.from([1, 2, 3, 4])), /unknown or already used/i)
+assert.throws(
+  () => store.assertAndConsume(issued.id, wallet, Uint8Array.from([1, 2, 3, 4])),
+  /unknown or already used/i,
+)
 
 const expired = store.issue({ wallet, messageBytes: Uint8Array.from([5]) })
 now = 1_050
@@ -38,13 +47,29 @@ assert.throws(() => store.assertAndConsume(quoteCapped.id, wallet, Uint8Array.fr
 
 const flowIntents = createBorrowerFlowIntentStore({ now: () => now, ttlMs: 100, idFactory: () => `flow-${++id}` })
 const flowMetadata = {
-  kind: 'borrower-flow', flow: 'acquire-supply', stage: 'supply', action: 'deposit',
-  marketId: 'sol-usdy-usdc', tokenId: 'svm-usdy', amountBaseUnits: '25000000',
+  kind: 'borrower-flow',
+  flow: 'acquire-supply',
+  stage: 'supply',
+  action: 'deposit',
+  marketId: 'sol-usdy-usdc',
+  tokenId: 'svm-usdy',
+  amountBaseUnits: '25000000',
 }
 const flowIntent = flowIntents.issue({ wallet, messageBytes: Uint8Array.of(8, 9), metadata: flowMetadata })
 assert.deepEqual(flowIntents.assertAndConsume(flowIntent.id, wallet, Uint8Array.of(8, 9)).metadata, flowMetadata)
-assert.throws(() => flowIntents.issue({ wallet, messageBytes: Uint8Array.of(8), metadata: { ...flowMetadata, action: 'withdraw' } }), /does not match/i)
-assert.throws(() => flowIntents.issue({ wallet, messageBytes: Uint8Array.of(8), metadata: { ...flowMetadata, amountBaseUnits: '-1' } }), /amount/i)
-assert.throws(() => flowIntents.issue({ wallet, messageBytes: Uint8Array.of(8), metadata: { ...flowMetadata, kind: 'swap' } }), /borrower flow/i)
+assert.throws(
+  () =>
+    flowIntents.issue({ wallet, messageBytes: Uint8Array.of(8), metadata: { ...flowMetadata, action: 'withdraw' } }),
+  /does not match/i,
+)
+assert.throws(
+  () =>
+    flowIntents.issue({ wallet, messageBytes: Uint8Array.of(8), metadata: { ...flowMetadata, amountBaseUnits: '-1' } }),
+  /amount/i,
+)
+assert.throws(
+  () => flowIntents.issue({ wallet, messageBytes: Uint8Array.of(8), metadata: { ...flowMetadata, kind: 'swap' } }),
+  /borrower flow/i,
+)
 
 console.log('transaction intents ok')

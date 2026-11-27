@@ -12,43 +12,116 @@ const carry = {
   requiresAcknowledgement: true,
   asOf: '2026-11-05T12:00:00.000Z',
 }
-assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z' }, now), true,
-  'metadata refresh may advance the snapshot time while economics remain unchanged and fresh')
-assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', estimatedCarryPct: '-0.7', assumptions: { ...carry.assumptions, liabilityBorrowAprPct: 2.9 } }, now), true,
-  'rates drifting between snapshots keep the preview')
-assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', estimatedCarryPct: '-0.4', assumptions: { ...carry.assumptions, liabilityBorrowAprPct: 2.3 } }, now), false,
-  'a carry moving more than 0.25 points invalidates the preview')
-assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z', assumptions: { ...carry.assumptions, leverage: 1.2 } }, now), false,
-  'changed carry sources invalidate the preview')
-assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:01:11.000Z' }, now), false,
-  'a refreshed snapshot beyond the bounded freshness window invalidates the preview')
-assert.equal(loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:11.000Z' }, now), false,
-  'a future snapshot timestamp cannot authorize the preview')
+assert.equal(
+  loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:05.000Z' }, now),
+  true,
+  'metadata refresh may advance the snapshot time while economics remain unchanged and fresh',
+)
+assert.equal(
+  loopCarryStillCurrent(
+    carry,
+    {
+      ...carry,
+      asOf: '2026-11-05T12:00:05.000Z',
+      estimatedCarryPct: '-0.7',
+      assumptions: { ...carry.assumptions, liabilityBorrowAprPct: 2.9 },
+    },
+    now,
+  ),
+  true,
+  'rates drifting between snapshots keep the preview',
+)
+assert.equal(
+  loopCarryStillCurrent(
+    carry,
+    {
+      ...carry,
+      asOf: '2026-11-05T12:00:05.000Z',
+      estimatedCarryPct: '-0.4',
+      assumptions: { ...carry.assumptions, liabilityBorrowAprPct: 2.3 },
+    },
+    now,
+  ),
+  false,
+  'a carry moving more than 0.25 points invalidates the preview',
+)
+assert.equal(
+  loopCarryStillCurrent(
+    carry,
+    { ...carry, asOf: '2026-11-05T12:00:05.000Z', assumptions: { ...carry.assumptions, leverage: 1.2 } },
+    now,
+  ),
+  false,
+  'changed carry sources invalidate the preview',
+)
+assert.equal(
+  loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:01:11.000Z' }, now),
+  false,
+  'a refreshed snapshot beyond the bounded freshness window invalidates the preview',
+)
+assert.equal(
+  loopCarryStillCurrent(carry, { ...carry, asOf: '2026-11-05T12:00:11.000Z' }, now),
+  false,
+  'a future snapshot timestamp cannot authorize the preview',
+)
 
 const marketRisk = {
-  collateralPriceUsd: '1.09', liabilityPriceUsd: '1', maxBorrowLtvPct: 90, liquidationLtvPct: 95,
-  collateralOracleTimestamp: 1_798_000_000, liabilityOracleTimestamp: 1_798_000_000,
-  collateralOracleHeartbeatSeconds: 60, liabilityOracleHeartbeatSeconds: 60,
+  collateralPriceUsd: '1.09',
+  liabilityPriceUsd: '1',
+  maxBorrowLtvPct: 90,
+  liquidationLtvPct: 95,
+  collateralOracleTimestamp: 1_798_000_000,
+  liabilityOracleTimestamp: 1_798_000_000,
+  collateralOracleHeartbeatSeconds: 60,
+  liabilityOracleHeartbeatSeconds: 60,
 }
 const marketSnapshot = {
   blockTime: 1_798_000_010,
-  reserves: { 'sol-usdy-usdc': {
-    'svm-usdy': { price: 1.09, maxLtv: 90, liqLtv: 95, oracleTs: 1_798_000_000, maxAge: 60 },
-    'svm-usdc': { price: 1, maxLtv: 90, liqLtv: 95, oracleTs: 1_798_000_000, maxAge: 60 },
-  } },
+  reserves: {
+    'sol-usdy-usdc': {
+      'svm-usdy': { price: 1.09, maxLtv: 90, liqLtv: 95, oracleTs: 1_798_000_000, maxAge: 60 },
+      'svm-usdc': { price: 1, maxLtv: 90, liqLtv: 95, oracleTs: 1_798_000_000, maxAge: 60 },
+    },
+  },
 }
 const snapshotRisk = loopMarketRiskFromSnapshot(marketSnapshot, 'sol-usdy-usdc')
-assert.equal(loopMarketRiskStillCurrent(marketRisk, snapshotRisk, marketSnapshot.blockTime), true,
-  'fresh snapshot oracle values and governance limits remain bound to the preview')
-assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.10' }, marketSnapshot.blockTime), false,
-  'changed oracle price invalidates relay authorization')
-assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.0905' }, marketSnapshot.blockTime), true,
-  'an oracle update under 0.1% keeps the preview valid')
-assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, maxBorrowLtvPct: 80 }, marketSnapshot.blockTime), false,
-  'changed governance LTV invalidates relay authorization')
-assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralOracleTimestamp: 1_798_000_000 - 61 }, marketSnapshot.blockTime), false,
-  'stale oracle fails the reserve heartbeat check')
-assert.equal(loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, liabilityOracleTimestamp: 1_798_000_011 }, marketSnapshot.blockTime), false,
-  'future oracle timestamps fail closed')
+assert.equal(
+  loopMarketRiskStillCurrent(marketRisk, snapshotRisk, marketSnapshot.blockTime),
+  true,
+  'fresh snapshot oracle values and governance limits remain bound to the preview',
+)
+assert.equal(
+  loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.10' }, marketSnapshot.blockTime),
+  false,
+  'changed oracle price invalidates relay authorization',
+)
+assert.equal(
+  loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, collateralPriceUsd: '1.0905' }, marketSnapshot.blockTime),
+  true,
+  'an oracle update under 0.1% keeps the preview valid',
+)
+assert.equal(
+  loopMarketRiskStillCurrent(marketRisk, { ...snapshotRisk, maxBorrowLtvPct: 80 }, marketSnapshot.blockTime),
+  false,
+  'changed governance LTV invalidates relay authorization',
+)
+assert.equal(
+  loopMarketRiskStillCurrent(
+    marketRisk,
+    { ...snapshotRisk, collateralOracleTimestamp: 1_798_000_000 - 61 },
+    marketSnapshot.blockTime,
+  ),
+  false,
+  'stale oracle fails the reserve heartbeat check',
+)
+assert.equal(
+  loopMarketRiskStillCurrent(
+    marketRisk,
+    { ...snapshotRisk, liabilityOracleTimestamp: 1_798_000_011 },
+    marketSnapshot.blockTime,
+  ),
+  false,
+  'future oracle timestamps fail closed',
+)
 
 console.log('loop preview freshness and market risk binding ok')

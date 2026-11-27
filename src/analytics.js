@@ -13,7 +13,10 @@ export function startAnalytics() {
     endpoint: 'https://analytics.nysa.finance/api/event',
     outboundLinks: true,
     transformRequest: (req) => {
-      if (req.n === 'pageview' && skipPageview) { skipPageview = false; return null }
+      if (req.n === 'pageview' && skipPageview) {
+        skipPageview = false
+        return null
+      }
       if (req.p?.url) req.p.url = new URL(req.p.url).host
       return req
     },
@@ -23,7 +26,9 @@ export function startAnalytics() {
 }
 
 // Coming back from a wallet app (iOS deeplink) reloads the page: that's not a new visit.
-export const skipNextPageview = () => { skipPageview = true }
+export const skipNextPageview = () => {
+  skipPageview = true
+}
 
 export function event(name, props) {
   if (enabled) track(name, { props })

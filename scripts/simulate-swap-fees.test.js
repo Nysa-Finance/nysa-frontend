@@ -10,11 +10,63 @@ const scenario = {
     USDY: { decimals: 6, assumedUsdPrice: '1.10' },
   },
   events: [
-    { id: 'small-standalone', source: 'standalone', outcome: 'completed', inputMint: 'USDC', inputAmount: '100', feeMint: 'USDC', feeBasisMint: 'USDC', feeBasisAmount: '100', hops: 4, frequency: { count: 1, period: 'scenario', periods: 1 } },
-    { id: 'large-loop', source: 'loop', outcome: 'completed', inputMint: 'USDY', inputAmount: '10000', feeMint: 'USDY', feeBasisMint: 'USDY', feeBasisAmount: '10000', hops: 3, frequency: { count: 1, period: 'scenario', periods: 1 } },
-    { id: 'daily', source: 'standalone', outcome: 'completed', inputMint: 'USDC', inputAmount: '100', feeMint: 'USDC', feeBasisMint: 'USDC', feeBasisAmount: '100', frequency: { count: 10, period: 'day', periods: 30 } },
-    { id: 'failed', source: 'loop', outcome: 'failed', inputMint: 'USDC', inputAmount: '500', feeMint: 'USDC', feeBasisMint: 'USDC', feeBasisAmount: '500', frequency: { count: 2, period: 'scenario', periods: 1 } },
-    { id: 'rejected', source: 'standalone', outcome: 'rejected', inputMint: 'USDC', inputAmount: '1000', feeMint: 'USDC', feeBasisMint: 'USDC', feeBasisAmount: '1000', frequency: { count: 1, period: 'scenario', periods: 1 } },
+    {
+      id: 'small-standalone',
+      source: 'standalone',
+      outcome: 'completed',
+      inputMint: 'USDC',
+      inputAmount: '100',
+      feeMint: 'USDC',
+      feeBasisMint: 'USDC',
+      feeBasisAmount: '100',
+      hops: 4,
+      frequency: { count: 1, period: 'scenario', periods: 1 },
+    },
+    {
+      id: 'large-loop',
+      source: 'loop',
+      outcome: 'completed',
+      inputMint: 'USDY',
+      inputAmount: '10000',
+      feeMint: 'USDY',
+      feeBasisMint: 'USDY',
+      feeBasisAmount: '10000',
+      hops: 3,
+      frequency: { count: 1, period: 'scenario', periods: 1 },
+    },
+    {
+      id: 'daily',
+      source: 'standalone',
+      outcome: 'completed',
+      inputMint: 'USDC',
+      inputAmount: '100',
+      feeMint: 'USDC',
+      feeBasisMint: 'USDC',
+      feeBasisAmount: '100',
+      frequency: { count: 10, period: 'day', periods: 30 },
+    },
+    {
+      id: 'failed',
+      source: 'loop',
+      outcome: 'failed',
+      inputMint: 'USDC',
+      inputAmount: '500',
+      feeMint: 'USDC',
+      feeBasisMint: 'USDC',
+      feeBasisAmount: '500',
+      frequency: { count: 2, period: 'scenario', periods: 1 },
+    },
+    {
+      id: 'rejected',
+      source: 'standalone',
+      outcome: 'rejected',
+      inputMint: 'USDC',
+      inputAmount: '1000',
+      feeMint: 'USDC',
+      feeBasisMint: 'USDC',
+      feeBasisAmount: '1000',
+      frequency: { count: 1, period: 'scenario', periods: 1 },
+    },
   ],
   costs: [
     { id: 'per-completion', basis: 'perCompletedSwap', mint: 'USDC', amount: '0.02' },
@@ -24,7 +76,9 @@ const scenario = {
 }
 
 const originalFetch = globalThis.fetch
-globalThis.fetch = async () => { throw new Error('simulator must not use network') }
+globalThis.fetch = async () => {
+  throw new Error('simulator must not use network')
+}
 try {
   const result = simulateScenario(scenario)
   assert.ok(result && typeof result === 'object', 'scenario returns a report')
@@ -55,7 +109,14 @@ try {
 
   const rounding = simulateScenario({
     ...scenario,
-    events: [{ ...scenario.events[0], inputAmount: '0.0009', feeBasisAmount: '0.0009', frequency: { count: 10, period: 'scenario', periods: 1 } }],
+    events: [
+      {
+        ...scenario.events[0],
+        inputAmount: '0.0009',
+        feeBasisAmount: '0.0009',
+        frequency: { count: 10, period: 'scenario', periods: 1 },
+      },
+    ],
     costs: [],
   })
   assert.equal(rounding.grossFees.byMint.USDC.baseUnits, '0') // floor fee per event before multiplying count
@@ -87,7 +148,8 @@ try {
     { ...scenario, events: [{ ...scenario.events[0], outcome: 'pending' }] },
     { ...scenario, events: [{ ...scenario.events[0], source: 'dex-hop' }] },
     { ...scenario, costs: [{ basis: 'perHour', mint: 'USDC', amount: '1' }] },
-  ]) assert.throws(() => simulateScenario(invalid), /scenario|event|frequency|amount|mint|outcome|source|cost/i)
+  ])
+    assert.throws(() => simulateScenario(invalid), /scenario|event|frequency|amount|mint|outcome|source|cost/i)
 } finally {
   globalThis.fetch = originalFetch
 }

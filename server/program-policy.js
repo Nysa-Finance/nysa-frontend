@@ -28,20 +28,34 @@ export const ROUTE_PROGRAM_IDS_BY_LABEL = Object.freeze({
   'Raydium CLMM': Object.freeze(['CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK']),
 })
 
-export function evaluateProgramPolicy(programIds, routeLabels = [], routeProgramIdsByLabel = {}, approved = APPROVED_PROGRAMS) {
+export function evaluateProgramPolicy(
+  programIds,
+  routeLabels = [],
+  routeProgramIdsByLabel = {},
+  approved = APPROVED_PROGRAMS,
+) {
   if (!Array.isArray(programIds) || programIds.length === 0) {
-    return { approved: false, unreviewed: [{ programId: null, reason: 'Route does not identify its invoked programs.' }] }
+    return {
+      approved: false,
+      unreviewed: [{ programId: null, reason: 'Route does not identify its invoked programs.' }],
+    }
   }
-  const unreviewed = [...new Set(programIds)].filter((programId) => !approved.has(programId))
+  const unreviewed = [...new Set(programIds)]
+    .filter((programId) => !approved.has(programId))
     .map((programId) => ({ programId, reason: 'Program is not on Nysa’s approved list.' }))
   for (const routeLabel of new Set(routeLabels)) {
     const mapped = routeProgramIdsByLabel?.[routeLabel]
     if (!Array.isArray(mapped) || mapped.length === 0) {
-      unreviewed.push({ programId: null, routeLabel, reason: 'Route label does not resolve to an exact DEX program ID.' })
+      unreviewed.push({
+        programId: null,
+        routeLabel,
+        reason: 'Route label does not resolve to an exact DEX program ID.',
+      })
       continue
     }
     for (const programId of new Set(mapped)) {
-      if (!programIds.includes(programId)) unreviewed.push({ programId, routeLabel, reason: 'Resolved DEX program is absent from the route program set.' })
+      if (!programIds.includes(programId))
+        unreviewed.push({ programId, routeLabel, reason: 'Resolved DEX program is absent from the route program set.' })
     }
   }
   return { approved: unreviewed.length === 0, unreviewed }

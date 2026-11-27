@@ -35,23 +35,34 @@ function parseTokenAmount(value, label) {
   }
   const [whole, fraction = ''] = value.split('.')
   const baseUnits = BigInt(whole) * 10n ** BigInt(TOKEN_DECIMALS) + BigInt(fraction.padEnd(TOKEN_DECIMALS, '0') || '0')
-  if (baseUnits > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`${label} balance is too large for Surfpool's token cheatcode.`)
+  if (baseUnits > BigInt(Number.MAX_SAFE_INTEGER))
+    throw new Error(`${label} balance is too large for Surfpool's token cheatcode.`)
   return Number(baseUnits)
 }
 
 function parseSolAmount(value) {
-  if (typeof value !== 'string' || !/^\d+(?:\.\d{1,9})?$/.test(value)) throw new Error('SOL balance must be a non-negative decimal with at most nine decimal places.')
+  if (typeof value !== 'string' || !/^\d+(?:\.\d{1,9})?$/.test(value))
+    throw new Error('SOL balance must be a non-negative decimal with at most nine decimal places.')
   const [whole, fraction = ''] = value.split('.')
   const lamports = BigInt(whole) * BigInt(SOL_LAMPORTS) + BigInt(fraction.padEnd(9, '0') || '0')
-  if (lamports > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('SOL balance is too large for Surfpool account setup.')
+  if (lamports > BigInt(Number.MAX_SAFE_INTEGER))
+    throw new Error('SOL balance is too large for Surfpool account setup.')
   return Number(lamports)
 }
 
 function loopbackEndpoint(value) {
   let endpoint
-  try { endpoint = new URL(value) } catch { throw new Error('--rpc must be a valid loopback HTTP URL.') }
-  if (endpoint.protocol !== 'http:' || !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname.toLowerCase())
-    || endpoint.username || endpoint.password) {
+  try {
+    endpoint = new URL(value)
+  } catch {
+    throw new Error('--rpc must be a valid loopback HTTP URL.')
+  }
+  if (
+    endpoint.protocol !== 'http:' ||
+    !['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname.toLowerCase()) ||
+    endpoint.username ||
+    endpoint.password
+  ) {
     throw new Error('Refusing to send setup requests anywhere except a loopback Surfpool HTTP RPC.')
   }
   return endpoint
@@ -79,21 +90,31 @@ function generateSolanaKeypair() {
 }
 
 function assertIgnoredEnvFile() {
-  try { execFileSync('git', ['check-ignore', '-q', '.env'], { stdio: 'ignore' }) }
-  catch { throw new Error('.env is not ignored by Git. Add it to .gitignore before generating local private keys.') }
+  try {
+    execFileSync('git', ['check-ignore', '-q', '.env'], { stdio: 'ignore' })
+  } catch {
+    throw new Error('.env is not ignored by Git. Add it to .gitignore before generating local private keys.')
+  }
 }
 
 async function confirmMainnetMints(fetcher, endpoint) {
   const mintRecords = Object.values(TOKENS)
   for (const token of mintRecords) {
-    const response = await rpc(fetcher, endpoint, 'getAccountInfo', [token.mint, { encoding: 'base64', commitment: 'confirmed' }])
+    const response = await rpc(fetcher, endpoint, 'getAccountInfo', [
+      token.mint,
+      { encoding: 'base64', commitment: 'confirmed' },
+    ])
     const account = response?.value
     if (!account || account.owner !== TOKEN_PROGRAM || !Array.isArray(account.data) || account.data[1] !== 'base64') {
-      throw new Error(`Surfpool could not load the configured Mainnet ${token.name} mint. Is the local fork connected to Mainnet?`)
+      throw new Error(
+        `Surfpool could not load the configured Mainnet ${token.name} mint. Is the local fork connected to Mainnet?`,
+      )
     }
     const bytes = Buffer.from(account.data[0], 'base64')
     if (bytes.length !== 82 || bytes[44] !== token.decimals || bytes[45] !== 1) {
-      throw new Error(`The configured ${token.name} mint account has an unexpected classic SPL mint layout or decimals.`)
+      throw new Error(
+        `The configured ${token.name} mint account has an unexpected classic SPL mint layout or decimals.`,
+      )
     }
   }
 }
@@ -101,20 +122,36 @@ async function confirmMainnetMints(fetcher, endpoint) {
 async function createLocalWallet(fetcher, endpoint, index, solLamports) {
   const { signer, secretKey } = await generateSolanaKeypair()
   const wallet = String(signer.address)
-  await rpc(fetcher, endpoint, 'surfnet_setAccount', [wallet, {
-    // Surfpool's running RPC expects raw hex here; an empty system account uses the empty string (not "0x").
-    data: '', executable: false, lamports: solLamports, owner: SYSTEM_PROGRAM, rentEpoch: 0,
-  }])
+  await rpc(fetcher, endpoint, 'surfnet_setAccount', [
+    wallet,
+    {
+      // Surfpool's running RPC expects raw hex here; an empty system account uses the empty string (not "0x").
+      data: '',
+      executable: false,
+      lamports: solLamports,
+      owner: SYSTEM_PROGRAM,
+      rentEpoch: 0,
+    },
+  ])
   return { signer, secretKey, wallet, index }
 }
 
 async function setTokenBalance(fetcher, endpoint, owner, mint, amount) {
-  await rpc(fetcher, endpoint, 'surfnet_setTokenAccount', [owner, mint, {
-    // Omit optional authorities: some Surfpool versions parse "noAccount" as a pubkey instead of its sentinel value.
-    amount, state: 'initialized',
-  }, TOKEN_PROGRAM])
+  await rpc(fetcher, endpoint, 'surfnet_setTokenAccount', [
+    owner,
+    mint,
+    {
+      // Omit optional authorities: some Surfpool versions parse "noAccount" as a pubkey instead of its sentinel value.
+      amount,
+      state: 'initialized',
+    },
+    TOKEN_PROGRAM,
+  ])
   const tokenAccount = String(await ataOf(address(owner), address(mint), address(TOKEN_PROGRAM)))
-  const result = await rpc(fetcher, endpoint, 'getAccountInfo', [tokenAccount, { encoding: 'base64', commitment: 'confirmed' }])
+  const result = await rpc(fetcher, endpoint, 'getAccountInfo', [
+    tokenAccount,
+    { encoding: 'base64', commitment: 'confirmed' },
+  ])
   const account = result?.value
   if (!account || account.owner !== TOKEN_PROGRAM || !Array.isArray(account.data) || account.data[1] !== 'base64') {
     throw new Error(`Surfpool did not create the expected token account ${tokenAccount}.`)
@@ -122,8 +159,13 @@ async function setTokenBalance(fetcher, endpoint, owner, mint, amount) {
   const data = Buffer.from(account.data[0], 'base64')
   const expectedMint = Buffer.from(getAddressEncoder().encode(address(mint)))
   const expectedOwner = Buffer.from(getAddressEncoder().encode(address(owner)))
-  if (data.length < 165 || !data.subarray(0, 32).equals(expectedMint) || !data.subarray(32, 64).equals(expectedOwner)
-    || data.readBigUInt64LE(64) !== BigInt(amount) || data.readUInt8(108) !== 1) {
+  if (
+    data.length < 165 ||
+    !data.subarray(0, 32).equals(expectedMint) ||
+    !data.subarray(32, 64).equals(expectedOwner) ||
+    data.readBigUInt64LE(64) !== BigInt(amount) ||
+    data.readUInt8(108) !== 1
+  ) {
     throw new Error(`Surfpool returned an invalid token account for ${owner} / ${mint}.`)
   }
   return tokenAccount
@@ -167,8 +209,9 @@ function generatedEnvBlock({ rpcUrl, wallets, treasury, usdcAta, usdyAta, usdcBa
 async function updateEnvFile(block) {
   assertIgnoredEnvFile()
   let current
-  try { current = await readFile('.env', 'utf8') }
-  catch (error) {
+  try {
+    current = await readFile('.env', 'utf8')
+  } catch (error) {
     if (error.code !== 'ENOENT') throw error
     current = await readFile('.env.example', 'utf8')
   }
@@ -199,33 +242,65 @@ export async function setupLoopFork({ argv = process.argv.slice(2), fetcher = fe
 
   const { signer: treasurySigner, secretKey: treasurySecretKey } = await generateSolanaKeypair()
   const treasuryWallet = String(treasurySigner.address)
-  await rpc(fetcher, endpoint, 'surfnet_setAccount', [treasuryWallet, {
-    data: '', executable: false, lamports: options.solLamports, owner: SYSTEM_PROGRAM, rentEpoch: 0,
-  }])
+  await rpc(fetcher, endpoint, 'surfnet_setAccount', [
+    treasuryWallet,
+    {
+      data: '',
+      executable: false,
+      lamports: options.solLamports,
+      owner: SYSTEM_PROGRAM,
+      rentEpoch: 0,
+    },
+  ])
   const treasury = { signer: treasurySigner, secretKey: treasurySecretKey, wallet: treasuryWallet, index: -1 }
   const walletRows = []
   for (let index = 0; index < options.wallets; index++) {
     const wallet = await createLocalWallet(fetcher, endpoint, index, options.solLamports)
-    const usdcAta = await setTokenBalance(fetcher, endpoint, wallet.wallet, TOKENS['svm-usdc'].mint, options.usdcBaseUnits)
-    const usdyAta = await setTokenBalance(fetcher, endpoint, wallet.wallet, TOKENS['svm-usdy'].mint, options.usdyBaseUnits)
+    const usdcAta = await setTokenBalance(
+      fetcher,
+      endpoint,
+      wallet.wallet,
+      TOKENS['svm-usdc'].mint,
+      options.usdcBaseUnits,
+    )
+    const usdyAta = await setTokenBalance(
+      fetcher,
+      endpoint,
+      wallet.wallet,
+      TOKENS['svm-usdy'].mint,
+      options.usdyBaseUnits,
+    )
     walletRows.push({ ...wallet, usdcAta, usdyAta })
   }
   const feeUsdcAta = await setTokenBalance(fetcher, endpoint, treasury.wallet, TOKENS['svm-usdc'].mint, 0)
   const feeUsdyAta = await setTokenBalance(fetcher, endpoint, treasury.wallet, TOKENS['svm-usdy'].mint, 0)
   const block = generatedEnvBlock({
-    rpcUrl: endpoint.href.replace(/\/$/, ''), wallets: walletRows, treasury,
-    usdcAta: feeUsdcAta, usdyAta: feeUsdyAta,
-    usdcBaseUnits: options.usdcBaseUnits, usdyBaseUnits: options.usdyBaseUnits,
+    rpcUrl: endpoint.href.replace(/\/$/, ''),
+    wallets: walletRows,
+    treasury,
+    usdcAta: feeUsdcAta,
+    usdyAta: feeUsdyAta,
+    usdcBaseUnits: options.usdcBaseUnits,
+    usdyBaseUnits: options.usdyBaseUnits,
   })
   await updateEnvFile(block)
 
   log(`Prepared ${walletRows.length} local-only test wallets and 2 fee ATAs on the running Surfpool.`)
   log(`Local RPC: ${endpoint.href.replace(/\/$/, '')}`)
-  for (const item of walletRows) log(`account${item.index}: ${item.wallet} | USDC ATA ${item.usdcAta} | USDY ATA ${item.usdyAta}`)
+  for (const item of walletRows)
+    log(`account${item.index}: ${item.wallet} | USDC ATA ${item.usdcAta} | USDY ATA ${item.usdyAta}`)
   log(`test treasury: ${treasury.wallet} | USDC fee ATA ${feeUsdcAta} | USDY fee ATA ${feeUsdyAta}`)
-  log('Private keys were written only to the ignored .env file; they are not printed. These token balances are simulated and have no Mainnet value.')
-  log('Next: restart the backend with npm run server, then run npm run verify:loop-fork. Vite can use API_TARGET=http://127.0.0.1:3000.')
-  return { rpcUrl: endpoint.href, wallets: walletRows.map(({ wallet, usdcAta, usdyAta }) => ({ wallet, usdcAta, usdyAta })), treasury: treasury.wallet }
+  log(
+    'Private keys were written only to the ignored .env file; they are not printed. These token balances are simulated and have no Mainnet value.',
+  )
+  log(
+    'Next: restart the backend with npm run server, then run npm run verify:loop-fork. Vite can use API_TARGET=http://127.0.0.1:3000.',
+  )
+  return {
+    rpcUrl: endpoint.href,
+    wallets: walletRows.map(({ wallet, usdcAta, usdyAta }) => ({ wallet, usdcAta, usdyAta })),
+    treasury: treasury.wallet,
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

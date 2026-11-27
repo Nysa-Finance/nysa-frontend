@@ -3,4 +3,6 @@ import { ref } from 'vue'
 // the same breakpoint as the 860px blocks in the CSS
 const query = globalThis.matchMedia?.('(max-width: 860px)')
 export const narrow = ref(!!query?.matches)
-query?.addEventListener('change', (e) => { narrow.value = e.matches })
+query?.addEventListener('change', (e) => {
+  narrow.value = e.matches
+})

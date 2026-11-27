@@ -1,25 +1,67 @@
-const BLOCKING_STATUSES = new Set(['preparing', 'wallet-prompt', 'awaiting-signature', 'signed-pending', 'submitted', 'relay-unknown', 'pending', 'setup-confirmed', 'confirmed-amount-unknown'])
+const BLOCKING_STATUSES = new Set([
+  'preparing',
+  'wallet-prompt',
+  'awaiting-signature',
+  'signed-pending',
+  'submitted',
+  'relay-unknown',
+  'pending',
+  'setup-confirmed',
+  'confirmed-amount-unknown',
+])
 
-export function assertCanStartLendingAction(pending, nextAction = {}, resumeFromSetupSignature = null, reservationId = null) {
+export function assertCanStartLendingAction(
+  pending,
+  nextAction = {},
+  resumeFromSetupSignature = null,
+  reservationId = null,
+) {
   if (pending?.reservationId && pending.reservationId === reservationId) return true
-  if (pending?.status === 'setup-confirmed' && typeof resumeFromSetupSignature === 'string'
-    && resumeFromSetupSignature && pending.signature === resumeFromSetupSignature) return true
+  if (
+    pending?.status === 'setup-confirmed' &&
+    typeof resumeFromSetupSignature === 'string' &&
+    resumeFromSetupSignature &&
+    pending.signature === resumeFromSetupSignature
+  )
+    return true
   if (!pending || !BLOCKING_STATUSES.has(pending.status)) return true
   const action = pending.kind ?? pending.params?.kind ?? 'transaction'
   const signature = pending.signature ? ` (${pending.signature})` : ''
-  const error = new Error(`Previous ${action}${signature} may still be pending; reconcile it before starting ${nextAction.kind ?? 'another action'}.`)
+  const error = new Error(
+    `Previous ${action}${signature} may still be pending; reconcile it before starting ${nextAction.kind ?? 'another action'}.`,
+  )
   error.code = 'PENDING_TRANSACTION'
   throw error
 }
 
 export function pendingTransactionMatches(pending, current, wallet) {
-  if (!pending?.signature || pending.wallet !== wallet
-    || current?.signature !== pending.signature || current?.wallet !== pending.wallet) return false
+  if (
+    !pending?.signature ||
+    pending.wallet !== wallet ||
+    current?.signature !== pending.signature ||
+    current?.wallet !== pending.wallet
+  )
+    return false
   for (const key of ['flow', 'stage', 'market', 'kind']) {
     if (pending[key] !== current[key]) return false
   }
-  const params = ['wallet', 'market', 'kind', 'token', 'amount', 'amountBaseUnits', 'all', 'swapFlow', 'swapFlowStage', 'flowAmountBaseUnits',
-    'loopAction', 'previewId', 'leverage', 'acknowledgementKey', 'positionId']
+  const params = [
+    'wallet',
+    'market',
+    'kind',
+    'token',
+    'amount',
+    'amountBaseUnits',
+    'all',
+    'swapFlow',
+    'swapFlowStage',
+    'flowAmountBaseUnits',
+    'loopAction',
+    'previewId',
+    'leverage',
+    'acknowledgementKey',
+    'positionId',
+  ]
   for (const key of params) {
     if (pending.params?.[key] !== current.params?.[key]) return false
   }
@@ -31,7 +73,8 @@ export function canRetryAfterTransactionOutcome(status) {
 }
 
 export function classifyPendingTransaction(pending, chain) {
-  if (chain?.status === 'failed') return { status: 'failed', signature: pending?.signature, error: chain.error ?? 'Transaction failed on-chain.' }
+  if (chain?.status === 'failed')
+    return { status: 'failed', signature: pending?.signature, error: chain.error ?? 'Transaction failed on-chain.' }
   if (chain?.status !== 'confirmed') return { status: 'pending', signature: pending?.signature }
   return { status: pending?.final === false ? 'setup-confirmed' : 'confirmed', signature: pending?.signature }
 }
@@ -49,14 +92,22 @@ export function recoverConfirmedSetupTransaction(pending, chain) {
 }
 
 export function canResumeSetupRecovery(recovery, activePending, signature, reservationId = null) {
-  return recovery?.status === 'setup-confirmed' && recovery.requiresUserAction === true
-    && recovery.signature === signature && typeof signature === 'string' && signature.length > 0
-    && (!activePending || !BLOCKING_STATUSES.has(activePending.status) || activePending.reservationId === reservationId)
+  return (
+    recovery?.status === 'setup-confirmed' &&
+    recovery.requiresUserAction === true &&
+    recovery.signature === signature &&
+    typeof signature === 'string' &&
+    signature.length > 0 &&
+    (!activePending || !BLOCKING_STATUSES.has(activePending.status) || activePending.reservationId === reservationId)
+  )
 }
 
 export function canCancelSetupRecovery(recovery, activePending) {
-  return recovery?.status === 'setup-confirmed' && recovery.requiresUserAction === true
-    && (!activePending || !BLOCKING_STATUSES.has(activePending.status))
+  return (
+    recovery?.status === 'setup-confirmed' &&
+    recovery.requiresUserAction === true &&
+    (!activePending || !BLOCKING_STATUSES.has(activePending.status))
+  )
 }
 
 export function cancelConfirmedSetupRecovery(recovery, activePending) {
@@ -80,7 +131,13 @@ export function cancelConfirmedSetupRecovery(recovery, activePending) {
 }
 
 export async function resumeConfirmedSetupContinuation({
-  pending, chain, wallet, accountAddress, continueDesktop, continueDeeplink, userInitiated = false,
+  pending,
+  chain,
+  wallet,
+  accountAddress,
+  continueDesktop,
+  continueDeeplink,
+  userInitiated = false,
 } = {}) {
   const outcome = classifyPendingTransaction(pending, chain)
   if (outcome.status !== 'setup-confirmed') return { ...outcome, mode: null }
@@ -108,15 +165,26 @@ export function startVisibleReconciliationLoop({
   setIntervalFn = setInterval,
   clearIntervalFn = clearInterval,
 } = {}) {
-  if (typeof reconcile !== 'function' || typeof isVisible !== 'function'
-    || typeof setIntervalFn !== 'function' || typeof clearIntervalFn !== 'function'
-    || !Number.isSafeInteger(intervalMs) || intervalMs <= 0) throw new TypeError('Invalid reconciliation loop settings.')
+  if (
+    typeof reconcile !== 'function' ||
+    typeof isVisible !== 'function' ||
+    typeof setIntervalFn !== 'function' ||
+    typeof clearIntervalFn !== 'function' ||
+    !Number.isSafeInteger(intervalMs) ||
+    intervalMs <= 0
+  )
+    throw new TypeError('Invalid reconciliation loop settings.')
   let stopped = false
   let inFlight = false
   const tick = () => {
     if (stopped || inFlight || !isVisible()) return
     inFlight = true
-    Promise.resolve().then(reconcile).catch(() => {}).finally(() => { inFlight = false })
+    Promise.resolve()
+      .then(reconcile)
+      .catch(() => {})
+      .finally(() => {
+        inFlight = false
+      })
   }
   const timer = setIntervalFn(tick, intervalMs)
   return () => {

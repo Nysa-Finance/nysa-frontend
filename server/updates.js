@@ -29,10 +29,20 @@ const ADMIN = {
 }
 const kl = (name) => require(`@kamino-finance/klend-sdk/dist/@codegen/klend/instructions/${name}.js`)
 // initObligation: indexed (the position list), not listed.
-const IX_NAMES = [...Object.keys(ADMIN), 'initObligation', 'liquidateObligationAndRedeemReserveCollateral', 'liquidateObligationAndRedeemReserveCollateralV2']
-const IXS = Object.fromEntries(IX_NAMES.map((name) => [Buffer.from(kl(name).DISCRIMINATOR).toString('hex'), { name, layout: kl(name).layout }]))
-const MARKET_MODES = Object.fromEntries(Object.values(require('@kamino-finance/klend-sdk/dist/@codegen/klend/types/UpdateLendingMarketMode.js'))
-  .filter((c) => typeof c === 'function' && 'discriminator' in c).map((c) => [c.discriminator, c.kind]))
+const IX_NAMES = [
+  ...Object.keys(ADMIN),
+  'initObligation',
+  'liquidateObligationAndRedeemReserveCollateral',
+  'liquidateObligationAndRedeemReserveCollateralV2',
+]
+const IXS = Object.fromEntries(
+  IX_NAMES.map((name) => [Buffer.from(kl(name).DISCRIMINATOR).toString('hex'), { name, layout: kl(name).layout }]),
+)
+const MARKET_MODES = Object.fromEntries(
+  Object.values(require('@kamino-finance/klend-sdk/dist/@codegen/klend/types/UpdateLendingMarketMode.js'))
+    .filter((c) => typeof c === 'function' && 'discriminator' in c)
+    .map((c) => [c.discriminator, c.kind]),
+)
 
 const MAX64 = 0xffffffffffffffffn
 const u64 = (v, o = 0) => v.readBigUInt64LE(o)
@@ -41,7 +51,11 @@ const bps = (n) => pctOf(Number(n) / 100)
 const text = (v) => v.toString('utf8').replace(/\0+$/, '')
 const addr = (v) => short(getBase58Decoder().decode(v.subarray(0, 32)), 4, 4)
 const secs = (n) => dur(Number(n))
-const chain = (v) => [0, 2, 4, 6].map((i) => v.readUInt16LE(i)).filter((x) => x !== 0xffff).join(' → ') || 'none'
+const chain = (v) =>
+  [0, 2, 4, 6]
+    .map((i) => v.readUInt16LE(i))
+    .filter((x) => x !== 0xffff)
+    .join(' → ') || 'none'
 const amount = (n, t) => {
   if (n === MAX64) return 'unlimited'
   if (!t) return String(n)
@@ -110,8 +124,14 @@ const MARKET = {
   UpdateReferralFeeBps: ['Referral fee', (v) => bps(v.readUInt16LE(0))],
   UpdateIndividualAutodeleverageMarginCallPeriodSecs: ['Auto-deleverage margin call period', (v) => secs(u64(v))],
 }
-const humanize = (kind) => kind.replace(/^Update/, '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase()).replace(/ ([A-Z])(?=[a-z])/g, (_, c) => ' ' + c.toLowerCase())
-const isFlag = (kind) => /Enabled$|Disabled$|EmergencyMode$|ImmutableFlag$|DisableNonceBlock$|PermissionedOps$/.test(kind)
+const humanize = (kind) =>
+  kind
+    .replace(/^Update/, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/^./, (c) => c.toUpperCase())
+    .replace(/ ([A-Z])(?=[a-z])/g, (_, c) => ' ' + c.toLowerCase())
+const isFlag = (kind) =>
+  /Enabled$|Disabled$|EmergencyMode$|ImmutableFlag$|DisableNonceBlock$|PermissionedOps$/.test(kind)
 
 export function describe(name, args, token) {
   if (name === 'updateReserveConfig') {
@@ -126,10 +146,17 @@ export function describe(name, args, token) {
     const [label, fmt] = MARKET[kind] ?? [humanize(kind), (b) => String(u64(b))]
     return { action: label, value: safe(() => fmt(v)) }
   }
-  if (name === 'initFarmsForReserve') return { action: ADMIN[name], value: ['collateral', 'debt'][Number(args.mode)] ?? null }
+  if (name === 'initFarmsForReserve')
+    return { action: ADMIN[name], value: ['collateral', 'debt'][Number(args.mode)] ?? null }
   return { action: ADMIN[name], value: null }
 }
-function safe(fn) { try { return fn() } catch { return null } }
+function safe(fn) {
+  try {
+    return fn()
+  } catch {
+    return null
+  }
+}
 
 const RESERVES = new Map(LIVE.flatMap((m) => Object.entries(m.reserves).map(([id, reserve]) => [reserve, TOKENS[id]])))
 
@@ -140,8 +167,10 @@ function transfers(ixs, keys, b58) {
     const data = Buffer.from(b58.encode(ix.data))
     const accounts = ix.accounts.map((i) => keys[i])
     // Transfer: source, destination, …  TransferChecked: source, mint, destination, …  Both carry the amount at byte 1.
-    if (data[0] === TokenInstruction.Transfer && data.length >= 9) out.push({ source: accounts[0], dest: accounts[1], amount: data.readBigUInt64LE(1) })
-    if (data[0] === TokenInstruction.TransferChecked && data.length >= 10) out.push({ source: accounts[0], dest: accounts[2], amount: data.readBigUInt64LE(1) })
+    if (data[0] === TokenInstruction.Transfer && data.length >= 9)
+      out.push({ source: accounts[0], dest: accounts[1], amount: data.readBigUInt64LE(1) })
+    if (data[0] === TokenInstruction.TransferChecked && data.length >= 10)
+      out.push({ source: accounts[0], dest: accounts[2], amount: data.readBigUInt64LE(1) })
   }
   return out
 }
@@ -150,16 +179,23 @@ function transfers(ixs, keys, b58) {
 // accounts: liquidator, obligation, lendingMarket, authority, repayReserve, repayMint, repaySupply, withdrawReserve,
 // withdrawMint, collateralMint, collateralSupply, withdrawLiquiditySupply, …
 export function liquidation(accounts, moves, owners = {}) {
-  const repay = RESERVES.get(accounts[4]), withdraw = RESERVES.get(accounts[7])
+  const repay = RESERVES.get(accounts[4]),
+    withdraw = RESERVES.get(accounts[7])
   const sum = (pick) => moves.filter(pick).reduce((s, m) => s + m.amount, 0n)
   const units = (n, t) => (t ? Number(n) / 10 ** t.decimals : null)
   return {
     obligation: accounts[1],
     owner: owners[accounts[1]] ?? null,
     liquidator: accounts[0],
-    repaid: units(sum((m) => m.dest === accounts[6]), repay),
+    repaid: units(
+      sum((m) => m.dest === accounts[6]),
+      repay,
+    ),
     repaidToken: repay?.name ?? short(accounts[5], 4, 4),
-    seized: units(sum((m) => m.source === accounts[11]), withdraw),
+    seized: units(
+      sum((m) => m.source === accounts[11]),
+      withdraw,
+    ),
     seizedToken: withdraw?.name ?? short(accounts[8], 4, 4),
   }
 }
@@ -168,15 +204,22 @@ const kv = (name) => require(`@kamino-finance/klend-sdk/dist/@codegen/kvault/ins
 const VAULT_ADMIN = {
   initVault: 'Vault created',
   updateVaultConfig: null,
-  updateReserveAllocation: 'Allocation', updateReserveAllocationV2: 'Allocation',
+  updateReserveAllocation: 'Allocation',
+  updateReserveAllocationV2: 'Allocation',
   removeAllocation: 'Allocation removed',
   updateAdmin: 'Vault admin transferred',
   addUpdateWhitelistedReserve: 'Reserve whitelist updated',
-  withdrawPendingFees: 'Fees withdrawn', giveUpPendingFees: 'Pending fees waived',
+  withdrawPendingFees: 'Fees withdrawn',
+  giveUpPendingFees: 'Pending fees waived',
   updateSharesMetadata: 'Shares name/symbol updated',
 }
 const VAULT_DEPOSITS = ['deposit', 'depositWithMinSharesOut', 'buy', 'buyWithMinSharesOut'] // accounts[0] = user
-const VIXS = Object.fromEntries([...Object.keys(VAULT_ADMIN), ...VAULT_DEPOSITS].map((name) => [Buffer.from(kv(name).DISCRIMINATOR).toString('hex'), { name, layout: kv(name).layout }]))
+const VIXS = Object.fromEntries(
+  [...Object.keys(VAULT_ADMIN), ...VAULT_DEPOSITS].map((name) => [
+    Buffer.from(kv(name).DISCRIMINATOR).toString('hex'),
+    { name, layout: kv(name).layout },
+  ]),
+)
 const bool = (v) => (v[0] ? 'on' : 'off')
 const VAULT_FIELDS = {
   PerformanceFeeBps: ['Performance fee', (v) => bps(u64(v))],
@@ -208,18 +251,26 @@ export function describeVault(name, args, vaultToken, reserveToken) {
     return { action: label, value: fmt ? safe(() => fmt(Buffer.from(args.data), vaultToken)) : null }
   }
   if (name.startsWith('updateReserveAllocation')) {
-    return { action: 'Allocation', value: `weight ${args.weight}${args.cap != null ? `, cap ${amount(BigInt(String(args.cap)), reserveToken)}` : ''}` }
+    return {
+      action: 'Allocation',
+      value: `weight ${args.weight}${args.cap != null ? `, cap ${amount(BigInt(String(args.cap)), reserveToken)}` : ''}`,
+    }
   }
   return { action: VAULT_ADMIN[name], value: null }
 }
-
 
 async function indexNew(src, state, client = rpc) {
   const marketAddr = src.address
   const b58 = getBase58Encoder()
   const sigs = []
   for (let before; ;) {
-    const page = await client.getSignaturesForAddress(address(marketAddr), { limit: 1000, before, until: state.lastSig[marketAddr] ?? undefined }).send()
+    const page = await client
+      .getSignaturesForAddress(address(marketAddr), {
+        limit: 1000,
+        before,
+        until: state.lastSig[marketAddr] ?? undefined,
+      })
+      .send()
     sigs.push(...page)
     if (page.length < 1000) break
     before = page.at(-1).signature
@@ -229,11 +280,19 @@ async function indexNew(src, state, client = rpc) {
   const ok = sigs.filter((s) => !s.err).reverse()
   for (let i = 0; i < ok.length; i += 4) {
     // Version 1 is Solana's newer transaction format; asking for 0 would fail on those.
-    const txs = await Promise.all(ok.slice(i, i + 4).map((s) => client.getTransaction(s.signature, { encoding: 'json', maxSupportedTransactionVersion: 1 }).send()))
+    const txs = await Promise.all(
+      ok
+        .slice(i, i + 4)
+        .map((s) => client.getTransaction(s.signature, { encoding: 'json', maxSupportedTransactionVersion: 1 }).send()),
+    )
     txs.forEach((t, j) => {
       if (!t) return
       const sig = ok[i + j].signature
-      const keys = [...t.transaction.message.accountKeys, ...(t.meta?.loadedAddresses?.writable ?? []), ...(t.meta?.loadedAddresses?.readonly ?? [])].map(String)
+      const keys = [
+        ...t.transaction.message.accountKeys,
+        ...(t.meta?.loadedAddresses?.writable ?? []),
+        ...(t.meta?.loadedAddresses?.readonly ?? []),
+      ].map(String)
       // Inner instructions too (CPI, e.g. through a multisig), each with the calls it made.
       // ponytail: a liquidation called through another program shares that group, so a flash loan from the same
       // reserve in the same group would count toward "repaid"; split by stackHeight further if a bot ever does that.
@@ -253,23 +312,42 @@ async function indexNew(src, state, client = rpc) {
         const def = IXS[data.subarray(0, 8).toString('hex')]
         const accounts = ix.accounts.map((a) => keys[a])
         if (!def || !accounts.includes(marketAddr)) return
-        if (def.name === 'initObligation') { // accounts: owner, feePayer, obligation, lendingMarket, …
-          recordIndexedObligation({ obligations: state.obligations, owners: state.owners }, marketAddr, accounts[2], accounts[0])
+        if (def.name === 'initObligation') {
+          // accounts: owner, feePayer, obligation, lendingMarket, …
+          recordIndexedObligation(
+            { obligations: state.obligations, owners: state.owners },
+            marketAddr,
+            accounts[2],
+            accounts[0],
+          )
           return
         }
         const id = `${sig}:${k}`
         if (seen.has(id)) return
         seen.add(id)
         if (def.name.startsWith('liquidate')) {
-          state.liquidations.push({ id, sig, ts: Number(t.blockTime), market: marketAddr, ...liquidation(accounts, transfers(calls, keys, b58), state.owners) })
+          state.liquidations.push({
+            id,
+            sig,
+            ts: Number(t.blockTime),
+            market: marketAddr,
+            ...liquidation(accounts, transfers(calls, keys, b58), state.owners),
+          })
           return
         }
         const reserve = accounts.find((a) => RESERVES.has(a))
         const token = reserve && RESERVES.get(reserve)
         let args = {}
-        try { args = def.layout.decode(data.subarray(8)) } catch { /* keep generic description */ }
+        try {
+          args = def.layout.decode(data.subarray(8))
+        } catch {
+          /* keep generic description */
+        }
         state.updates.push({
-          id, sig, ts: Number(t.blockTime), source: marketAddr,
+          id,
+          sig,
+          ts: Number(t.blockTime),
+          source: marketAddr,
           target: token ? `${token.name} reserve` : 'Market',
           ...describe(def.name, args, token),
         })
@@ -297,42 +375,73 @@ function indexVaultIx(src, state, seen, sig, t, k, ix, keys, b58) {
   // Only allocation-type changes are about a reserve; config changes may list reserves too but apply to the vault.
   const reserve = def.name === 'updateVaultConfig' ? null : accounts.find((a) => RESERVES.has(a))
   let args = {}
-  try { args = def.layout.decode(data.subarray(8)) } catch { /* keep generic description */ }
+  try {
+    args = def.layout.decode(data.subarray(8))
+  } catch {
+    /* keep generic description */
+  }
   state.updates.push({
-    id, sig, ts: Number(t.blockTime), source: src.address,
+    id,
+    sig,
+    ts: Number(t.blockTime),
+    source: src.address,
     target: reserve ? `${src.vault.name} → ${RESERVES.get(reserve).name} reserve` : `${src.vault.name} vault`,
     ...describeVault(def.name, args, src.vault.token, reserve && RESERVES.get(reserve)),
   })
 }
 
 function vaultToken(v) {
-  try { return Object.values(TOKENS).find((t) => t.mint === String(getVault(v.id).state.tokenMint)) } catch { return null }
+  try {
+    return Object.values(TOKENS).find((t) => t.mint === String(getVault(v.id).state.tokenMint))
+  } catch {
+    return null
+  }
 }
 
 // Also how the snapshot finds every position and vault depositor without getProgramAccounts.
-export async function refreshIndex(client = rpc, {
-  markets = LIVE,
-  vaults = VAULTS,
-  readIndex = () => read(INDEX),
-  writeIndex = (serialized) => write(INDEX, serialized),
-  resolveVaultToken = vaultToken,
-} = {}) {
-  const state = { lastSig: {}, updates: [], liquidations: [], obligations: {}, owners: {}, vaultUsers: {}, ...JSON.parse((await readIndex()) ?? '{}') }
+export async function refreshIndex(
+  client = rpc,
+  {
+    markets = LIVE,
+    vaults = VAULTS,
+    readIndex = () => read(INDEX),
+    writeIndex = (serialized) => write(INDEX, serialized),
+    resolveVaultToken = vaultToken,
+  } = {},
+) {
+  const state = {
+    lastSig: {},
+    updates: [],
+    liquidations: [],
+    obligations: {},
+    owners: {},
+    vaultUsers: {},
+    ...JSON.parse((await readIndex()) ?? '{}'),
+  }
   let changed = false
   for (const m of markets) changed = (await indexNew({ address: m.kaminoMarket }, state, client)) || changed
-  for (const v of vaults) changed = (await indexNew({ address: v.address, vault: { name: v.name, token: resolveVaultToken(v) } }, state, client)) || changed
+  for (const v of vaults)
+    changed =
+      (await indexNew({ address: v.address, vault: { name: v.name, token: resolveVaultToken(v) } }, state, client)) ||
+      changed
   if (changed) await writeIndex(JSON.stringify(state))
   return state
 }
 
-let cached = null, cachedAt = 0
+let cached = null,
+  cachedAt = 0
 export function freshIndex() {
   if (!cached || Date.now() - cachedAt > 60_000) {
     cachedAt = Date.now()
-    cached = refreshIndex().catch((e) => { cached = null; throw e })
+    cached = refreshIndex().catch((e) => {
+      cached = null
+      throw e
+    })
   }
   return cached
 }
 
 export const marketUpdates = async () => ({ updates: [...(await freshIndex()).updates].sort((a, b) => b.ts - a.ts) })
-export const marketLiquidations = async () => ({ liquidations: [...(await freshIndex()).liquidations].sort((a, b) => b.ts - a.ts) })
+export const marketLiquidations = async () => ({
+  liquidations: [...(await freshIndex()).liquidations].sort((a, b) => b.ts - a.ts),
+})

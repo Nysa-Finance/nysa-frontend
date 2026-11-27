@@ -4,11 +4,18 @@ import { evaluateLoopActionReadiness, evaluateLoopStrategy } from './strategy.js
 
 const now = Date.parse('2026-11-05T12:00:00.000Z')
 const market = {
-  id: 'sol-usdy-usdc', visible: true, kaminoMarket: 'market-address', reserves: LIVE[0].reserves,
+  id: 'sol-usdy-usdc',
+  visible: true,
+  kaminoMarket: 'market-address',
+  reserves: LIVE[0].reserves,
   pairs: [{ collateral: 'svm-usdy', liability: 'svm-usdc' }],
 }
 const vaults = {
-  rwa: { allocations: [{ market: 'market-address', reserve: LIVE[0].reserves['svm-usdc'], collateral: ['svm-usdy'], invested: 100 }] },
+  rwa: {
+    allocations: [
+      { market: 'market-address', reserve: LIVE[0].reserves['svm-usdc'], collateral: ['svm-usdy'], invested: 100 },
+    ],
+  },
 }
 const reserves = {
   'svm-usdy': { price: 1.1, supplyAPR: 4.5, oracleTs: now / 1000, maxAge: 60 },
@@ -67,31 +74,56 @@ assert.equal(negativeCarry.carry.requiresAcknowledgement, true)
 assert.equal(negativeCarry.carry.acknowledgementKey, null) // no key until this carry estimate is bound to final routes and costs.
 assert.ok(negativeCarry.unavailableReasons.some((x) => x.code === 'carry-acknowledgement-required'))
 const negativeCarryAcknowledged = evaluateLoopActionReadiness({
-  action: 'loop-open', strategy: negativeCarry,
+  action: 'loop-open',
+  strategy: negativeCarry,
   routeReadiness: { executionEnabled: true, unavailableReasons: [] },
-  builderAvailable: true, previewAcknowledgementValid: true,
+  builderAvailable: true,
+  previewAcknowledgementValid: true,
 })
-assert.equal(negativeCarryAcknowledged.executionEnabled, true, 'a valid preview acknowledgement clears the negative-carry blocker')
+assert.equal(
+  negativeCarryAcknowledged.executionEnabled,
+  true,
+  'a valid preview acknowledgement clears the negative-carry blocker',
+)
 const negativeCarryStillBlockedByAllocation = evaluateLoopActionReadiness({
-  action: 'loop-open', strategy: {
+  action: 'loop-open',
+  strategy: {
     ...negativeCarry,
-    unavailableReasons: [...negativeCarry.unavailableReasons, { code: 'no-actual-allocation', message: 'Allocation removed.' }],
+    unavailableReasons: [
+      ...negativeCarry.unavailableReasons,
+      { code: 'no-actual-allocation', message: 'Allocation removed.' },
+    ],
   },
   routeReadiness: { executionEnabled: true, unavailableReasons: [] },
-  builderAvailable: true, previewAcknowledgementValid: true,
+  builderAvailable: true,
+  previewAcknowledgementValid: true,
 })
-assert.deepEqual(negativeCarryStillBlockedByAllocation.unavailableReasons.map((item) => item.code), ['no-actual-allocation'],
-  'acknowledgement clears only the carry blocker and preserves unrelated entry blockers')
+assert.deepEqual(
+  negativeCarryStillBlockedByAllocation.unavailableReasons.map((item) => item.code),
+  ['no-actual-allocation'],
+  'acknowledgement clears only the carry blocker and preserves unrelated entry blockers',
+)
 
 const allocationMissing = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [] } } })
 assert.ok(allocationMissing.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))
-const collateralReserveOnly = evaluateLoopStrategy({ ...ready, vaults: { rwa: { allocations: [{ ...vaults.rwa.allocations[0], reserve: LIVE[0].reserves['svm-usdy'] }] } } })
+const collateralReserveOnly = evaluateLoopStrategy({
+  ...ready,
+  vaults: { rwa: { allocations: [{ ...vaults.rwa.allocations[0], reserve: LIVE[0].reserves['svm-usdy'] }] } },
+})
 assert.ok(collateralReserveOnly.unavailableReasons.some((x) => x.code === 'no-actual-allocation'))
 // A betaOnly loop (oTFY, LOOP_WALLETS only) needs no Nysa vault allocation in its market.
-const betaOnly = evaluateLoopStrategy({ ...ready, marketId: 'sol-otfy-usdc', market: MARKETS.find((m) => m.id === 'sol-otfy-usdc'),
-  allowedMarketIds: ['sol-otfy-usdc'], vaults: { rwa: { allocations: [] } },
-  reserves: { 'svm-otfy': reserves['svm-usdy'], 'svm-usdc': reserves['svm-usdc'] } })
-assert.ok(!betaOnly.unavailableReasons.some((x) => x.code === 'no-actual-allocation'), 'betaOnly loops skip the allocation gate')
+const betaOnly = evaluateLoopStrategy({
+  ...ready,
+  marketId: 'sol-otfy-usdc',
+  market: MARKETS.find((m) => m.id === 'sol-otfy-usdc'),
+  allowedMarketIds: ['sol-otfy-usdc'],
+  vaults: { rwa: { allocations: [] } },
+  reserves: { 'svm-otfy': reserves['svm-usdy'], 'svm-usdc': reserves['svm-usdc'] },
+})
+assert.ok(
+  !betaOnly.unavailableReasons.some((x) => x.code === 'no-actual-allocation'),
+  'betaOnly loops skip the allocation gate',
+)
 
 const inactive = evaluateLoopStrategy({ ...ready, market: { ...market, visible: false } })
 assert.ok(inactive.unavailableReasons.some((x) => x.code === 'market-inactive'))
@@ -109,14 +141,16 @@ assert.ok(keylessPrototype.unavailableReasons.some((x) => x.code === 'production
 const riskOwnerMissing = evaluateLoopStrategy({ ...ready, riskApproval: null })
 assert.ok(riskOwnerMissing.unavailableReasons.some((x) => x.code === 'risk-approval-missing'))
 
-
 const noForkProof = evaluateLoopStrategy({ ...ready, feasibilityPassed: false })
 assert.ok(noForkProof.unavailableReasons.some((x) => x.code === 'atomic-feasibility-unverified'))
 
 const stale = evaluateLoopStrategy({ ...ready, snapshotUpdatedAt: now - 61_000 })
 assert.ok(stale.unavailableReasons.some((x) => x.code === 'market-data-stale'))
 
-const unknownCarry = evaluateLoopStrategy({ ...ready, reserves: { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], supplyAPR: null } } })
+const unknownCarry = evaluateLoopStrategy({
+  ...ready,
+  reserves: { ...reserves, 'svm-usdy': { ...reserves['svm-usdy'], supplyAPR: null } },
+})
 assert.ok(unknownCarry.unavailableReasons.some((x) => x.code === 'carry-unavailable'))
 assert.equal(unknownCarry.carry.estimatedCarryPct, null)
 

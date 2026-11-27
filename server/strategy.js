@@ -10,7 +10,8 @@ const SNAPSHOT_MAX_AGE_MS = 60_000
 
 const finite = (value) => typeof value === 'number' && Number.isFinite(value)
 const reason = (code, message) => ({ code, message })
-const marketIsActive = (market) => !!market && market.visible !== false && MARKETS.some((candidate) => candidate.id === market.id)
+const marketIsActive = (market) =>
+  !!market && market.visible !== false && MARKETS.some((candidate) => candidate.id === market.id)
 
 // Fail closed. Full close does not inherit entry-only allocation, carry or risk-approval gates.
 export function evaluateLoopActionReadiness({
@@ -29,40 +30,65 @@ export function evaluateLoopActionReadiness({
   }
   if (!routeReadiness?.executionEnabled) {
     const routeReasons = routeReadiness?.unavailableReasons
-    unavailableReasons.push(...(Array.isArray(routeReasons) && routeReasons.length
-      ? routeReasons
-      : [reason('route-readiness-unavailable', 'Swap route readiness is unavailable.')]))
+    unavailableReasons.push(
+      ...(Array.isArray(routeReasons) && routeReasons.length
+        ? routeReasons
+        : [reason('route-readiness-unavailable', 'Swap route readiness is unavailable.')]),
+    )
   }
   if (action === 'loop-open') {
     const strategyReasons = Array.isArray(strategy?.unavailableReasons) ? strategy.unavailableReasons : []
-    const acceptedReasons = strategy?.carry?.requiresAcknowledgement && previewAcknowledgementValid
-      ? strategyReasons.filter((item) => item?.code !== 'carry-acknowledgement-required')
-      : strategyReasons
+    const acceptedReasons =
+      strategy?.carry?.requiresAcknowledgement && previewAcknowledgementValid
+        ? strategyReasons.filter((item) => item?.code !== 'carry-acknowledgement-required')
+        : strategyReasons
     if (!strategy?.enabled && acceptedReasons.length) unavailableReasons.push(...acceptedReasons)
-    else if (!strategy?.enabled && strategyReasons.length === 0) unavailableReasons.push(reason('loop-entry-unavailable', 'The selected loop strategy is not available for new entry.'))
+    else if (!strategy?.enabled && strategyReasons.length === 0)
+      unavailableReasons.push(
+        reason('loop-entry-unavailable', 'The selected loop strategy is not available for new entry.'),
+      )
     if (strategy?.carry?.requiresAcknowledgement && !previewAcknowledgementValid) {
-      unavailableReasons.push(reason('preview-acknowledgement-invalid', 'A current acknowledgement for this exact loop preview is required.'))
+      unavailableReasons.push(
+        reason('preview-acknowledgement-invalid', 'A current acknowledgement for this exact loop preview is required.'),
+      )
     }
   } else {
     if (typeof positionId !== 'string' || !/^multiply:[a-f0-9]{64}$/.test(positionId)) {
-      unavailableReasons.push(reason('loop-position-identity-required', 'Select an identified Nysa Multiply position to close.'))
+      unavailableReasons.push(
+        reason('loop-position-identity-required', 'Select an identified Nysa Multiply position to close.'),
+      )
     } else if (!positionVerified) {
-      unavailableReasons.push(reason('loop-position-owner-unverified', 'The selected Multiply position has not been verified for this wallet and market.'))
+      unavailableReasons.push(
+        reason(
+          'loop-position-owner-unverified',
+          'The selected Multiply position has not been verified for this wallet and market.',
+        ),
+      )
     }
   }
-  if (!builderAvailable) unavailableReasons.push(reason('atomic-loop-builder-unavailable', 'Atomic loop transaction building is not enabled until its route and fork evidence pass.'))
+  if (!builderAvailable)
+    unavailableReasons.push(
+      reason(
+        'atomic-loop-builder-unavailable',
+        'Atomic loop transaction building is not enabled until its route and fork evidence pass.',
+      ),
+    )
   return { executionEnabled: unavailableReasons.length === 0, unavailableReasons }
 }
 
 function allocationExists(vaults, market, collateral, liability) {
-  return Object.values(vaults ?? {}).some((vault) => (vault?.allocations ?? []).some((allocation) =>
-    allocation.market === market.kaminoMarket
-      // Nysa's vault is USDC-denominated, so its allocation points at the market's USDC reserve; the allocation's
-      // collateral list establishes that this loan reserve serves the loop's collateral pair.
-      && allocation.reserve === market.reserves?.[liability.token_id]
-      && (allocation.collateral ?? []).includes(collateral.token_id)
-      && finite(allocation.invested)
-      && allocation.invested > 0))
+  return Object.values(vaults ?? {}).some((vault) =>
+    (vault?.allocations ?? []).some(
+      (allocation) =>
+        allocation.market === market.kaminoMarket &&
+        // Nysa's vault is USDC-denominated, so its allocation points at the market's USDC reserve; the allocation's
+        // collateral list establishes that this loan reserve serves the loop's collateral pair.
+        allocation.reserve === market.reserves?.[liability.token_id] &&
+        (allocation.collateral ?? []).includes(collateral.token_id) &&
+        finite(allocation.invested) &&
+        allocation.invested > 0,
+    ),
+  )
 }
 
 function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
@@ -77,7 +103,7 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
     liabilityBorrowSource: 'Kamino reserve borrow APR',
     collateralSupplyAprPct: finite(supplyAprPct) ? supplyAprPct : null,
     collateralNativeApyPct: nativeApyPct,
-    collateralNativeApySource: nativeApyPct == null ? null : collateral.nativeApySource ?? null, // 'price' measured, 'env' USDY_APY
+    collateralNativeApySource: nativeApyPct == null ? null : (collateral.nativeApySource ?? null), // 'price' measured, 'env' USDY_APY
     liabilityBorrowAprPct: finite(borrowAprPct) ? borrowAprPct : null,
     leverage,
   }
@@ -98,7 +124,14 @@ function carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt) {
   if (!finite(supplyAprPct) || !finite(borrowAprPct)) {
     return finish(null)
   }
-  return finish(calculateCarryPct({ equity: '1', leverage: String(leverage), collateralYieldPct: String(supplyAprPct + (nativeApyPct ?? 0)), borrowCostPct: String(borrowAprPct) }))
+  return finish(
+    calculateCarryPct({
+      equity: '1',
+      leverage: String(leverage),
+      collateralYieldPct: String(supplyAprPct + (nativeApyPct ?? 0)),
+      borrowCostPct: String(borrowAprPct),
+    }),
+  )
 }
 
 export function evaluateLoopStrategy({
@@ -119,32 +152,92 @@ export function evaluateLoopStrategy({
   const unavailableReasons = []
   const active = marketIsActive(market)
   if (!active) unavailableReasons.push(reason('market-inactive', 'The selected Nysa market is not active.'))
-  if (!Array.isArray(allowedMarketIds) || !allowedMarketIds.includes(marketId)) unavailableReasons.push(reason('market-not-allowlisted', 'The selected market is not allowlisted for router or loop entry.'))
+  if (!Array.isArray(allowedMarketIds) || !allowedMarketIds.includes(marketId))
+    unavailableReasons.push(
+      reason('market-not-allowlisted', 'The selected market is not allowlisted for router or loop entry.'),
+    )
   if (active && Array.isArray(market.pairs)) {
     const loop = loopByMarket(marketId)
-    const pair = market.pairs.find((candidate) => candidate.collateral === loop?.collateral && candidate.liability === loop?.debt)
+    const pair = market.pairs.find(
+      (candidate) => candidate.collateral === loop?.collateral && candidate.liability === loop?.debt,
+    )
     const collateral = pair ? TOKENS[pair.collateral] : null
     const liability = pair ? TOKENS[pair.liability] : null
-    if (!pair || !collateral || !liability || (!loop.betaOnly && !allocationExists(vaults, market, collateral, liability))) {
-      unavailableReasons.push(reason('no-actual-allocation', `No configured Nysa vault has a nonzero actual allocation to ${collateral?.name ?? 'the loop'} collateral in this market.`))
+    if (
+      !pair ||
+      !collateral ||
+      !liability ||
+      (!loop.betaOnly && !allocationExists(vaults, market, collateral, liability))
+    ) {
+      unavailableReasons.push(
+        reason(
+          'no-actual-allocation',
+          `No configured Nysa vault has a nonzero actual allocation to ${collateral?.name ?? 'the loop'} collateral in this market.`,
+        ),
+      )
     }
     if (!finite(snapshotUpdatedAt) || snapshotUpdatedAt <= 0 || now - snapshotUpdatedAt > SNAPSHOT_MAX_AGE_MS) {
       unavailableReasons.push(reason('market-data-stale', 'Fresh market data is unavailable.'))
     }
-    if (!providerConfigured) unavailableReasons.push(reason('provider-not-configured', 'A server-side swap provider is not configured.'))
-    if (!productionProviderConfigured) unavailableReasons.push(reason('production-provider-key-missing', 'Production Jupiter API credentials and rate limits are not configured; keyless preview access is limited to 0.5 requests per second.'))
-    if (!treasuryConfigured) unavailableReasons.push(reason('fee-destination-not-configured', 'The Nysa fee destination is not configured.'))
+    if (!providerConfigured)
+      unavailableReasons.push(reason('provider-not-configured', 'A server-side swap provider is not configured.'))
+    if (!productionProviderConfigured)
+      unavailableReasons.push(
+        reason(
+          'production-provider-key-missing',
+          'Production Jupiter API credentials and rate limits are not configured; keyless preview access is limited to 0.5 requests per second.',
+        ),
+      )
+    if (!treasuryConfigured)
+      unavailableReasons.push(reason('fee-destination-not-configured', 'The Nysa fee destination is not configured.'))
     const approvalAt = Date.parse(riskApproval?.approvedAt ?? '')
-    if (typeof riskApproval?.owner !== 'string' || !riskApproval.owner.trim() || !Number.isFinite(approvalAt) || approvalAt > now) {
+    if (
+      typeof riskApproval?.owner !== 'string' ||
+      !riskApproval.owner.trim() ||
+      !Number.isFinite(approvalAt) ||
+      approvalAt > now
+    ) {
       unavailableReasons.push(reason('risk-approval-missing', 'A named Nysa risk owner has not approved this market.'))
     }
-    if (!feasibilityPassed) unavailableReasons.push(reason('atomic-feasibility-unverified', 'Atomic route and flash-loan feasibility has not passed a local mainnet-fork check.'))
+    if (!feasibilityPassed)
+      unavailableReasons.push(
+        reason(
+          'atomic-feasibility-unverified',
+          'Atomic route and flash-loan feasibility has not passed a local mainnet-fork check.',
+        ),
+      )
     if (pair) {
       const carry = carryStatus(reserves, pair, leverage, marketId, snapshotUpdatedAt)
-      if (carry.estimatedCarryPct === null) unavailableReasons.push(reason('carry-unavailable', 'Verified supply yield or borrowing cost is unavailable.'))
-      else if (carry.requiresAcknowledgement) unavailableReasons.push(reason('carry-acknowledgement-required', 'The current non-positive carry estimate requires acknowledgement before loop entry.'))
-      return { id: marketId, marketName: market.name, pair, enabled: unavailableReasons.length === 0, unavailableReasons, carry }
+      if (carry.estimatedCarryPct === null)
+        unavailableReasons.push(reason('carry-unavailable', 'Verified supply yield or borrowing cost is unavailable.'))
+      else if (carry.requiresAcknowledgement)
+        unavailableReasons.push(
+          reason(
+            'carry-acknowledgement-required',
+            'The current non-positive carry estimate requires acknowledgement before loop entry.',
+          ),
+        )
+      return {
+        id: marketId,
+        marketName: market.name,
+        pair,
+        enabled: unavailableReasons.length === 0,
+        unavailableReasons,
+        carry,
+      }
     }
   }
-  return { id: marketId, marketName: market?.name ?? null, pair: null, enabled: false, unavailableReasons, carry: { estimatedCarryPct: null, collateralSupplyAprPct: null, liabilityBorrowAprPct: null, basedOnLeverage: leverage } }
+  return {
+    id: marketId,
+    marketName: market?.name ?? null,
+    pair: null,
+    enabled: false,
+    unavailableReasons,
+    carry: {
+      estimatedCarryPct: null,
+      collateralSupplyAprPct: null,
+      liabilityBorrowAprPct: null,
+      basedOnLeverage: leverage,
+    },
+  }
 }

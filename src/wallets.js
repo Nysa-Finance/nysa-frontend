@@ -8,14 +8,21 @@ const fromB58 = (s) => new Uint8Array(getBase58Encoder().encode(s))
 export const fromBase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0))
 export const toBase64 = (bytes) => btoa(String.fromCharCode(...bytes))
 
-export const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+export const isIOS =
+  /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+  (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
 
 export const MWA_NAME = 'Mobile Wallet Adapter'
 
 // Android Chrome only: the library is loaded just there (it also checks the environment itself).
 export async function registerMobileWalletAdapter() {
   if (!/android/i.test(navigator.userAgent)) return
-  const { registerMwa, createDefaultAuthorizationCache, createDefaultChainSelector, createDefaultWalletNotFoundHandler } = await import('@solana-mobile/wallet-standard-mobile')
+  const {
+    registerMwa,
+    createDefaultAuthorizationCache,
+    createDefaultChainSelector,
+    createDefaultWalletNotFoundHandler,
+  } = await import('@solana-mobile/wallet-standard-mobile')
   registerMwa({
     appIdentity: { name: 'Nysa', uri: location.origin, icon: 'favicon.png' },
     authorizationCache: createDefaultAuthorizationCache(),
@@ -26,8 +33,18 @@ export async function registerMobileWalletAdapter() {
 }
 
 export const DEEPLINK_WALLETS = [
-  { name: 'Phantom', icon: '/wallets/phantom.svg', base: 'https://phantom.com/ul/v1', keyParam: 'phantom_encryption_public_key' },
-  { name: 'Solflare', icon: '/wallets/solflare.svg', base: 'https://solflare.com/ul/v1', keyParam: 'solflare_encryption_public_key' },
+  {
+    name: 'Phantom',
+    icon: '/wallets/phantom.svg',
+    base: 'https://phantom.com/ul/v1',
+    keyParam: 'phantom_encryption_public_key',
+  },
+  {
+    name: 'Solflare',
+    icon: '/wallets/solflare.svg',
+    base: 'https://solflare.com/ul/v1',
+    keyParam: 'solflare_encryption_public_key',
+  },
 ]
 const SESSION_KEY = 'nysaDeeplinkSession'
 const MARK = 'nysa_dl'
@@ -40,9 +57,27 @@ const WALLET_ERRORS = {
   '-32003': 'Transaction rejected by the wallet',
 }
 
-const load = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)) } catch { return null } }
-const save = (s) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)) } catch { /* private mode */ } }
-export const clearDeeplinkSession = () => { try { localStorage.removeItem(SESSION_KEY) } catch { /* ignore */ } }
+const load = () => {
+  try {
+    return JSON.parse(localStorage.getItem(SESSION_KEY))
+  } catch {
+    return null
+  }
+}
+const save = (s) => {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(s))
+  } catch {
+    /* private mode */
+  }
+}
+export const clearDeeplinkSession = () => {
+  try {
+    localStorage.removeItem(SESSION_KEY)
+  } catch {
+    /* ignore */
+  }
+}
 const walletOf = (name) => DEEPLINK_WALLETS.find((w) => w.name === name)
 
 function redirectLink(action) {
@@ -54,7 +89,10 @@ function redirectLink(action) {
 
 const encrypt = (payload, shared) => {
   const nonce = nacl.randomBytes(24)
-  return { nonce: b58(nonce), payload: b58(nacl.box.after(new TextEncoder().encode(JSON.stringify(payload)), nonce, shared)) }
+  return {
+    nonce: b58(nonce),
+    payload: b58(nacl.box.after(new TextEncoder().encode(JSON.stringify(payload)), nonce, shared)),
+  }
 }
 const decrypt = (data, nonce, shared) => {
   const plain = nacl.box.open.after(fromB58(data), fromB58(nonce), shared)
@@ -72,7 +110,12 @@ export function connectUrl(name) {
   const w = walletOf(name)
   const kp = nacl.box.keyPair()
   save({ wallet: name, secret: b58(kp.secretKey) })
-  const q = new URLSearchParams({ app_url: location.origin, dapp_encryption_public_key: b58(kp.publicKey), redirect_link: redirectLink('connect'), cluster: 'mainnet-beta' })
+  const q = new URLSearchParams({
+    app_url: location.origin,
+    dapp_encryption_public_key: b58(kp.publicKey),
+    redirect_link: redirectLink('connect'),
+    cluster: 'mainnet-beta',
+  })
   return `${w.base}/connect?${q}`
 }
 
@@ -81,7 +124,12 @@ export function signUrl(txBase64) {
   if (!s?.session) throw new Error('The wallet session expired, connect again')
   const w = walletOf(s.wallet)
   const { nonce, payload } = encrypt({ transaction: b58(fromBase64(txBase64)), session: s.session }, fromB58(s.shared))
-  const q = new URLSearchParams({ dapp_encryption_public_key: b58(nacl.box.keyPair.fromSecretKey(fromB58(s.secret)).publicKey), nonce, redirect_link: redirectLink('sign'), payload })
+  const q = new URLSearchParams({
+    dapp_encryption_public_key: b58(nacl.box.keyPair.fromSecretKey(fromB58(s.secret)).publicKey),
+    nonce,
+    redirect_link: redirectLink('sign'),
+    payload,
+  })
   return `${w.base}/signTransaction?${q}`
 }
 
@@ -92,7 +140,8 @@ export function readDeeplinkReturn() {
   const url = new URL(location.href)
   for (const p of [MARK, ...WALLET_PARAMS]) url.searchParams.delete(p)
   history.replaceState(history.state, '', url)
-  if (params.get('errorCode')) return { action, error: WALLET_ERRORS[params.get('errorCode')] ?? 'The wallet could not complete the request' }
+  if (params.get('errorCode'))
+    return { action, error: WALLET_ERRORS[params.get('errorCode')] ?? 'The wallet could not complete the request' }
   const s = load()
   try {
     if (action === 'connect') {
@@ -118,7 +167,8 @@ export function readDeeplinkReturn() {
 // solana_signTransaction may return only the signature: it goes into the unsigned transaction at the signer's slot.
 export function withSignature(tx, address, signature) {
   const decoded = getTransactionDecoder().decode(tx)
-  if (!(address in decoded.signatures)) throw new Error('This transaction does not need a signature from the connected wallet')
+  if (!(address in decoded.signatures))
+    throw new Error('This transaction does not need a signature from the connected wallet')
   const signatures = { ...decoded.signatures, [address]: signature }
   return new Uint8Array(getTransactionEncoder().encode({ ...decoded, signatures }))
 }

@@ -13,14 +13,23 @@ import { cleanAmount } from '../logic.js'
 const SLIPPAGES = [10, 30, 50] // the server refuses more than 50
 const route = useRoute()
 // Loan token first, so the page opens on buying collateral.
-const PAIRS = LIVE.flatMap((market) => market.pairs ?? []).flatMap(({ collateral, liability }) => [[liability, collateral], [collateral, liability]])
+const PAIRS = LIVE.flatMap((market) => market.pairs ?? []).flatMap(({ collateral, liability }) => [
+  [liability, collateral],
+  [collateral, liability],
+])
 const tokens = [...new Set(PAIRS.map(([id]) => id))].map((id) => TOKENS[id])
 const COLLATERAL = new Set(LIVE.flatMap((market) => market.pairs.map((pair) => pair.collateral)))
-const inputId = ref(tokens.some((token) => token.token_id === route.query.input) ? route.query.input : tokens[0].token_id)
+const inputId = ref(
+  tokens.some((token) => token.token_id === route.query.input) ? route.query.input : tokens[0].token_id,
+)
 const outputId = ref(route.query.output)
-const outputs = computed(() => [...new Set(PAIRS.filter(([id]) => id === inputId.value).map(([, id]) => id))].map((id) => TOKENS[id]))
+const outputs = computed(() =>
+  [...new Set(PAIRS.filter(([id]) => id === inputId.value).map(([, id]) => id))].map((id) => TOKENS[id]),
+)
 const amount = ref('')
-watch(amount, (v) => { amount.value = cleanAmount(v, TOKENS[inputId.value].decimals) })
+watch(amount, (v) => {
+  amount.value = cleanAmount(v, TOKENS[inputId.value].decimals)
+})
 const slippageBps = ref(50)
 const readiness = ref(null)
 const quote = ref(null)
@@ -38,17 +47,45 @@ const balanceOf = (token) => {
   const balance = String(state.balancesBaseUnits?.[token.token_id] ?? '')
   return /^\d+$/.test(balance) ? BigInt(balance) : null
 }
-const amountBaseUnits = computed(() => { try { return amountToBaseUnits(amount.value, input.value.decimals) } catch { return null } })
-const insufficient = computed(() => amountBaseUnits.value != null && balanceOf(input.value) != null
-  && BigInt(amountBaseUnits.value) > balanceOf(input.value))
-const blockedReasons = computed(() => state.address && readiness.value?.executionEnabled === false ? readiness.value.unavailableReasons ?? [] : [])
-const request = () => ({ wallet: state.address, inputMint: input.value.mint, outputMint: output.value.mint,
-  amountBaseUnits: amountBaseUnits.value, slippageBps: slippageBps.value })
+const amountBaseUnits = computed(() => {
+  try {
+    return amountToBaseUnits(amount.value, input.value.decimals)
+  } catch {
+    return null
+  }
+})
+const insufficient = computed(
+  () =>
+    amountBaseUnits.value != null &&
+    balanceOf(input.value) != null &&
+    BigInt(amountBaseUnits.value) > balanceOf(input.value),
+)
+const blockedReasons = computed(() =>
+  state.address && readiness.value?.executionEnabled === false ? (readiness.value.unavailableReasons ?? []) : [],
+)
+const request = () => ({
+  wallet: state.address,
+  inputMint: input.value.mint,
+  outputMint: output.value.mint,
+  amountBaseUnits: amountBaseUnits.value,
+  slippageBps: slippageBps.value,
+})
 // Display only: floats are fine for a rate label, never for amounts sent on-chain.
-const rate = computed(() => quote.value && (Number(quote.value.outputAmountBaseUnits) / 10 ** output.value.decimals)
-  / (Number(quote.value.amountBaseUnits) / 10 ** input.value.decimals))
+const rate = computed(
+  () =>
+    quote.value &&
+    Number(quote.value.outputAmountBaseUnits) /
+      10 ** output.value.decimals /
+      (Number(quote.value.amountBaseUnits) / 10 ** input.value.decimals),
+)
 const action = computed(() => {
-  if (!state.address) return { label: 'Connect wallet', run: () => { state.connectOpen = true } }
+  if (!state.address)
+    return {
+      label: 'Connect wallet',
+      run: () => {
+        state.connectOpen = true
+      },
+    }
   if (busy.value || (state.swapPending && !state.swapPending.signature)) return { label: 'Confirm in your wallet…' }
   if (state.swapPending) return { label: 'Previous swap pending…' }
   if (blockedReasons.value.length) return { label: 'Swap unavailable' }
@@ -56,7 +93,10 @@ const action = computed(() => {
   if (insufficient.value) return { label: `Insufficient ${input.value.name}` }
   if (!quote.value) return { label: quoting.value ? 'Finding the best route…' : 'No route available' }
   // The submit names the outcome: buying collateral, or selling it back.
-  return { label: COLLATERAL.has(output.value.token_id) ? `Buy ${output.value.name}` : `Sell ${input.value.name}`, run: swap }
+  return {
+    label: COLLATERAL.has(output.value.token_id) ? `Buy ${output.value.name}` : `Sell ${input.value.name}`,
+    run: swap,
+  }
 })
 
 async function readJson(path, init) {
@@ -65,19 +105,28 @@ async function readJson(path, init) {
   if (!response.ok) throw new Error(body.error ?? `Server responded ${response.status}`)
   return body
 }
-const post = (path, body, signal) => readJson(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal })
+const post = (path, body, signal) =>
+  readJson(path, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  })
 
 async function loadReadiness() {
   const wallet = state.address
   try {
     const result = await readJson(`/api/swap-readiness${wallet ? `?wallet=${wallet}` : ''}`)
     if (state.address === wallet) readiness.value = result
-  } catch (cause) { error.value = cause.message }
+  } catch (cause) {
+    error.value = cause.message
+  }
 }
 
 async function fetchQuote() {
   clearTimeout(refresh)
-  if (!state.address || !amountBaseUnits.value || busy.value || blockedReasons.value.length) return void (quoting.value = false)
+  if (!state.address || !amountBaseUnits.value || busy.value || blockedReasons.value.length)
+    return void (quoting.value = false)
   const body = request()
   const req = requests.begin(JSON.stringify(body))
   const current = () => req.isCurrent(JSON.stringify(request()))
@@ -87,10 +136,17 @@ async function fetchQuote() {
     if (!current()) return
     quote.value = { ...result, amountBaseUnits: body.amountBaseUnits }
     // ponytail: re-quote on expiry only while the tab is visible; a hidden tab keeps the stale quote until it is used.
-    refresh = setTimeout(() => { if (!document.hidden) fetchQuote() }, Math.max(1000, result.expiresAt - Date.now()))
+    refresh = setTimeout(
+      () => {
+        if (!document.hidden) fetchQuote()
+      },
+      Math.max(1000, result.expiresAt - Date.now()),
+    )
   } catch (cause) {
     if (current() && cause.name !== 'AbortError') error.value = cause.message
-  } finally { if (current()) quoting.value = false }
+  } finally {
+    if (current()) quoting.value = false
+  }
 }
 
 // The server simulates the fresh route and authorizes that exact message.
@@ -101,19 +157,27 @@ async function swap() {
   requests.invalidate()
   error.value = null
   let handedOff = false // iOS wallet apps: the page leaves for the wallet, and WalletHandoff shows the rest
-  await run([{ label: `Swap ${input.value.name} for ${outputToken.name}`, run: async () => {
-    const built = await post('/api/swap-build', body)
-    const outcome = await signAndSendSwap({ built, request: body, outputTokenId: outputToken.token_id })
-    if (outcome.status !== 'confirmed') return void (handedOff = true)
-    if (outcome.amountBaseUnits) tx.note = `Received ${fmt(outputToken, outcome.amountBaseUnits)} ${outputToken.name}.`
-    amount.value = ''
-    return outcome.signature
-  } }])
+  await run([
+    {
+      label: `Swap ${input.value.name} for ${outputToken.name}`,
+      run: async () => {
+        const built = await post('/api/swap-build', body)
+        const outcome = await signAndSendSwap({ built, request: body, outputTokenId: outputToken.token_id })
+        if (outcome.status !== 'confirmed') return void (handedOff = true)
+        if (outcome.amountBaseUnits)
+          tx.note = `Received ${fmt(outputToken, outcome.amountBaseUnits)} ${outputToken.name}.`
+        amount.value = ''
+        return outcome.signature
+      },
+    },
+  ])
   if (handedOff) reset()
   fetchQuote()
 }
 
-function flip() { [inputId.value, outputId.value] = [outputId.value, inputId.value] }
+function flip() {
+  ;[inputId.value, outputId.value] = [outputId.value, inputId.value]
+}
 function fill(divisor) {
   const balance = balanceOf(input.value)
   if (balance != null) amount.value = fmt(input.value, balance / divisor)
@@ -129,13 +193,21 @@ watch([inputId, outputId, amount, slippageBps, () => state.address], () => {
   debounce = setTimeout(fetchQuote, 400)
 })
 // picking the same token on both sides flips them
-watch(inputId, (id, previous) => {
-  if (outputs.value.some((token) => token.token_id === outputId.value)) return
-  outputId.value = outputs.value.some((token) => token.token_id === previous) ? previous : outputs.value[0].token_id
-}, { immediate: true })
+watch(
+  inputId,
+  (id, previous) => {
+    if (outputs.value.some((token) => token.token_id === outputId.value)) return
+    outputId.value = outputs.value.some((token) => token.token_id === previous) ? previous : outputs.value[0].token_id
+  },
+  { immediate: true },
+)
 watch(() => state.address, loadReadiness)
 onMounted(loadReadiness)
-onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.invalidate() })
+onUnmounted(() => {
+  clearTimeout(debounce)
+  clearTimeout(refresh)
+  requests.invalidate()
+})
 </script>
 
 <template>
@@ -148,10 +220,20 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
     <div class="box">
       <div class="row"><span>Sell</span></div>
       <div class="row">
-        <span class="token"><TokenIcon :token="input" size="sm" />
-          <select v-model="inputId" :disabled="busy" aria-label="Token to sell"><option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option></select>
+        <span class="token"
+          ><TokenIcon :token="input" size="sm" />
+          <select v-model="inputId" :disabled="busy" aria-label="Token to sell">
+            <option v-for="token in tokens" :key="token.token_id" :value="token.token_id">{{ token.name }}</option>
+          </select>
         </span>
-        <input v-model="amount" :disabled="busy" inputmode="decimal" autocomplete="off" placeholder="0" aria-label="Amount to sell" />
+        <input
+          v-model="amount"
+          :disabled="busy"
+          inputmode="decimal"
+          autocomplete="off"
+          placeholder="0"
+          aria-label="Amount to sell"
+        />
       </div>
       <div class="row small">
         <span>Available: {{ balanceOf(input) == null ? '-' : fmt(input, balanceOf(input)) }}</span>
@@ -167,57 +249,184 @@ onUnmounted(() => { clearTimeout(debounce); clearTimeout(refresh); requests.inva
     <div class="box">
       <div class="row"><span>Buy</span></div>
       <div class="row">
-        <span class="token"><TokenIcon :token="output" size="sm" />
-          <select v-model="outputId" :disabled="busy" aria-label="Token to buy"><option v-for="token in outputs" :key="token.token_id" :value="token.token_id">{{ token.name }}</option></select>
+        <span class="token"
+          ><TokenIcon :token="output" size="sm" />
+          <select v-model="outputId" :disabled="busy" aria-label="Token to buy">
+            <option v-for="token in outputs" :key="token.token_id" :value="token.token_id">{{ token.name }}</option>
+          </select>
         </span>
-        <output :class="{ dim: !quote }" aria-label="Estimated amount to buy">{{ quote ? fmt(output, quote.outputAmountBaseUnits) : quoting ? '…' : '0' }}</output>
+        <output :class="{ dim: !quote }" aria-label="Estimated amount to buy">{{
+          quote ? fmt(output, quote.outputAmountBaseUnits) : quoting ? '…' : '0'
+        }}</output>
       </div>
-      <div class="row small"><span>Available: {{ balanceOf(output) == null ? '-' : fmt(output, balanceOf(output)) }}</span></div>
+      <div class="row small">
+        <span>Available: {{ balanceOf(output) == null ? '-' : fmt(output, balanceOf(output)) }}</span>
+      </div>
     </div>
 
     <div class="row bar">
-      <span v-if="quote" class="chip">1 {{ input.name }} ≈ {{ rate.toFixed(4) }} {{ output.name }}</span><span v-else />
-      <span class="slip n-quick" role="group" aria-label="Maximum slippage"><span>Slippage</span>
-        <button v-for="bps in SLIPPAGES" :key="bps" :class="{ on: slippageBps === bps }" :aria-pressed="slippageBps === bps" :disabled="busy" @click="slippageBps = bps">{{ bps / 100 }}%</button>
+      <span v-if="quote" class="chip">1 {{ input.name }} ≈ {{ rate.toFixed(4) }} {{ output.name }}</span
+      ><span v-else />
+      <span class="slip n-quick" role="group" aria-label="Maximum slippage"
+        ><span>Slippage</span>
+        <button
+          v-for="bps in SLIPPAGES"
+          :key="bps"
+          :class="{ on: slippageBps === bps }"
+          :aria-pressed="slippageBps === bps"
+          :disabled="busy"
+          @click="slippageBps = bps"
+        >
+          {{ bps / 100 }}%
+        </button>
       </span>
     </div>
 
     <button class="n-btn-block" :disabled="!action.run" @click="action.run?.()">{{ action.label }}</button>
 
     <p v-if="error" class="n-warn" role="status">{{ error }}</p>
-    <p v-if="state.swapPending?.signature && !busy" class="n-warn" role="status">A previous swap is still being confirmed. Nysa checks it automatically; wait before swapping again.</p>
-    <ul v-if="blockedReasons.length" class="n-warn reasons"><li v-for="reason in blockedReasons" :key="reason.code">{{ reason.message }}</li></ul>
+    <p v-if="state.swapPending?.signature && !busy" class="n-warn" role="status">
+      A previous swap is still being confirmed. Nysa checks it automatically; wait before swapping again.
+    </p>
+    <ul v-if="blockedReasons.length" class="n-warn reasons">
+      <li v-for="reason in blockedReasons" :key="reason.code">{{ reason.message }}</li>
+    </ul>
     <TxProgress :tx="tx" @dismiss="reset" />
 
     <div v-if="quote" class="details">
-      <div class="n-kv"><span class="k">Minimum received</span><span class="v">{{ fmt(output, quote.minimumOutputBaseUnits) }} {{ output.name }}</span></div>
-      <div class="n-kv"><span class="k">Price impact</span><span class="v">{{ Number(quote.priceImpactPct).toFixed(3) }}%</span></div>
-      <div v-if="quote.fee?.bps" class="n-kv"><span class="k">Nysa fee ({{ quote.fee.bps / 100 }}%)</span><span class="v">{{ fmt(output, quote.fee.amountBaseUnits) }} {{ output.name }}</span></div>
+      <div class="n-kv">
+        <span class="k">Minimum received</span
+        ><span class="v">{{ fmt(output, quote.minimumOutputBaseUnits) }} {{ output.name }}</span>
+      </div>
+      <div class="n-kv">
+        <span class="k">Price impact</span><span class="v">{{ Number(quote.priceImpactPct).toFixed(3) }}%</span>
+      </div>
+      <div v-if="quote.fee?.bps" class="n-kv">
+        <span class="k">Nysa fee ({{ quote.fee.bps / 100 }}%)</span
+        ><span class="v">{{ fmt(output, quote.fee.amountBaseUnits) }} {{ output.name }}</span>
+      </div>
       <div v-else class="n-kv"><span class="k">Fees</span><span class="v">0% fees taken by Nysa</span></div>
-      <div class="n-kv"><span class="k">Route</span><span class="v">{{ quote.routePlan.map((leg) => leg.label).join(' → ') || '-' }}</span></div>
+      <div class="n-kv">
+        <span class="k">Route</span
+        ><span class="v">{{ quote.routePlan.map((leg) => leg.label).join(' → ') || '-' }}</span>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.swap { max-width: 470px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
-.head { text-align: center; margin-bottom: 14px; }
-.box { display: grid; gap: 8px; padding: 14px 16px; border: 1px solid var(--n-line); border-radius: 12px; background: var(--n-bg-2); }
-.box:focus-within { border-color: var(--n-pink); }
-.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; color: var(--n-text-3); font-size: 12px; }
-.row.small .n-quick button { padding: 3px 10px; }
-.token select { color: var(--n-text); font-weight: 600; cursor: pointer; }
-.token select option { background: var(--n-bg-2); }
-.token { display: inline-flex; align-items: center; gap: 8px; color: var(--n-text); font-size: 18px; font-weight: 600; }
-.box input, .box output { min-width: 0; width: 100%; text-align: right; color: var(--n-text); font-size: 22px; font-variant-numeric: tabular-nums; outline: 0; } /* the amount style */
-.box output.dim { color: var(--n-text-4); }
-.flip { align-self: center; margin: -18px 0; z-index: 1; width: 36px; height: 36px; border: 1px solid var(--n-line-2); border-radius: 999px; background: var(--n-bg-3); color: var(--n-text-2); font-size: 18px; }
-.flip:hover:not(:disabled) { color: var(--n-pink); border-color: var(--n-pink); }
-.bar { margin: 4px 0; }
-.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--n-line-2); border-radius: 999px; color: var(--n-text-2); font-size: 12px; }
-.slip { align-items: center; color: var(--n-text-3); font-size: 12px; }
-.slip > span { margin-right: 2px; }
-.slip button { flex: none; padding: 4px 12px; }
-.reasons { padding-left: 18px; }
-.details { display: grid; gap: 8px; margin-top: 8px; padding: 14px 16px; border: 1px solid var(--n-line); border-radius: 12px; }
+.swap {
+  max-width: 470px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.head {
+  text-align: center;
+  margin-bottom: 14px;
+}
+.box {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--n-line);
+  border-radius: 12px;
+  background: var(--n-bg-2);
+}
+.box:focus-within {
+  border-color: var(--n-pink);
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  color: var(--n-text-3);
+  font-size: 12px;
+}
+.row.small .n-quick button {
+  padding: 3px 10px;
+}
+.token select {
+  color: var(--n-text);
+  font-weight: 600;
+  cursor: pointer;
+}
+.token select option {
+  background: var(--n-bg-2);
+}
+.token {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--n-text);
+  font-size: 18px;
+  font-weight: 600;
+}
+.box input,
+.box output {
+  min-width: 0;
+  width: 100%;
+  text-align: right;
+  color: var(--n-text);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  outline: 0;
+} /* the amount style */
+.box output.dim {
+  color: var(--n-text-4);
+}
+.flip {
+  align-self: center;
+  margin: -18px 0;
+  z-index: 1;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--n-line-2);
+  border-radius: 999px;
+  background: var(--n-bg-3);
+  color: var(--n-text-2);
+  font-size: 18px;
+}
+.flip:hover:not(:disabled) {
+  color: var(--n-pink);
+  border-color: var(--n-pink);
+}
+.bar {
+  margin: 4px 0;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--n-line-2);
+  border-radius: 999px;
+  color: var(--n-text-2);
+  font-size: 12px;
+}
+.slip {
+  align-items: center;
+  color: var(--n-text-3);
+  font-size: 12px;
+}
+.slip > span {
+  margin-right: 2px;
+}
+.slip button {
+  flex: none;
+  padding: 4px 12px;
+}
+.reasons {
+  padding-left: 18px;
+}
+.details {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--n-line);
+  border-radius: 12px;
+}
 </style>

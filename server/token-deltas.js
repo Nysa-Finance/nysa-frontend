@@ -4,15 +4,21 @@ export function confirmedTokenDeltas(meta) {
   const post = new Map(meta.postTokenBalances.map((item) => [item.accountIndex, item]))
   const changes = new Map()
   for (const index of new Set([...pre.keys(), ...post.keys()])) {
-    const before = pre.get(index), after = post.get(index)
+    const before = pre.get(index),
+      after = post.get(index)
     const owner = after?.owner ?? before?.owner
     const mint = after?.mint ?? before?.mint
     if (typeof owner !== 'string' || typeof mint !== 'string') continue
     if (before?.mint && after?.mint && before.mint !== after.mint) continue
     const beforeAmount = before?.uiTokenAmount?.amount ?? '0'
     const afterAmount = after?.uiTokenAmount?.amount ?? '0'
-    if (typeof beforeAmount !== 'string' || !/^\d+$/.test(beforeAmount)
-      || typeof afterAmount !== 'string' || !/^\d+$/.test(afterAmount)) continue
+    if (
+      typeof beforeAmount !== 'string' ||
+      !/^\d+$/.test(beforeAmount) ||
+      typeof afterAmount !== 'string' ||
+      !/^\d+$/.test(afterAmount)
+    )
+      continue
     const key = `${owner}:${mint}`
     changes.set(key, {
       owner,

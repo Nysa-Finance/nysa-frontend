@@ -1,6 +1,11 @@
 import { createRequire } from 'node:module'
 import {
-  KaminoMarket, KaminoObligation, LendingMarket, getSingleReserve, getCurrentLedgerInstant, DEFAULT_RECENT_SLOT_DURATION_MS,
+  KaminoMarket,
+  KaminoObligation,
+  LendingMarket,
+  getSingleReserve,
+  getCurrentLedgerInstant,
+  DEFAULT_RECENT_SLOT_DURATION_MS,
 } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
 import { MARKETS, tokensOf } from '../src/config.js'
@@ -24,10 +29,18 @@ export async function loadMarket(rpcClient, m) {
   const marketAddress = address(m.kaminoMarket)
   const [state, ...reserves] = await Promise.all([
     LendingMarket.fetch(rpcClient, marketAddress),
-    ...tokensOf(m).map((t) => getSingleReserve(address(m.reserves[t.token_id]), rpcClient, DEFAULT_RECENT_SLOT_DURATION_MS)),
+    ...tokensOf(m).map((t) =>
+      getSingleReserve(address(m.reserves[t.token_id]), rpcClient, DEFAULT_RECENT_SLOT_DURATION_MS),
+    ),
   ])
   if (!state) throw new Error(`Kamino market ${m.kaminoMarket} not found`)
-  return KaminoMarket.loadWithReserves(rpcClient, state, new Map(reserves.map((r) => [r.address, r])), marketAddress, DEFAULT_RECENT_SLOT_DURATION_MS)
+  return KaminoMarket.loadWithReserves(
+    rpcClient,
+    state,
+    new Map(reserves.map((r) => [r.address, r])),
+    marketAddress,
+    DEFAULT_RECENT_SLOT_DURATION_MS,
+  )
 }
 
 // market.getObligationByWallet reads the obligation, then asks the RPC for the block time of the very slot it read:
@@ -78,7 +91,9 @@ function reserveMetrics(m, t, r, now) {
 
 // APR, not APY: rewards don't compound. The farm stakes cTokens, converted here to liquidity and USD.
 function farmRewards(tokens, t, r, farm, market) {
-  const stakedUsd = Number(farm.totalStakedAmount) / 10 ** t.decimals / num(r.getCollateralExchangeRate()) * num(r.getOracleMarketPrice())
+  const stakedUsd =
+    (Number(farm.totalStakedAmount) / 10 ** t.decimals / num(r.getCollateralExchangeRate())) *
+    num(r.getOracleMarketPrice())
   const rewards = []
   for (const info of farm.rewardInfos) {
     const mint = String(info.token.mint)
@@ -98,7 +113,9 @@ function farmRewards(tokens, t, r, farm, market) {
 
 async function readAll() {
   const now = await getCurrentLedgerInstant(rpc)
-  const live = new Map(), reserves = {}, rewards = {}
+  const live = new Map(),
+    reserves = {},
+    rewards = {}
   for (const m of MARKETS) {
     reserves[m.id] = {}
     rewards[m.id] = {}
@@ -116,8 +133,23 @@ async function readAll() {
     }
     live.set(m.id, { market, now, farms: farmStates })
   }
-  const vaults = await readVaults(new Map([...live.values()].map((l) => [String(l.market.getAddress()), l.market])), now)
-  return { live, vaults: vaults.live, snapshot: { updatedAt: Date.now(), slot: Number(now.slot), blockTime: Number(now.blockTime), localFork: LOCAL_FORK, reserves, rewards, vaults: vaults.views } }
+  const vaults = await readVaults(
+    new Map([...live.values()].map((l) => [String(l.market.getAddress()), l.market])),
+    now,
+  )
+  return {
+    live,
+    vaults: vaults.live,
+    snapshot: {
+      updatedAt: Date.now(),
+      slot: Number(now.slot),
+      blockTime: Number(now.blockTime),
+      localFork: LOCAL_FORK,
+      reserves,
+      rewards,
+      vaults: vaults.views,
+    },
+  }
 }
 
 let live = new Map()
@@ -149,8 +181,11 @@ export function getVault(id) {
 // On failure the previous data stays served and the next tick retries.
 const publishLatestRead = createLatestReadPublisher(publishRead)
 const readAndPublish = () => publishLatestRead(readAll)
-const refresher = createRefresher(() => readAndPublish()
-  .catch((e) => console.error('[market] refresh failed', e)), { every: REFRESH_MS, soon: SOON_MS, minGap: SOON_GAP_MS })
+const refresher = createRefresher(() => readAndPublish().catch((e) => console.error('[market] refresh failed', e)), {
+  every: REFRESH_MS,
+  soon: SOON_MS,
+  minGap: SOON_GAP_MS,
+})
 
 export const refreshMarket = refresher.run
 export async function refreshMarketForExecution() {

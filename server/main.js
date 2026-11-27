@@ -3,7 +3,14 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getBase58Decoder, getCompiledTransactionMessageDecoder, getPublicKeyFromAddress, getTransactionDecoder, isAddress, verifySignature } from '@solana/kit'
+import {
+  getBase58Decoder,
+  getCompiledTransactionMessageDecoder,
+  getPublicKeyFromAddress,
+  getTransactionDecoder,
+  isAddress,
+  verifySignature,
+} from '@solana/kit'
 import { RPC_URL, rpc, rpcCallsLastHour } from './rpc.js'
 import { getSnapshot, onSnapshot, refreshMarket, refreshMarketForExecution } from './market.js'
 import { getAccount } from './account.js'
@@ -16,15 +23,63 @@ import { isSanctioned, screeningReady, screeningStatus, startScreening } from '.
 import { read, POINTS, HISTORY } from './storage.js'
 import { priceApy } from '../src/logic.js'
 import { DEFAULT_LOOP_LIMITS } from '../src/loop-policy.js'
-import { LIVE, LOOP_ENABLED, LOOPS, TOKENS, VAULTS, loopByMarket, loopMarket, marketById, vaultById } from '../src/config.js'
+import {
+  LIVE,
+  LOOP_ENABLED,
+  LOOPS,
+  TOKENS,
+  VAULTS,
+  loopByMarket,
+  loopMarket,
+  marketById,
+  vaultById,
+} from '../src/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
-import { LoopPreviewError, LOOP_PREVIEW_TTL_MS, LOOP_SIGNING_WINDOW_MS, buildLoopCloseApplication, buildLoopMetadataSetupApplication, buildLoopOpenApplication, buildReadOnlyLoopPreview, loopMetadataStatus, simulateLoopApplication, verifyLoopApplicationSimulation, verifyLoopMetadataSetupSimulation } from './loop.js'
+import {
+  LoopPreviewError,
+  LOOP_PREVIEW_TTL_MS,
+  LOOP_SIGNING_WINDOW_MS,
+  buildLoopCloseApplication,
+  buildLoopMetadataSetupApplication,
+  buildLoopOpenApplication,
+  buildReadOnlyLoopPreview,
+  loopMetadataStatus,
+  simulateLoopApplication,
+  verifyLoopApplicationSimulation,
+  verifyLoopMetadataSetupSimulation,
+} from './loop.js'
 import { buildSwap, configuredFeeAccountForMint, FEE_BPS, swapFeeAccountsConfigured, SwapError } from './swap.js'
-import { LOOP_PREVIEW_MAX_AGE_MS, loopCarryStillCurrent, loopMarketRiskFromSnapshot, loopMarketRiskStillCurrent } from './loop-preview-validation.js'
-import { createPublicSwapQuote, parseSwapQuoteRequest, SwapRouteError, marketForPair, swapPairAvailability, swapReadiness } from './swap-routes.js'
+import {
+  LOOP_PREVIEW_MAX_AGE_MS,
+  loopCarryStillCurrent,
+  loopMarketRiskFromSnapshot,
+  loopMarketRiskStillCurrent,
+} from './loop-preview-validation.js'
+import {
+  createPublicSwapQuote,
+  parseSwapQuoteRequest,
+  SwapRouteError,
+  marketForPair,
+  swapPairAvailability,
+  swapReadiness,
+} from './swap-routes.js'
 import { runWithRequestAbortSignal } from './request-signal.js'
-import { createSwapExecutionService, compileSwapTransaction, simulateSwapTransaction, createAuthorizedSwapSender, swapIntentStillAuthorized, assertOracleFairOutput, validateProviderSwapInstructions, SwapExecutionError } from './swap-execution.js'
-import { createLendingTransactionIntentStore, createSwapIntentStore, loopSetupMessageMatchesIgnoringBlockhash, messageMatchesWithLighthouse } from './tx-intent.js'
+import {
+  createSwapExecutionService,
+  compileSwapTransaction,
+  simulateSwapTransaction,
+  createAuthorizedSwapSender,
+  swapIntentStillAuthorized,
+  assertOracleFairOutput,
+  validateProviderSwapInstructions,
+  SwapExecutionError,
+} from './swap-execution.js'
+import {
+  createLendingTransactionIntentStore,
+  createSwapIntentStore,
+  loopSetupMessageMatchesIgnoringBlockhash,
+  messageMatchesWithLighthouse,
+} from './tx-intent.js'
 import { createLendingTransactionIntentService } from './lending-intents.js'
 import { noteBuilt } from './relay.js'
 import { LOOP_PROGRAMS } from './program-policy.js'
@@ -33,7 +88,12 @@ import { createLoopExecutionService, LoopExecutionError } from './loop-execution
 import { compileAtomicTransaction } from './tx.js'
 import { explain, isTransient } from './errors.js'
 import { PROGRAM_ID as KAMINO_LENDING_PROGRAM_ID } from '@kamino-finance/klend-sdk'
-import { createLocalForkRouteVerifier, isLocalForkWallet, localForkExecutionEnabled, localForkTreasuryAuthority } from './local-fork-execution.js'
+import {
+  createLocalForkRouteVerifier,
+  isLocalForkWallet,
+  localForkExecutionEnabled,
+  localForkTreasuryAuthority,
+} from './local-fork-execution.js'
 
 if (!RPC_URL) {
   console.error('SOLANA_RPC is not set (see .env.example)')
@@ -45,13 +105,20 @@ const verifyLocalForkRoute = createLocalForkRouteVerifier({ rpc, enabled: localF
 
 async function validateSwapRouteForCurrentNetwork(request, built) {
   if (!localForkDappEnabled) return validateProviderSwapInstructions(request, built)
-  if (!await verifyLocalForkRoute(built)) throw new SwapRouteError('The local route does not use only the approved DEX and executable programs cloned into Surfpool.')
+  if (!(await verifyLocalForkRoute(built)))
+    throw new SwapRouteError(
+      'The local route does not use only the approved DEX and executable programs cloned into Surfpool.',
+    )
   return validateProviderSwapInstructions(request, { ...built, programPolicy: { approved: true, unreviewed: [] } })
 }
 
 function localForkProgramEvidenceReady() {
-  return localForkDappEnabled && !!localForkTreasuryAuthority()
-    && !!process.env.LOCAL_FORK_FEE_ACCOUNT_USDC && !!process.env.LOCAL_FORK_FEE_ACCOUNT_USDY
+  return (
+    localForkDappEnabled &&
+    !!localForkTreasuryAuthority() &&
+    !!process.env.LOCAL_FORK_FEE_ACCOUNT_USDC &&
+    !!process.env.LOCAL_FORK_FEE_ACCOUNT_USDY
+  )
 }
 
 async function localIntentAuthorized(intent) {
@@ -64,9 +131,17 @@ async function localIntentAuthorized(intent) {
 const PORT = Number(process.env.PORT) || 3000
 const DIST = fileURLToPath(new URL('../dist/', import.meta.url))
 const TYPES = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp',
-  '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.txt': 'text/plain; charset=utf-8',
 }
 const EMPTY_POINTS = 'address,cumulative_points,last_supplied_usd,last_snapshot_ts\n'
 
@@ -87,22 +162,38 @@ function limited(req, name, perMinute) {
   if (!e || now - e.start > 60_000) hits.set(key, (e = { start: now, n: 0 }))
   return ++e.n > perMinute
 }
-setInterval(() => { for (const [k, e] of hits) if (Date.now() - e.start > 60_000) hits.delete(k) }, 60_000).unref()
+setInterval(() => {
+  for (const [k, e] of hits) if (Date.now() - e.start > 60_000) hits.delete(k)
+}, 60_000).unref()
 
 async function jsonBody(req) {
-  if (!String(req.headers['content-type']).startsWith('application/json')) throw new UserError('Expected application/json')
+  if (!String(req.headers['content-type']).startsWith('application/json'))
+    throw new UserError('Expected application/json')
   let raw = ''
-  for await (const chunk of req) { raw += chunk; if (raw.length > 4096) throw new UserError('Request too large') }
-  try { return JSON.parse(raw) } catch { throw new UserError('Invalid JSON') }
+  for await (const chunk of req) {
+    raw += chunk
+    if (raw.length > 4096) throw new UserError('Request too large')
+  }
+  try {
+    return JSON.parse(raw)
+  } catch {
+    throw new UserError('Invalid JSON')
+  }
 }
 
 // Until the sanctions list is loaded, viewing works but no transaction is built or relayed (fail closed).
-const BLOCKED = { error: 'This wallet address is on a sanctions list, so it cannot use the Nysa interface.', blocked: true }
+const BLOCKED = {
+  error: 'This wallet address is on a sanctions list, so it cannot use the Nysa interface.',
+  blocked: true,
+}
 // A sanctioned borrower's loan isn't liquidated through the interface either (the liquidator itself is fine).
-const BLOCKED_LOAN = { error: 'This loan belongs to a wallet on a sanctions list, so the Nysa interface cannot liquidate it.' }
+const BLOCKED_LOAN = {
+  error: 'This loan belongs to a wallet on a sanctions list, so the Nysa interface cannot liquidate it.',
+}
 function blocked(res, wallet, { failClosed }) {
-  if (isSanctioned(wallet)) return send(res, 403, BLOCKED), true
-  if (failClosed && !screeningReady()) return send(res, 503, { error: 'Sanctions screening is starting up, please try again shortly.' }), true
+  if (isSanctioned(wallet)) return (send(res, 403, BLOCKED), true)
+  if (failClosed && !screeningReady())
+    return (send(res, 503, { error: 'Sanctions screening is starting up, please try again shortly.' }), true)
   return false
 }
 
@@ -111,7 +202,11 @@ function blocked(res, wallet, { failClosed }) {
 const GEO_BLOCKED = new Set(['US', 'CA', 'CU', 'IR', 'KP', 'SY', 'RU', 'BY', 'T1'])
 const GEO_KINDS = new Set(['deposit', 'borrow', 'liquidate', 'loop-open']) // a loop deposits the collateral: USDY's market is geo-blocked
 const geoBlocked = (req) => GEO_BLOCKED.has(req.headers['cf-ipcountry'])
-const GEO_REFUSED = { error: 'This market is not available in your country (United States, Canada and sanctioned countries). You can still repay and withdraw.', geoBlocked: true }
+const GEO_REFUSED = {
+  error:
+    'This market is not available in your country (United States, Canada and sanctioned countries). You can still repay and withdraw.',
+  geoBlocked: true,
+}
 
 // Streams are capped per client IP, so one client can't take every slot; a browser turned away polls /api/market.
 const clients = new Set()
@@ -121,7 +216,8 @@ const streams = new Map()
 const event = (data) => `event: market\ndata: ${JSON.stringify(data)}\n\n`
 function events(req, res) {
   const ip = clientIp(req)
-  if ((streams.get(ip) ?? 0) >= MAX_STREAMS_PER_IP) return send(res, 429, { error: 'Too many connections from this address' })
+  if ((streams.get(ip) ?? 0) >= MAX_STREAMS_PER_IP)
+    return send(res, 429, { error: 'Too many connections from this address' })
   if (clients.size >= MAX_CLIENTS) return send(res, 503, { error: 'Too many connections' })
   res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store', 'x-accel-buffering': 'no' })
   res.write('retry: 5000\n\n')
@@ -142,11 +238,21 @@ function events(req, res) {
   res.on('close', drop)
   res.on('error', drop) // client gone mid-write
 }
-onSnapshot((snapshot) => { const msg = event(snapshot); for (const c of clients) c.write(msg) })
-setInterval(() => { for (const c of clients) c.write(': ping\n\n') }, 25_000).unref() // under Cloudflare's 100s idle cut
+onSnapshot((snapshot) => {
+  const msg = event(snapshot)
+  for (const c of clients) c.write(msg)
+})
+setInterval(() => {
+  for (const c of clients) c.write(': ping\n\n')
+}, 25_000).unref() // under Cloudflare's 100s idle cut
 
 // Swap stays off without the Jupiter key and fee accounts; SWAP_WALLETS limits it to those wallets (mainnet beta).
-const SWAP_WALLETS = new Set((process.env.SWAP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
+const SWAP_WALLETS = new Set(
+  (process.env.SWAP_WALLETS ?? '')
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean),
+)
 const swapOpenTo = (wallet) => SWAP_WALLETS.size === 0 || SWAP_WALLETS.has(wallet)
 const SWAP_NOT_ENABLED = { error: 'Swap is not available for this wallet yet.' }
 
@@ -182,7 +288,12 @@ function currentSwapReadiness(request = {}) {
 // LOOP_MAX_FUNDING dollars of collateral each, empty for no cap). Listing a wallet is the approval: it stands in for the risk owner and
 // the fork-only gates, covered by the passing `npm run verify:loop-fork` run (open, close, fees, rollback). Releasing to
 // everyone (LOOP_ENABLED) still needs NYSA_LOOP_RISK_OWNER / _APPROVED_AT and those gates.
-const LOOP_WALLETS = new Set((process.env.LOOP_WALLETS ?? '').split(',').map((a) => a.trim()).filter(Boolean))
+const LOOP_WALLETS = new Set(
+  (process.env.LOOP_WALLETS ?? '')
+    .split(',')
+    .map((a) => a.trim())
+    .filter(Boolean),
+)
 const loopOn = LOOP_ENABLED || LOOP_WALLETS.size > 0
 // A betaOnly loop (config.js) stays with LOOP_WALLETS even once loops are released to everyone.
 const loopOpenTo = (wallet, marketId) => (LOOP_ENABLED && !loopByMarket(marketId)?.betaOnly) || LOOP_WALLETS.has(wallet)
@@ -192,7 +303,9 @@ const LOOP_NOT_ENABLED = { error: 'Loop is not available for this wallet yet.' }
 // the named risk approval instead: NYSA_LOOP_RISK_OWNER and NYSA_LOOP_RISK_APPROVED_AT, which also stand for its
 // passed fork checks. Without them a released loop stays closed.
 const loopUnderBeta = (marketId) => (!LOOP_ENABLED || !!loopByMarket(marketId)?.betaOnly) && LOOP_WALLETS.size > 0
-const releaseApproved = () => !!process.env.NYSA_LOOP_RISK_OWNER?.trim() && Number.isFinite(Date.parse(process.env.NYSA_LOOP_RISK_APPROVED_AT ?? ''))
+const releaseApproved = () =>
+  !!process.env.NYSA_LOOP_RISK_OWNER?.trim() &&
+  Number.isFinite(Date.parse(process.env.NYSA_LOOP_RISK_APPROVED_AT ?? ''))
 const loopGatesPassed = (marketId) => loopUnderBeta(marketId) || (LOOP_ENABLED && releaseApproved())
 const LOOP_MAX_FUNDING = Number(process.env.LOOP_MAX_FUNDING) > 0 ? Number(process.env.LOOP_MAX_FUNDING) : null
 // Loops are funded in their collateral, so the cap is its dollar value at the market's oracle price.
@@ -204,8 +317,9 @@ const overLoopCap = (amount, marketId) => {
 }
 // A loop is funded in its collateral, so an amount may carry up to that token's decimals (oTFY has 9), as the panel
 // lets you type and as Jupiter truncates: more would not fit in base units.
-const loopAmountValid = (amount, marketId) => typeof amount === 'string'
-  && new RegExp(`^\\d+(?:\\.\\d{1,${TOKENS[loopByMarket(marketId).collateral].decimals}})?$`).test(amount)
+const loopAmountValid = (amount, marketId) =>
+  typeof amount === 'string' &&
+  new RegExp(`^\\d+(?:\\.\\d{1,${TOKENS[loopByMarket(marketId).collateral].decimals}})?$`).test(amount)
 const LOOP_CAP_ERROR = () => `Loops are capped at $${LOOP_MAX_FUNDING} during the beta.`
 
 // A `priceYield` collateral (USDY) earns through its price, not Kamino's supply APR, so the loop's carry adds it: the
@@ -223,24 +337,42 @@ async function loadPriceYields() {
       const measured = priceApy(history.tokens?.[loopMarket(loop).reserves[loop.collateral]]?.points ?? [])
       priceYields.set(loop.market, measured != null ? { apy: measured, source: 'price' } : envApy(loop))
     }
-  } catch (error) { console.warn('[loop] price yield unavailable', error?.message) }
+  } catch (error) {
+    console.warn('[loop] price yield unavailable', error?.message)
+  }
 }
-if (loopOn) { loadPriceYields(); setInterval(loadPriceYields, 3_600_000).unref() }
+if (loopOn) {
+  loadPriceYields()
+  setInterval(loadPriceYields, 3_600_000).unref()
+}
 const loopReserves = (snapshot, marketId) => {
   const reserves = snapshot?.reserves?.[marketId] ?? {}
   const { collateral } = loopByMarket(marketId)
   const yieldOf = priceYields.get(marketId)
-  return reserves[collateral] ? { ...reserves, [collateral]: { ...reserves[collateral], nativeApy: yieldOf?.apy ?? null, nativeApySource: yieldOf?.source ?? null } } : reserves
+  return reserves[collateral]
+    ? {
+        ...reserves,
+        [collateral]: {
+          ...reserves[collateral],
+          nativeApy: yieldOf?.apy ?? null,
+          nativeApySource: yieldOf?.source ?? null,
+        },
+      }
+    : reserves
 }
-const loopFeeAccountsConfigured = (marketId) => !!configuredFeeAccountForMint(TOKENS[loopByMarket(marketId).collateral].mint)
-  && !!configuredFeeAccountForMint(TOKENS[loopByMarket(marketId).debt].mint)
-  && !!process.env.SWAP_FEE_TREASURY_AUTHORITY
+const loopFeeAccountsConfigured = (marketId) =>
+  !!configuredFeeAccountForMint(TOKENS[loopByMarket(marketId).collateral].mint) &&
+  !!configuredFeeAccountForMint(TOKENS[loopByMarket(marketId).debt].mint) &&
+  !!process.env.SWAP_FEE_TREASURY_AUTHORITY
 
 // Loop exits use the same route/program/fee/fork gates as swaps, but do not depend on new-entry allocation policy.
 function currentLoopRouteReadiness(marketId) {
   const snapshot = getSnapshot()
-  const snapshotFresh = Number.isFinite(snapshot?.updatedAt) && snapshot.updatedAt > 0
-    && Date.now() >= snapshot.updatedAt && Date.now() - snapshot.updatedAt <= 60_000
+  const snapshotFresh =
+    Number.isFinite(snapshot?.updatedAt) &&
+    snapshot.updatedAt > 0 &&
+    Date.now() >= snapshot.updatedAt &&
+    Date.now() - snapshot.updatedAt <= 60_000
   const localExecution = localForkProgramEvidenceReady()
   const forkProof = localExecution || loopGatesPassed(marketId)
   const routeReadiness = swapReadiness({
@@ -248,9 +380,15 @@ function currentLoopRouteReadiness(marketId) {
     feeAccountsConfigured: loopFeeAccountsConfigured(marketId),
     marketDataAvailable: snapshotFresh,
     marketAvailabilityReasons: [
-      ...(snapshotFresh ? [] : [{ code: 'market-data-stale', message: 'Fresh market data is unavailable for a safe loop transaction.' }]),
+      ...(snapshotFresh
+        ? []
+        : [{ code: 'market-data-stale', message: 'Fresh market data is unavailable for a safe loop transaction.' }]),
       // The loop is not released on mainnet yet: its transactions build only on the local fork.
-      ...(forkProof ? [] : [{ code: 'fork-proof-missing', message: 'The required local-fork fee and rollback checks have not passed.' }]),
+      ...(forkProof
+        ? []
+        : [
+            { code: 'fork-proof-missing', message: 'The required local-fork fee and rollback checks have not passed.' },
+          ]),
     ],
   })
   return routeReadiness
@@ -268,8 +406,10 @@ function loopStrategyForAction(snapshot, marketId, leverage = 1.5) {
     providerConfigured: true, // keyless access remains quote-only; route execution is separately denied below.
     productionProviderConfigured: !!process.env.JUPITER_API_KEY || localExecution,
     treasuryConfigured: loopFeeAccountsConfigured(marketId),
-    riskApproval: localExecution ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
-      : loopUnderBeta(marketId) ? { owner: 'LOOP_WALLETS private beta', approvedAt: new Date(0).toISOString() }
+    riskApproval: localExecution
+      ? { owner: 'Local Surfpool disposable-wallet profile', approvedAt: new Date().toISOString() }
+      : loopUnderBeta(marketId)
+        ? { owner: 'LOOP_WALLETS private beta', approvedAt: new Date(0).toISOString() }
         : { owner: process.env.NYSA_LOOP_RISK_OWNER, approvedAt: process.env.NYSA_LOOP_RISK_APPROVED_AT },
     feasibilityPassed: localExecution || loopGatesPassed(marketId),
     leverage,
@@ -278,7 +418,15 @@ function loopStrategyForAction(snapshot, marketId, leverage = 1.5) {
 
 function currentLoopActionReadiness(body, { previewAcknowledgementValid = false, positionVerified = false } = {}) {
   if (localForkDappEnabled && !isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL })) {
-    return { executionEnabled: false, unavailableReasons: [{ code: 'local-fork-wallet-not-allowlisted', message: 'Connect a generated LOCAL_FORK_ACCOUNT_n wallet to execute on this local Surfpool profile.' }] }
+    return {
+      executionEnabled: false,
+      unavailableReasons: [
+        {
+          code: 'local-fork-wallet-not-allowlisted',
+          message: 'Connect a generated LOCAL_FORK_ACCOUNT_n wallet to execute on this local Surfpool profile.',
+        },
+      ],
+    }
   }
   const snapshot = getSnapshot()
   return evaluateLoopActionReadiness({
@@ -297,14 +445,17 @@ const lendingIntentStore = createLendingTransactionIntentStore({ ttlMs: 10 * 60_
 const lendingTransactions = createLendingTransactionIntentService({
   intentStore: lendingIntentStore,
   build: buildTx,
-  relay: ({ tx, wallet, intentStore, intentId, requireIntent }) => sendSigned({ tx, wallet, intentStore, intentId, requireIntent }),
+  relay: ({ tx, wallet, intentStore, intentId, requireIntent }) =>
+    sendSigned({ tx, wallet, intentStore, intentId, requireIntent }),
 })
 const swapExecution = createSwapExecutionService({
   readiness: async (request) => currentSwapReadiness(request).readiness,
   buildRoute: async (request) => {
     const localExecution = localForkProgramEvidenceReady()
     if (localExecution && !isLocalForkWallet(request.wallet, { rpcUrl: RPC_URL })) {
-      throw new SwapRouteError('Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.')
+      throw new SwapRouteError(
+        'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.',
+      )
     }
     const feeAccount = configuredFeeAccountForMint(request.outputMint)
     if (!feeAccount) throw new SwapRouteError('No verified fee account is configured for the output token.')
@@ -324,10 +475,17 @@ const swapExecution = createSwapExecutionService({
       const token = Object.values(TOKENS).find((t) => t.mint === mint)
       return { decimals: token.decimals, price: reserves.find((r) => r[token.token_id])?.[token.token_id].price }
     }
-    assertOracleFairOutput({ inputAmountBaseUnits: request.amountBaseUnits, minimumOutputBaseUnits: built.minimumOutputBaseUnits,
-      input: side(request.inputMint), output: side(request.outputMint) })
+    assertOracleFairOutput({
+      inputAmountBaseUnits: request.amountBaseUnits,
+      minimumOutputBaseUnits: built.minimumOutputBaseUnits,
+      input: side(request.inputMint),
+      output: side(request.outputMint),
+    })
     if (!localExecution) return built
-    if (!await verifyLocalForkRoute(built)) throw new SwapRouteError('The local route does not use only the approved DEX and executable programs cloned into Surfpool.')
+    if (!(await verifyLocalForkRoute(built)))
+      throw new SwapRouteError(
+        'The local route does not use only the approved DEX and executable programs cloned into Surfpool.',
+      )
     return { ...built, programPolicy: { approved: true, unreviewed: [] }, executable: true }
   },
   compile: compileSwapTransaction,
@@ -344,7 +502,7 @@ const sendAuthorizedSwap = createAuthorizedSwapSender({
       inputMint: metadata.inputMint,
       outputMint: metadata.outputMint,
     }).readiness.executionEnabled
-    if (localForkDappEnabled) return readiness && await localIntentAuthorized(intent)
+    if (localForkDappEnabled) return readiness && (await localIntentAuthorized(intent))
     return swapIntentStillAuthorized(intent, { executionEnabled: readiness })
   },
   send: ({ tx, wallet, intent }) => sendSigned({ tx, wallet, approvedProgramIds: intent.metadata?.programIds ?? [] }),
@@ -352,7 +510,10 @@ const sendAuthorizedSwap = createAuthorizedSwapSender({
 
 const loopPreviews = new Map()
 // Time to review and approve in the wallet; the transaction's own minimum swap output and Kamino's checks still bind.
-const loopIntentStore = createSwapIntentStore({ ttlMs: LOOP_SIGNING_WINDOW_MS, messageMatcher: loopSetupMessageMatchesIgnoringBlockhash })
+const loopIntentStore = createSwapIntentStore({
+  ttlMs: LOOP_SIGNING_WINDOW_MS,
+  messageMatcher: loopSetupMessageMatchesIgnoringBlockhash,
+})
 function activeLoopPreview(id) {
   const preview = loopPreviews.get(id)
   if (!preview || Date.now() >= preview.expiresAt) {
@@ -364,24 +525,43 @@ function activeLoopPreview(id) {
 const loopExecution = createLoopExecutionService({
   readiness: async ({ action, request, preview, position, previewAcknowledgementValid }) => {
     const snapshot = action === 'loop-open' ? await refreshMarketForExecution() : null
-    const strategy = action === 'loop-open' ? loopStrategyForAction(snapshot, request.market, Number(preview.leverage)) : null
+    const strategy =
+      action === 'loop-open' ? loopStrategyForAction(snapshot, request.market, Number(preview.leverage)) : null
     const currentCarry = strategy?.carry
     const previewCarry = preview?.carry
     const now = Date.now()
-    const snapshotFresh = Number.isFinite(snapshot?.updatedAt) && snapshot.updatedAt > 0
-      && now >= snapshot.updatedAt && now - snapshot.updatedAt <= LOOP_PREVIEW_MAX_AGE_MS
+    const snapshotFresh =
+      Number.isFinite(snapshot?.updatedAt) &&
+      snapshot.updatedAt > 0 &&
+      now >= snapshot.updatedAt &&
+      now - snapshot.updatedAt <= LOOP_PREVIEW_MAX_AGE_MS
     const currentMarketRisk = loopMarketRiskFromSnapshot(snapshot, request.market)
-    if (action === 'loop-open' && (!snapshotFresh
-      || !loopCarryStillCurrent(previewCarry, currentCarry, now)
-      || !loopMarketRiskStillCurrent(preview?.sdk?.marketRisk, currentMarketRisk, Number(snapshot?.blockTime)))) {
-      return { executionEnabled: false, unavailableReasons: [{ code: 'loop-preview-stale', message: 'Loop market, oracle, or carry assumptions changed or became stale after preview; build a fresh preview.' }] }
+    if (
+      action === 'loop-open' &&
+      (!snapshotFresh ||
+        !loopCarryStillCurrent(previewCarry, currentCarry, now) ||
+        !loopMarketRiskStillCurrent(preview?.sdk?.marketRisk, currentMarketRisk, Number(snapshot?.blockTime)))
+    ) {
+      return {
+        executionEnabled: false,
+        unavailableReasons: [
+          {
+            code: 'loop-preview-stale',
+            message:
+              'Loop market, oracle, or carry assumptions changed or became stale after preview; build a fresh preview.',
+          },
+        ],
+      }
     }
-    return currentLoopActionReadiness({
-      ...request,
-      kind: action,
-      leverage: Number(preview?.leverage ?? request.leverage),
-      positionId: position?.id ?? request.positionId,
-    }, { previewAcknowledgementValid, positionVerified: !!position })
+    return currentLoopActionReadiness(
+      {
+        ...request,
+        kind: action,
+        leverage: Number(preview?.leverage ?? request.leverage),
+        positionId: position?.id ?? request.positionId,
+      },
+      { previewAcknowledgementValid, positionVerified: !!position },
+    )
   },
   getPreview: async (id) => activeLoopPreview(id),
   getPosition: async ({ wallet, positionId }) => {
@@ -390,408 +570,695 @@ const loopExecution = createLoopExecutionService({
   },
   metadataReady: async ({ wallet, market }) => !(await loopMetadataStatus({ wallet, market })).required,
   setupRequired: async ({ wallet, market }) => (await loopMetadataStatus({ wallet, market })).required,
-  buildOpen: ({ wallet, request, preview }) => buildLoopOpenApplication({ wallet, amount: request.amount, leverage: request.leverage, preview, validateRoute: validateSwapRouteForCurrentNetwork }),
-  buildClose: ({ wallet, position }) => buildLoopCloseApplication({ wallet, position,
-    validateRoute: validateSwapRouteForCurrentNetwork,
-    localForkSimulation: localForkDappEnabled,
-    localForkRpcUrl: RPC_URL,
-    localRouteProgramVerifier: verifyLocalForkRoute,
-  }),
+  buildOpen: ({ wallet, request, preview }) =>
+    buildLoopOpenApplication({
+      wallet,
+      amount: request.amount,
+      leverage: request.leverage,
+      preview,
+      validateRoute: validateSwapRouteForCurrentNetwork,
+    }),
+  buildClose: ({ wallet, position }) =>
+    buildLoopCloseApplication({
+      wallet,
+      position,
+      validateRoute: validateSwapRouteForCurrentNetwork,
+      localForkSimulation: localForkDappEnabled,
+      localForkRpcUrl: RPC_URL,
+      localRouteProgramVerifier: verifyLocalForkRoute,
+    }),
   buildSetup: ({ wallet, market }) => buildLoopMetadataSetupApplication({ wallet, market }),
-  compile: ({ lookupTables = [], market, ...rest }) => compileAtomicTransaction({ ...rest, lookupTables: [...lookupTables, loopByMarket(market).lookupTable].filter(Boolean) }),
+  compile: ({ lookupTables = [], market, ...rest }) =>
+    compileAtomicTransaction({
+      ...rest,
+      lookupTables: [...lookupTables, loopByMarket(market).lookupTable].filter(Boolean),
+    }),
   simulate: simulateLoopApplication,
-  verifySimulation: async ({ kind, ...context }) => kind === 'loop-setup'
-    ? verifyLoopMetadataSetupSimulation(context)
-    : verifyLoopApplicationSimulation({ kind, ...context }),
+  verifySimulation: async ({ kind, ...context }) =>
+    kind === 'loop-setup'
+      ? verifyLoopMetadataSetupSimulation(context)
+      : verifyLoopApplicationSimulation({ kind, ...context }),
   intentStore: loopIntentStore,
   authorize: async ({ intent }) => {
     const ready = currentLoopRouteReadiness(intent?.metadata?.market).executionEnabled
-    if (localForkDappEnabled) return ready && await localIntentAuthorized(intent)
+    if (localForkDappEnabled) return ready && (await localIntentAuthorized(intent))
     return swapIntentStillAuthorized(intent, { executionEnabled: ready, approvedPrograms: LOOP_PROGRAMS })
   },
-  authorizeSetup: async ({ intent }) => intent?.metadata?.kind === 'loop-setup'
-    && (!localForkDappEnabled || isLocalForkWallet(intent?.wallet, { rpcUrl: RPC_URL }))
-    && !!loopByMarket(intent.metadata.market)
-    && intent.metadata.programIds?.length === 1
-    && String(intent.metadata.programIds[0]) === String(KAMINO_LENDING_PROGRAM_ID)
-    && (intent.metadata.routeLabels ?? []).length === 0,
+  authorizeSetup: async ({ intent }) =>
+    intent?.metadata?.kind === 'loop-setup' &&
+    (!localForkDappEnabled || isLocalForkWallet(intent?.wallet, { rpcUrl: RPC_URL })) &&
+    !!loopByMarket(intent.metadata.market) &&
+    intent.metadata.programIds?.length === 1 &&
+    String(intent.metadata.programIds[0]) === String(KAMINO_LENDING_PROGRAM_ID) &&
+    (intent.metadata.routeLabels ?? []).length === 0,
   send: ({ tx, wallet, intent }) => sendSigned({ tx, wallet, approvedProgramIds: intent.metadata?.programIds ?? [] }),
   onBuild: (wallet) => noteBuilt(wallet),
 })
 
 const routes = [
-  ['GET', /^\/api\/swap-readiness$/, (req, res) => {
-    const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
-    if (wallet && !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
-    const { readiness, availability, visible } = currentSwapReadiness({ wallet: wallet ?? undefined })
-    return send(res, 200, { ...readiness, visible, loopVisible: loopOpenTo(wallet), loopBeta: LOOP_WALLETS.has(wallet), feeBps: FEE_BPS, marketAvailability: availability,
-      executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
-  }],
-  ['POST', /^\/api\/swap-quote$/, async (req, res) => {
-    if (limited(req, 'swap-quote', 20)) return send(res, 429, { error: 'Too many requests' })
-    const body = await jsonBody(req)
-    let request
-    try { request = parseSwapQuoteRequest(body) }
-    catch (error) {
-      if (error instanceof SwapRouteError) return send(res, 400, { error: error.message })
-      throw error
-    }
-    if (blocked(res, request.wallet, { failClosed: true })) return
-    if (!swapOpenTo(request.wallet)) return send(res, 403, SWAP_NOT_ENABLED)
-    const { availability } = currentSwapReadiness(request)
-    if (!availability.available) return send(res, 503, { error: availability.reasons.map((reason) => reason.message).join(' ') })
-    try {
-      return await runWithRequestAbortSignal(req, res, async (signal) => {
-        try {
-          const quote = await createPublicSwapQuote(body, { signal })
-          if (signal.aborted || res.destroyed) return
-          return send(res, 200, quote)
-        } catch (error) {
-          if (signal.aborted || res.destroyed) return
-          if (error instanceof SwapRouteError) {
-            const status = /fee account is configured/i.test(error.message) ? 503 : 400
-            return send(res, status, { error: error.message })
-          }
-          if (error instanceof SwapError) return send(res, 502, { error: error.message })
-          const { status, error: message } = explain(error, 'swap quote', 'Could not load a swap quote, please try again.')
-          return send(res, status, { error: message })
-        }
+  [
+    'GET',
+    /^\/api\/swap-readiness$/,
+    (req, res) => {
+      const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
+      if (wallet && !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
+      const { readiness, availability, visible } = currentSwapReadiness({ wallet: wallet ?? undefined })
+      return send(res, 200, {
+        ...readiness,
+        visible,
+        loopVisible: loopOpenTo(wallet),
+        loopBeta: LOOP_WALLETS.has(wallet),
+        feeBps: FEE_BPS,
+        marketAvailability: availability,
+        executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated',
       })
-    } catch (error) {
-      if (res.destroyed) return
-      throw error
-    }
-  }],
-  ['POST', /^\/api\/swap-build$/, async (req, res) => {
-    if (limited(req, 'swap-build', 8)) return send(res, 429, { error: 'Too many requests' })
-    const body = await jsonBody(req)
-    let request
-    try { request = parseSwapQuoteRequest(body) }
-    catch (error) {
-      if (error instanceof SwapRouteError) return send(res, 400, { error: error.message })
-      throw error
-    }
-    if (blocked(res, request.wallet, { failClosed: true })) return
-    const { readiness, availability } = currentSwapReadiness(request)
-    if (!availability.available) return send(res, 503, { error: availability.reasons.map((reason) => reason.message).join(' ') })
-    if (!readiness.executionEnabled) return send(res, 503, { error: readiness.unavailableReasons.map((reason) => reason.message).join(' '), unavailableReasons: readiness.unavailableReasons })
-    try { return send(res, 200, await swapExecution.build(body)) }
-    catch (error) {
-      if (error instanceof SwapExecutionError) return send(res, 503, { error: error.message })
-      if (error instanceof SwapRouteError) return send(res, 503, { error: error.message })
-      if (error instanceof SwapError) return send(res, 502, { error: error.message })
-      const { status, error: message } = explain(error, 'swap build', 'Could not build a swap transaction, please try again.')
-      return send(res, status, { error: message })
-    }
-  }],
-  ['POST', /^\/api\/swap-send$/, async (req, res) => {
-    if (limited(req, 'swap-send', 8)) return send(res, 429, { error: 'Too many requests' })
-    const body = await jsonBody(req)
-    if (!isAddress(String(body.wallet)) || typeof body.tx !== 'string' || typeof body.intentId !== 'string') throw new UserError('Invalid swap relay request.')
-    if (blocked(res, body.wallet, { failClosed: true })) return
-    try { return send(res, 200, await sendAuthorizedSwap({ tx: body.tx, wallet: body.wallet, intentId: body.intentId })) }
-    catch (error) {
-      if (error instanceof DefiniteSendRefusal) return send(res, 400, { error: error.message, outcome: 'rejected' })
-      if (error instanceof SendOutcomeUnknownError) return send(res, 502, { error: error.message, signature: error.signature, outcome: 'unknown' })
-      if (error instanceof SwapExecutionError) return send(res, 400, { error: error.message })
-      if (error instanceof UserError) throw error
-      const { error: message } = explain(error, 'swap relay', 'Could not relay the signed swap, please rebuild it and try again.', 'The Solana network connection is busy right now, so nothing was sent. Rebuild it and try again.')
-      return send(res, 502, { error: message })
-    }
-  }],
-  ['GET', /^\/api\/loop-strategies$/, (req, res) => {
-    const snapshot = getSnapshot()
-    const strategies = LOOPS.map(({ market }) => {
-      const strategy = loopStrategyForAction(snapshot, market)
-      const routeReadiness = currentLoopRouteReadiness(market)
-      return { ...strategy, actions: {
-        open: evaluateLoopActionReadiness({ action: 'loop-open', strategy, routeReadiness, builderAvailable: true }),
-        fullClose: evaluateLoopActionReadiness({ action: 'loop-close', routeReadiness, builderAvailable: true }),
-      } }
-    })
-    return send(res, 200, { strategies, readOnly: true, maxFunding: LOOP_MAX_FUNDING,
-      executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
-  }],
-  ['GET', /^\/api\/loop-setup-status$/, async (req, res) => {
-    if (limited(req, 'loop-setup-status', 10)) return send(res, 429, { error: 'Too many requests' })
-    const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
-    if (!wallet || !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
-    if (!loopOpenTo(wallet)) return send(res, 403, LOOP_NOT_ENABLED)
-    if (blocked(res, wallet, { failClosed: true })) return
-    // Kamino's UserMetadata is one per wallet, whichever market reads it.
-    try { return send(res, 200, { ...(await loopMetadataStatus({ wallet, market: LOOPS[0].market })), readOnly: true }) }
-    catch (error) {
-      console.warn('[loop] metadata status unavailable', error?.message)
-      return send(res, 503, { error: 'Kamino metadata setup status is unavailable.' })
-    }
-  }],
-  ['POST', /^\/api\/loop-preview$/, async (req, res) => {
-    if (limited(req, 'loop-preview', 20)) return send(res, 429, { error: 'Too many requests' })
-    const body = await jsonBody(req)
-    if (!loopByMarket(body.marketId)) throw new UserError('Unknown loop strategy')
-    if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
-    if (!loopOpenTo(body.wallet, body.marketId)) return send(res, 403, LOOP_NOT_ENABLED)
-    if (marketById(body.marketId)?.geoBlocked && geoBlocked(req)) return send(res, 403, GEO_REFUSED)
-    if (overLoopCap(body.fundingAmount, body.marketId)) throw new UserError(LOOP_CAP_ERROR())
-    if (!loopAmountValid(body.fundingAmount, body.marketId)) throw new UserError('Invalid funding amount')
-    const fundingAmount = Number(body.fundingAmount)
-    const leverage = Number(body.leverage)
-    const amountInRange = Number.isFinite(fundingAmount) && fundingAmount > 0
-    const leverageInRange = leverage > 1 && leverage <= DEFAULT_LOOP_LIMITS.maxLeverage
-    if (!amountInRange || !leverageInRange) throw new UserError('Funding amount or leverage is outside the preview range')
-    const snapshot = getSnapshot()
-    const strategy = loopStrategyForAction(snapshot, body.marketId, leverage)
-    const previewId = randomUUID()
-    let applicationContext = null
-    try {
-      return await runWithRequestAbortSignal(req, res, async (signal) => {
-        try {
-          const previewOnce = () => buildReadOnlyLoopPreview({
-            marketId: body.marketId, wallet: body.wallet, fundingAmount: body.fundingAmount, leverage, snapshot, strategy, signal,
-            localForkSimulation: localForkDappEnabled && isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL }),
-            localForkRpcUrl: RPC_URL,
-            localRouteProgramVerifier: verifyLocalForkRoute,
-            onApplicationContext: (context) => { applicationContext = context },
-          })
-          // Back-to-back quotes (the auto-refresh, then the fresh one taken on click) can hit the provider's rate limit:
-          // a read-only preview is safe to ask once more.
-          const preview = await previewOnce().catch(async (error) => {
-            if (!isTransient(error) || signal.aborted) throw error
-            await new Promise((resolve) => setTimeout(resolve, 1500))
-            return previewOnce()
-          })
-          if (signal.aborted || res.destroyed) return
-          const actionReadiness = evaluateLoopActionReadiness({
-            action: 'loop-open', strategy, routeReadiness: currentLoopRouteReadiness(body.marketId), builderAvailable: true,
-            previewAcknowledgementValid: false,
-          })
-          if (localForkDappEnabled && !isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL })) {
-            actionReadiness.executionEnabled = false
-            actionReadiness.unavailableReasons.push({ code: 'local-fork-wallet-not-allowlisted', message: 'Connect a generated LOCAL_FORK_ACCOUNT_n wallet to execute on this local Surfpool profile.' })
-          }
-          const metadataStatus = body.wallet ? await loopMetadataStatus({ wallet: body.wallet, market: body.marketId }) : { required: false }
-          if (metadataStatus.required) {
-            actionReadiness.executionEnabled = false
-            actionReadiness.unavailableReasons.push({ code: 'kamino-metadata-setup-required', message: 'Initialize the one-time Kamino UserMetadata account before opening a loop.' })
-          }
-          // The preview only binds amount, leverage and acknowledgement: the build quotes again and rechecks prices and
-          // limits, so it can outlive its quote long enough to read it and click (it bounded preview → signed send to 15s).
-          const expiresAt = Date.now() + LOOP_PREVIEW_TTL_MS
-          if (body.wallet && applicationContext) {
-            const record = {
-              ...preview,
-              id: previewId,
-              wallet: body.wallet,
-              marketId: body.marketId,
-              fundingAmount: body.fundingAmount,
-              leverage,
-              expiresAt,
-              applicationContext,
+    },
+  ],
+  [
+    'POST',
+    /^\/api\/swap-quote$/,
+    async (req, res) => {
+      if (limited(req, 'swap-quote', 20)) return send(res, 429, { error: 'Too many requests' })
+      const body = await jsonBody(req)
+      let request
+      try {
+        request = parseSwapQuoteRequest(body)
+      } catch (error) {
+        if (error instanceof SwapRouteError) return send(res, 400, { error: error.message })
+        throw error
+      }
+      if (blocked(res, request.wallet, { failClosed: true })) return
+      if (!swapOpenTo(request.wallet)) return send(res, 403, SWAP_NOT_ENABLED)
+      const { availability } = currentSwapReadiness(request)
+      if (!availability.available)
+        return send(res, 503, { error: availability.reasons.map((reason) => reason.message).join(' ') })
+      try {
+        return await runWithRequestAbortSignal(req, res, async (signal) => {
+          try {
+            const quote = await createPublicSwapQuote(body, { signal })
+            if (signal.aborted || res.destroyed) return
+            return send(res, 200, quote)
+          } catch (error) {
+            if (signal.aborted || res.destroyed) return
+            if (error instanceof SwapRouteError) {
+              const status = /fee account is configured/i.test(error.message) ? 503 : 400
+              return send(res, status, { error: error.message })
             }
-            loopPreviews.set(previewId, record)
-            for (const [id, item] of loopPreviews) if (Date.now() >= item.expiresAt) loopPreviews.delete(id)
+            if (error instanceof SwapError) return send(res, 502, { error: error.message })
+            const { status, error: message } = explain(
+              error,
+              'swap quote',
+              'Could not load a swap quote, please try again.',
+            )
+            return send(res, status, { error: message })
           }
-          return send(res, 200, { ...preview, previewId, actionReadiness, metadataSetupRequired: metadataStatus.required,
-            strategyId: body.marketId, readOnly: true,
-            executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated' })
-        } catch (error) {
-          if (signal.aborted || res.destroyed) return
-          console.warn('[loop] preview unavailable', error?.message)
-          return send(res, 200, {
-            previewId,
-            strategyId: body.marketId,
-            readOnly: true,
-            executionEnabled: false,
-            available: false,
-            unavailableReasons: [...strategy.unavailableReasons, { code: 'quote-unavailable', message: 'Couldn\'t get a live swap quote right now. Try again in a moment.' }],
-          })
-        }
-      })
-    } catch (error) {
-      if (res.destroyed) return
-      throw error
-    }
-  }],
-  ['GET', /^\/api\/market$/, (req, res) => {
-    const s = getSnapshot()
-    return s ? send(res, 200, s) : send(res, 503, { error: 'Market data is still loading' })
-  }],
-  ['GET', /^\/api\/events$/, events],
-  ['GET', /^\/api\/account\/(\w+)$/, async (req, res, [wallet]) => {
-    if (!isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
-    if (limited(req, 'account', 60)) return send(res, 429, { error: 'Too many requests' })
-    if (blocked(res, wallet, { failClosed: false })) return
-    const fresh = new URL(req.url, 'http://x').searchParams.has('fresh')
-    send(res, 200, await getAccount(wallet, fresh))
-  }],
-  ['GET', /^\/api\/withdrawal-allowance\/(\w+)$/, async (req, res, [wallet]) => {
-    if (!isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
-    if (limited(req, 'withdrawal-allowance', 20)) return send(res, 429, { error: 'Too many requests' })
-    if (blocked(res, wallet, { failClosed: true })) return
-    try {
-      const allowance = await readFreshWithdrawalAllowance({ wallet, refreshMarket: refreshMarketForExecution, getAccount })
-      return send(res, 200, { market: 'sol-usdy-usdc', token: 'svm-usdy', ...allowance })
-    } catch (error) {
-      console.warn('[withdrawal] fresh allowance unavailable', error?.message)
-      return send(res, 503, { error: 'Fresh free-withdrawal allowance is unavailable. Retry after market data refreshes.' })
-    }
-  }],
-  ['POST', /^\/api\/tx$/, async (req, res) => {
-    if (limited(req, 'tx', 20)) return send(res, 429, { error: 'Too many requests' })
-    const b = await jsonBody(req)
-    if (!KINDS.includes(b.kind)) throw new UserError('Unknown action')
-    if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
-    if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
-      if (!loopOpenTo(b.wallet, b.market)) return send(res, 403, LOOP_NOT_ENABLED)
-      if (localForkDappEnabled && !isLocalForkWallet(b.wallet, { rpcUrl: RPC_URL })) {
-        return send(res, 503, { error: 'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.' })
+        })
+      } catch (error) {
+        if (res.destroyed) return
+        throw error
       }
-      if (!loopByMarket(b.market)) throw new UserError('Unknown loop strategy')
-      if (b.kind === 'loop-open' && (!loopAmountValid(b.amount, b.market)
-        || !Number.isFinite(Number(b.amount)) || Number(b.amount) <= 0
-        || !Number.isFinite(Number(b.leverage)) || Number(b.leverage) <= 1 || Number(b.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage)) {
-        throw new UserError('Funding amount or leverage is outside the loop range')
+    },
+  ],
+  [
+    'POST',
+    /^\/api\/swap-build$/,
+    async (req, res) => {
+      if (limited(req, 'swap-build', 8)) return send(res, 429, { error: 'Too many requests' })
+      const body = await jsonBody(req)
+      let request
+      try {
+        request = parseSwapQuoteRequest(body)
+      } catch (error) {
+        if (error instanceof SwapRouteError) return send(res, 400, { error: error.message })
+        throw error
       }
-      if (b.kind === 'loop-open' && overLoopCap(b.amount, b.market)) throw new UserError(LOOP_CAP_ERROR())
-      if (b.kind === 'loop-close' && (typeof b.positionId !== 'string' || !/^multiply:[a-f0-9]{64}$/.test(b.positionId))) {
-        throw new UserError('An identified Multiply position is required for full close')
-      }
-    }
-    if (b.kind === 'liquidate' && !isAddress(String(b.borrower))) throw new UserError('Invalid borrower address')
-    if (blocked(res, b.wallet, { failClosed: true })) return
-    if (b.kind === 'liquidate' && isSanctioned(b.borrower)) return send(res, 403, BLOCKED_LOAN)
-    if (GEO_KINDS.has(b.kind) && marketById(b.market)?.geoBlocked && geoBlocked(req)) return send(res, 403, GEO_REFUSED)
-    if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
-      try { return send(res, 200, await loopExecution.build(b)) }
-      catch (error) {
-        if (error instanceof LoopExecutionError) {
-          return send(res, error.status, { error: error.message, ...(error.unavailableReasons.length ? { unavailableReasons: error.unavailableReasons } : {}) })
-        }
-        if (error instanceof LoopPreviewError) return send(res, 409, { error: error.message }) // e.g. a loop is already open
-        // The simulation's own reason, already worded for the user (e.g. the market's liquidity or borrowing limit).
-        if (error instanceof UserError) return send(res, 409, { error: error.message })
-        const { status, error: message } = explain(error, 'loop build', 'Could not prepare the loop transaction; nothing was sent to your wallet.')
+      if (blocked(res, request.wallet, { failClosed: true })) return
+      const { readiness, availability } = currentSwapReadiness(request)
+      if (!availability.available)
+        return send(res, 503, { error: availability.reasons.map((reason) => reason.message).join(' ') })
+      if (!readiness.executionEnabled)
+        return send(res, 503, {
+          error: readiness.unavailableReasons.map((reason) => reason.message).join(' '),
+          unavailableReasons: readiness.unavailableReasons,
+        })
+      try {
+        return send(res, 200, await swapExecution.build(body))
+      } catch (error) {
+        if (error instanceof SwapExecutionError) return send(res, 503, { error: error.message })
+        if (error instanceof SwapRouteError) return send(res, 503, { error: error.message })
+        if (error instanceof SwapError) return send(res, 502, { error: error.message })
+        const { status, error: message } = explain(
+          error,
+          'swap build',
+          'Could not build a swap transaction, please try again.',
+        )
         return send(res, status, { error: message })
       }
-    }
-    try {
-      send(res, 200, await lendingTransactions.build({
-        kind: b.kind, wallet: b.wallet, market: b.market, token: b.token, amount: b.amount,
-        amountBaseUnits: b.amountBaseUnits, all: !!b.all, borrower: b.borrower, preview: !!b.preview, vault: b.vault,
-        swapFlow: b.swapFlow, swapFlowStage: b.swapFlowStage, flowAmountBaseUnits: b.flowAmountBaseUnits,
-        beforeBalanceBaseUnits: b.beforeBalanceBaseUnits,
-      }))
-    } catch (e) {
-      if (e instanceof UserError) throw e
-      const { status, error: message } = explain(e, `tx build ${b.kind}`, 'Could not build the transaction, please try again.')
-      send(res, status, { error: message })
-    }
-  }],
-  ['POST', /^\/api\/loop-send$/, async (req, res) => {
-    if (limited(req, 'loop-send', 20)) return send(res, 429, { error: 'Too many requests' })
-    const b = await jsonBody(req)
-    if (!isAddress(String(b.wallet)) || typeof b.tx !== 'string' || b.tx.length > 100_000 || typeof b.intentId !== 'string') {
-      throw new UserError('Invalid loop relay request')
-    }
-    if (!loopOpenTo(b.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
-    if (blocked(res, b.wallet, { failClosed: true })) return
-    try { return send(res, 200, await loopExecution.send({ tx: b.tx, wallet: b.wallet, intentId: b.intentId })) }
-    catch (error) {
-      if (error instanceof DefiniteSendRefusal) return send(res, 400, { error: error.message, outcome: 'rejected' })
-      if (error instanceof SendOutcomeUnknownError) return send(res, 502, { error: error.message, signature: error.signature, outcome: 'unknown' })
-      if (error instanceof LoopExecutionError) return send(res, error.status, { error: error.message, ...(error.unavailableReasons.length ? { unavailableReasons: error.unavailableReasons } : {}) })
-      const { error: message } = explain(error, 'loop relay', 'Could not relay the authorized loop transaction; its outcome may be unknown.', 'The Solana network connection is busy right now, so nothing was sent. Rebuild it and try again.')
-      return send(res, 502, { error: message })
-    }
-  }],
-  ['POST', /^\/api\/tx\/send$/, async (req, res) => {
-    if (limited(req, 'send', 20)) return send(res, 429, { error: 'Too many requests' })
-    const b = await jsonBody(req)
-    if (!isAddress(String(b.wallet)) || typeof b.tx !== 'string' || b.tx.length > 2000 || typeof b.intentId !== 'string' || !b.intentId) throw new UserError('Invalid request')
-    if (blocked(res, b.wallet, { failClosed: true })) return
-    try { return send(res, 200, await lendingTransactions.send({ tx: b.tx, wallet: b.wallet, intentId: b.intentId })) }
-    catch (error) {
-      if (error instanceof DefiniteSendRefusal) return send(res, 400, { error: error.message, outcome: 'rejected' })
-      if (error instanceof SendOutcomeUnknownError) return send(res, 502, { error: error.message, signature: error.signature, outcome: 'unknown' })
-      throw error
-    }
-  }],
-  ['POST', /^\/api\/tx\/reconcile-local$/, async (req, res) => {
-    if (limited(req, 'tx-reconcile-local', 10)) return send(res, 429, { error: 'Too many reconciliation checks.' })
-    const body = await jsonBody(req)
-    if (!localForkDappEnabled || !isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL })) {
-      return send(res, 403, { error: 'Local dropped-transaction reconciliation is available only for generated Surfpool wallets.' })
-    }
-    if (typeof body.signature !== 'string' || typeof body.tx !== 'string' || body.tx.length > 100_000) {
-      return send(res, 400, { error: 'Invalid local transaction reconciliation request.' })
-    }
-    try {
-      const wire = Uint8Array.from(Buffer.from(body.tx, 'base64'))
-      const transaction = getTransactionDecoder().decode(wire)
-      const message = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes)
-      const wallet = String(body.wallet)
-      const signatureBytes = transaction.signatures?.[wallet]
-      if (String(message.staticAccounts?.[0]) !== wallet || !(signatureBytes instanceof Uint8Array)
-        || signatureBytes.length !== 64 || getBase58Decoder().decode(signatureBytes) !== body.signature
-        || !await verifySignature(await getPublicKeyFromAddress(wallet), signatureBytes, transaction.messageBytes)) {
-        return send(res, 400, { error: 'The saved transaction signature or fee payer does not match the connected local wallet.' })
+    },
+  ],
+  [
+    'POST',
+    /^\/api\/swap-send$/,
+    async (req, res) => {
+      if (limited(req, 'swap-send', 8)) return send(res, 429, { error: 'Too many requests' })
+      const body = await jsonBody(req)
+      if (!isAddress(String(body.wallet)) || typeof body.tx !== 'string' || typeof body.intentId !== 'string')
+        throw new UserError('Invalid swap relay request.')
+      if (blocked(res, body.wallet, { failClosed: true })) return
+      try {
+        return send(res, 200, await sendAuthorizedSwap({ tx: body.tx, wallet: body.wallet, intentId: body.intentId }))
+      } catch (error) {
+        if (error instanceof DefiniteSendRefusal) return send(res, 400, { error: error.message, outcome: 'rejected' })
+        if (error instanceof SendOutcomeUnknownError)
+          return send(res, 502, { error: error.message, signature: error.signature, outcome: 'unknown' })
+        if (error instanceof SwapExecutionError) return send(res, 400, { error: error.message })
+        if (error instanceof UserError) throw error
+        const { error: message } = explain(
+          error,
+          'swap relay',
+          'Could not relay the signed swap, please rebuild it and try again.',
+          'The Solana network connection is busy right now, so nothing was sent. Rebuild it and try again.',
+        )
+        return send(res, 502, { error: message })
       }
-      const recent = await rpc.getSignatureStatuses([body.signature], { searchTransactionHistory: true }).send()
-      if (recent?.value?.[0]) return send(res, 200, await txStatus(body.signature))
-      const historical = await rpc.getTransaction(body.signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 1 }).send()
-      if (historical) return send(res, 200, await txStatus(body.signature))
-      const blockhash = String(message.lifetimeToken ?? '')
-      if (!blockhash) return send(res, 400, { error: 'The saved local transaction has no recent blockhash.' })
-      const blockhashStatus = await rpc.isBlockhashValid(blockhash, { commitment: 'confirmed' }).send()
-      return send(res, 200, blockhashStatus?.value === true
-        ? { status: 'pending' }
-        : { status: 'failed', error: 'Surfpool found no landed transaction for this signature and its recent blockhash expired; it can no longer be submitted.' })
-    } catch (error) {
-      console.warn('[tx] local reconciliation unavailable', error?.message)
-      return send(res, 503, { error: 'Surfpool could not conclusively reconcile this signed transaction.' })
-    }
-  }],
-  ['GET', /^\/api\/liquidation\/([\w-]+)\/(\w+)$/, async (req, res, [marketId, borrower]) => {
-    const m = marketById(marketId)
-    if (!m || !isAddress(borrower)) return send(res, 400, { error: 'Invalid market or wallet' })
-    if (limited(req, 'liquidation', 60)) return send(res, 429, { error: 'Too many requests' })
-    if (isSanctioned(borrower)) return send(res, 403, BLOCKED_LOAN)
-    const info = await liquidationInfo(m, borrower)
-    // The cached list (a minute old at most) still shows this loan as liquidatable, but it no longer is (just
-    // liquidated, prices moved): drop the list so the next read is fresh. Only then, so this can't force rereads.
-    if (!info.liquidatable && (await getPositions().catch(() => [])).some((p) => p.market === m.id && p.owner === borrower && p.hf < 1)) getPositions.clear()
-    send(res, 200, info)
-  }],
-  ['GET', /^\/api\/tx\/(\w{64,90})$/, async (req, res, [signature]) => {
-    if (limited(req, 'status', 120)) return send(res, 429, { error: 'Too many requests' })
-    send(res, 200, await txStatus(signature))
-  }],
-  ['GET', /^\/api\/analytics$/, async (req, res) => {
-    // Positions are required by analytics and liquidations; vault holders are optional.
-    const [positions, vaults] = await Promise.all([
-      getPositions(),
-      getVaultHolders().catch((e) => { console.error('[analytics] vault holders', e?.message); return null }),
-    ])
-    send(res, 200, { positions, vaults, feeReceivers: getFeeReceiverMetadata() }, { maxAge: 30 })
-  }],
+    },
+  ],
+  [
+    'GET',
+    /^\/api\/loop-strategies$/,
+    (req, res) => {
+      const snapshot = getSnapshot()
+      const strategies = LOOPS.map(({ market }) => {
+        const strategy = loopStrategyForAction(snapshot, market)
+        const routeReadiness = currentLoopRouteReadiness(market)
+        return {
+          ...strategy,
+          actions: {
+            open: evaluateLoopActionReadiness({
+              action: 'loop-open',
+              strategy,
+              routeReadiness,
+              builderAvailable: true,
+            }),
+            fullClose: evaluateLoopActionReadiness({ action: 'loop-close', routeReadiness, builderAvailable: true }),
+          },
+        }
+      })
+      return send(res, 200, {
+        strategies,
+        readOnly: true,
+        maxFunding: LOOP_MAX_FUNDING,
+        executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated',
+      })
+    },
+  ],
+  [
+    'GET',
+    /^\/api\/loop-setup-status$/,
+    async (req, res) => {
+      if (limited(req, 'loop-setup-status', 10)) return send(res, 429, { error: 'Too many requests' })
+      const wallet = new URL(req.url, 'http://localhost').searchParams.get('wallet')
+      if (!wallet || !isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
+      if (!loopOpenTo(wallet)) return send(res, 403, LOOP_NOT_ENABLED)
+      if (blocked(res, wallet, { failClosed: true })) return
+      // Kamino's UserMetadata is one per wallet, whichever market reads it.
+      try {
+        return send(res, 200, { ...(await loopMetadataStatus({ wallet, market: LOOPS[0].market })), readOnly: true })
+      } catch (error) {
+        console.warn('[loop] metadata status unavailable', error?.message)
+        return send(res, 503, { error: 'Kamino metadata setup status is unavailable.' })
+      }
+    },
+  ],
+  [
+    'POST',
+    /^\/api\/loop-preview$/,
+    async (req, res) => {
+      if (limited(req, 'loop-preview', 20)) return send(res, 429, { error: 'Too many requests' })
+      const body = await jsonBody(req)
+      if (!loopByMarket(body.marketId)) throw new UserError('Unknown loop strategy')
+      if (body.wallet != null && !isAddress(String(body.wallet))) throw new UserError('Invalid wallet address')
+      if (!loopOpenTo(body.wallet, body.marketId)) return send(res, 403, LOOP_NOT_ENABLED)
+      if (marketById(body.marketId)?.geoBlocked && geoBlocked(req)) return send(res, 403, GEO_REFUSED)
+      if (overLoopCap(body.fundingAmount, body.marketId)) throw new UserError(LOOP_CAP_ERROR())
+      if (!loopAmountValid(body.fundingAmount, body.marketId)) throw new UserError('Invalid funding amount')
+      const fundingAmount = Number(body.fundingAmount)
+      const leverage = Number(body.leverage)
+      const amountInRange = Number.isFinite(fundingAmount) && fundingAmount > 0
+      const leverageInRange = leverage > 1 && leverage <= DEFAULT_LOOP_LIMITS.maxLeverage
+      if (!amountInRange || !leverageInRange)
+        throw new UserError('Funding amount or leverage is outside the preview range')
+      const snapshot = getSnapshot()
+      const strategy = loopStrategyForAction(snapshot, body.marketId, leverage)
+      const previewId = randomUUID()
+      let applicationContext = null
+      try {
+        return await runWithRequestAbortSignal(req, res, async (signal) => {
+          try {
+            const previewOnce = () =>
+              buildReadOnlyLoopPreview({
+                marketId: body.marketId,
+                wallet: body.wallet,
+                fundingAmount: body.fundingAmount,
+                leverage,
+                snapshot,
+                strategy,
+                signal,
+                localForkSimulation: localForkDappEnabled && isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL }),
+                localForkRpcUrl: RPC_URL,
+                localRouteProgramVerifier: verifyLocalForkRoute,
+                onApplicationContext: (context) => {
+                  applicationContext = context
+                },
+              })
+            // Back-to-back quotes (the auto-refresh, then the fresh one taken on click) can hit the provider's rate limit:
+            // a read-only preview is safe to ask once more.
+            const preview = await previewOnce().catch(async (error) => {
+              if (!isTransient(error) || signal.aborted) throw error
+              await new Promise((resolve) => setTimeout(resolve, 1500))
+              return previewOnce()
+            })
+            if (signal.aborted || res.destroyed) return
+            const actionReadiness = evaluateLoopActionReadiness({
+              action: 'loop-open',
+              strategy,
+              routeReadiness: currentLoopRouteReadiness(body.marketId),
+              builderAvailable: true,
+              previewAcknowledgementValid: false,
+            })
+            if (localForkDappEnabled && !isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL })) {
+              actionReadiness.executionEnabled = false
+              actionReadiness.unavailableReasons.push({
+                code: 'local-fork-wallet-not-allowlisted',
+                message: 'Connect a generated LOCAL_FORK_ACCOUNT_n wallet to execute on this local Surfpool profile.',
+              })
+            }
+            const metadataStatus = body.wallet
+              ? await loopMetadataStatus({ wallet: body.wallet, market: body.marketId })
+              : { required: false }
+            if (metadataStatus.required) {
+              actionReadiness.executionEnabled = false
+              actionReadiness.unavailableReasons.push({
+                code: 'kamino-metadata-setup-required',
+                message: 'Initialize the one-time Kamino UserMetadata account before opening a loop.',
+              })
+            }
+            // The preview only binds amount, leverage and acknowledgement: the build quotes again and rechecks prices and
+            // limits, so it can outlive its quote long enough to read it and click (it bounded preview → signed send to 15s).
+            const expiresAt = Date.now() + LOOP_PREVIEW_TTL_MS
+            if (body.wallet && applicationContext) {
+              const record = {
+                ...preview,
+                id: previewId,
+                wallet: body.wallet,
+                marketId: body.marketId,
+                fundingAmount: body.fundingAmount,
+                leverage,
+                expiresAt,
+                applicationContext,
+              }
+              loopPreviews.set(previewId, record)
+              for (const [id, item] of loopPreviews) if (Date.now() >= item.expiresAt) loopPreviews.delete(id)
+            }
+            return send(res, 200, {
+              ...preview,
+              previewId,
+              actionReadiness,
+              metadataSetupRequired: metadataStatus.required,
+              strategyId: body.marketId,
+              readOnly: true,
+              executionMode: localForkDappEnabled ? 'surfpool-local' : 'production-gated',
+            })
+          } catch (error) {
+            if (signal.aborted || res.destroyed) return
+            console.warn('[loop] preview unavailable', error?.message)
+            return send(res, 200, {
+              previewId,
+              strategyId: body.marketId,
+              readOnly: true,
+              executionEnabled: false,
+              available: false,
+              unavailableReasons: [
+                ...strategy.unavailableReasons,
+                {
+                  code: 'quote-unavailable',
+                  message: "Couldn't get a live swap quote right now. Try again in a moment.",
+                },
+              ],
+            })
+          }
+        })
+      } catch (error) {
+        if (res.destroyed) return
+        throw error
+      }
+    },
+  ],
+  [
+    'GET',
+    /^\/api\/market$/,
+    (req, res) => {
+      const s = getSnapshot()
+      return s ? send(res, 200, s) : send(res, 503, { error: 'Market data is still loading' })
+    },
+  ],
+  ['GET', /^\/api\/events$/, events],
+  [
+    'GET',
+    /^\/api\/account\/(\w+)$/,
+    async (req, res, [wallet]) => {
+      if (!isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
+      if (limited(req, 'account', 60)) return send(res, 429, { error: 'Too many requests' })
+      if (blocked(res, wallet, { failClosed: false })) return
+      const fresh = new URL(req.url, 'http://x').searchParams.has('fresh')
+      send(res, 200, await getAccount(wallet, fresh))
+    },
+  ],
+  [
+    'GET',
+    /^\/api\/withdrawal-allowance\/(\w+)$/,
+    async (req, res, [wallet]) => {
+      if (!isAddress(wallet)) return send(res, 400, { error: 'Invalid wallet address' })
+      if (limited(req, 'withdrawal-allowance', 20)) return send(res, 429, { error: 'Too many requests' })
+      if (blocked(res, wallet, { failClosed: true })) return
+      try {
+        const allowance = await readFreshWithdrawalAllowance({
+          wallet,
+          refreshMarket: refreshMarketForExecution,
+          getAccount,
+        })
+        return send(res, 200, { market: 'sol-usdy-usdc', token: 'svm-usdy', ...allowance })
+      } catch (error) {
+        console.warn('[withdrawal] fresh allowance unavailable', error?.message)
+        return send(res, 503, {
+          error: 'Fresh free-withdrawal allowance is unavailable. Retry after market data refreshes.',
+        })
+      }
+    },
+  ],
+  [
+    'POST',
+    /^\/api\/tx$/,
+    async (req, res) => {
+      if (limited(req, 'tx', 20)) return send(res, 429, { error: 'Too many requests' })
+      const b = await jsonBody(req)
+      if (!KINDS.includes(b.kind)) throw new UserError('Unknown action')
+      if (!isAddress(String(b.wallet))) throw new UserError('Invalid wallet address')
+      if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
+        if (!loopOpenTo(b.wallet, b.market)) return send(res, 403, LOOP_NOT_ENABLED)
+        if (localForkDappEnabled && !isLocalForkWallet(b.wallet, { rpcUrl: RPC_URL })) {
+          return send(res, 503, {
+            error: 'Only generated LOCAL_FORK_ACCOUNT_n wallets can execute on the local Surfpool Dapp profile.',
+          })
+        }
+        if (!loopByMarket(b.market)) throw new UserError('Unknown loop strategy')
+        if (
+          b.kind === 'loop-open' &&
+          (!loopAmountValid(b.amount, b.market) ||
+            !Number.isFinite(Number(b.amount)) ||
+            Number(b.amount) <= 0 ||
+            !Number.isFinite(Number(b.leverage)) ||
+            Number(b.leverage) <= 1 ||
+            Number(b.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage)
+        ) {
+          throw new UserError('Funding amount or leverage is outside the loop range')
+        }
+        if (b.kind === 'loop-open' && overLoopCap(b.amount, b.market)) throw new UserError(LOOP_CAP_ERROR())
+        if (
+          b.kind === 'loop-close' &&
+          (typeof b.positionId !== 'string' || !/^multiply:[a-f0-9]{64}$/.test(b.positionId))
+        ) {
+          throw new UserError('An identified Multiply position is required for full close')
+        }
+      }
+      if (b.kind === 'liquidate' && !isAddress(String(b.borrower))) throw new UserError('Invalid borrower address')
+      if (blocked(res, b.wallet, { failClosed: true })) return
+      if (b.kind === 'liquidate' && isSanctioned(b.borrower)) return send(res, 403, BLOCKED_LOAN)
+      if (GEO_KINDS.has(b.kind) && marketById(b.market)?.geoBlocked && geoBlocked(req))
+        return send(res, 403, GEO_REFUSED)
+      if (b.kind === 'loop-open' || b.kind === 'loop-close' || b.kind === 'loop-setup') {
+        try {
+          return send(res, 200, await loopExecution.build(b))
+        } catch (error) {
+          if (error instanceof LoopExecutionError) {
+            return send(res, error.status, {
+              error: error.message,
+              ...(error.unavailableReasons.length ? { unavailableReasons: error.unavailableReasons } : {}),
+            })
+          }
+          if (error instanceof LoopPreviewError) return send(res, 409, { error: error.message }) // e.g. a loop is already open
+          // The simulation's own reason, already worded for the user (e.g. the market's liquidity or borrowing limit).
+          if (error instanceof UserError) return send(res, 409, { error: error.message })
+          const { status, error: message } = explain(
+            error,
+            'loop build',
+            'Could not prepare the loop transaction; nothing was sent to your wallet.',
+          )
+          return send(res, status, { error: message })
+        }
+      }
+      try {
+        send(
+          res,
+          200,
+          await lendingTransactions.build({
+            kind: b.kind,
+            wallet: b.wallet,
+            market: b.market,
+            token: b.token,
+            amount: b.amount,
+            amountBaseUnits: b.amountBaseUnits,
+            all: !!b.all,
+            borrower: b.borrower,
+            preview: !!b.preview,
+            vault: b.vault,
+            swapFlow: b.swapFlow,
+            swapFlowStage: b.swapFlowStage,
+            flowAmountBaseUnits: b.flowAmountBaseUnits,
+            beforeBalanceBaseUnits: b.beforeBalanceBaseUnits,
+          }),
+        )
+      } catch (e) {
+        if (e instanceof UserError) throw e
+        const { status, error: message } = explain(
+          e,
+          `tx build ${b.kind}`,
+          'Could not build the transaction, please try again.',
+        )
+        send(res, status, { error: message })
+      }
+    },
+  ],
+  [
+    'POST',
+    /^\/api\/loop-send$/,
+    async (req, res) => {
+      if (limited(req, 'loop-send', 20)) return send(res, 429, { error: 'Too many requests' })
+      const b = await jsonBody(req)
+      if (
+        !isAddress(String(b.wallet)) ||
+        typeof b.tx !== 'string' ||
+        b.tx.length > 100_000 ||
+        typeof b.intentId !== 'string'
+      ) {
+        throw new UserError('Invalid loop relay request')
+      }
+      if (!loopOpenTo(b.wallet)) return send(res, 403, LOOP_NOT_ENABLED)
+      if (blocked(res, b.wallet, { failClosed: true })) return
+      try {
+        return send(res, 200, await loopExecution.send({ tx: b.tx, wallet: b.wallet, intentId: b.intentId }))
+      } catch (error) {
+        if (error instanceof DefiniteSendRefusal) return send(res, 400, { error: error.message, outcome: 'rejected' })
+        if (error instanceof SendOutcomeUnknownError)
+          return send(res, 502, { error: error.message, signature: error.signature, outcome: 'unknown' })
+        if (error instanceof LoopExecutionError)
+          return send(res, error.status, {
+            error: error.message,
+            ...(error.unavailableReasons.length ? { unavailableReasons: error.unavailableReasons } : {}),
+          })
+        const { error: message } = explain(
+          error,
+          'loop relay',
+          'Could not relay the authorized loop transaction; its outcome may be unknown.',
+          'The Solana network connection is busy right now, so nothing was sent. Rebuild it and try again.',
+        )
+        return send(res, 502, { error: message })
+      }
+    },
+  ],
+  [
+    'POST',
+    /^\/api\/tx\/send$/,
+    async (req, res) => {
+      if (limited(req, 'send', 20)) return send(res, 429, { error: 'Too many requests' })
+      const b = await jsonBody(req)
+      if (
+        !isAddress(String(b.wallet)) ||
+        typeof b.tx !== 'string' ||
+        b.tx.length > 2000 ||
+        typeof b.intentId !== 'string' ||
+        !b.intentId
+      )
+        throw new UserError('Invalid request')
+      if (blocked(res, b.wallet, { failClosed: true })) return
+      try {
+        return send(res, 200, await lendingTransactions.send({ tx: b.tx, wallet: b.wallet, intentId: b.intentId }))
+      } catch (error) {
+        if (error instanceof DefiniteSendRefusal) return send(res, 400, { error: error.message, outcome: 'rejected' })
+        if (error instanceof SendOutcomeUnknownError)
+          return send(res, 502, { error: error.message, signature: error.signature, outcome: 'unknown' })
+        throw error
+      }
+    },
+  ],
+  [
+    'POST',
+    /^\/api\/tx\/reconcile-local$/,
+    async (req, res) => {
+      if (limited(req, 'tx-reconcile-local', 10)) return send(res, 429, { error: 'Too many reconciliation checks.' })
+      const body = await jsonBody(req)
+      if (!localForkDappEnabled || !isLocalForkWallet(body.wallet, { rpcUrl: RPC_URL })) {
+        return send(res, 403, {
+          error: 'Local dropped-transaction reconciliation is available only for generated Surfpool wallets.',
+        })
+      }
+      if (typeof body.signature !== 'string' || typeof body.tx !== 'string' || body.tx.length > 100_000) {
+        return send(res, 400, { error: 'Invalid local transaction reconciliation request.' })
+      }
+      try {
+        const wire = Uint8Array.from(Buffer.from(body.tx, 'base64'))
+        const transaction = getTransactionDecoder().decode(wire)
+        const message = getCompiledTransactionMessageDecoder().decode(transaction.messageBytes)
+        const wallet = String(body.wallet)
+        const signatureBytes = transaction.signatures?.[wallet]
+        if (
+          String(message.staticAccounts?.[0]) !== wallet ||
+          !(signatureBytes instanceof Uint8Array) ||
+          signatureBytes.length !== 64 ||
+          getBase58Decoder().decode(signatureBytes) !== body.signature ||
+          !(await verifySignature(await getPublicKeyFromAddress(wallet), signatureBytes, transaction.messageBytes))
+        ) {
+          return send(res, 400, {
+            error: 'The saved transaction signature or fee payer does not match the connected local wallet.',
+          })
+        }
+        const recent = await rpc.getSignatureStatuses([body.signature], { searchTransactionHistory: true }).send()
+        if (recent?.value?.[0]) return send(res, 200, await txStatus(body.signature))
+        const historical = await rpc
+          .getTransaction(body.signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 1 })
+          .send()
+        if (historical) return send(res, 200, await txStatus(body.signature))
+        const blockhash = String(message.lifetimeToken ?? '')
+        if (!blockhash) return send(res, 400, { error: 'The saved local transaction has no recent blockhash.' })
+        const blockhashStatus = await rpc.isBlockhashValid(blockhash, { commitment: 'confirmed' }).send()
+        return send(
+          res,
+          200,
+          blockhashStatus?.value === true
+            ? { status: 'pending' }
+            : {
+                status: 'failed',
+                error:
+                  'Surfpool found no landed transaction for this signature and its recent blockhash expired; it can no longer be submitted.',
+              },
+        )
+      } catch (error) {
+        console.warn('[tx] local reconciliation unavailable', error?.message)
+        return send(res, 503, { error: 'Surfpool could not conclusively reconcile this signed transaction.' })
+      }
+    },
+  ],
+  [
+    'GET',
+    /^\/api\/liquidation\/([\w-]+)\/(\w+)$/,
+    async (req, res, [marketId, borrower]) => {
+      const m = marketById(marketId)
+      if (!m || !isAddress(borrower)) return send(res, 400, { error: 'Invalid market or wallet' })
+      if (limited(req, 'liquidation', 60)) return send(res, 429, { error: 'Too many requests' })
+      if (isSanctioned(borrower)) return send(res, 403, BLOCKED_LOAN)
+      const info = await liquidationInfo(m, borrower)
+      // The cached list (a minute old at most) still shows this loan as liquidatable, but it no longer is (just
+      // liquidated, prices moved): drop the list so the next read is fresh. Only then, so this can't force rereads.
+      if (
+        !info.liquidatable &&
+        (await getPositions().catch(() => [])).some((p) => p.market === m.id && p.owner === borrower && p.hf < 1)
+      )
+        getPositions.clear()
+      send(res, 200, info)
+    },
+  ],
+  [
+    'GET',
+    /^\/api\/tx\/(\w{64,90})$/,
+    async (req, res, [signature]) => {
+      if (limited(req, 'status', 120)) return send(res, 429, { error: 'Too many requests' })
+      send(res, 200, await txStatus(signature))
+    },
+  ],
+  [
+    'GET',
+    /^\/api\/analytics$/,
+    async (req, res) => {
+      // Positions are required by analytics and liquidations; vault holders are optional.
+      const [positions, vaults] = await Promise.all([
+        getPositions(),
+        getVaultHolders().catch((e) => {
+          console.error('[analytics] vault holders', e?.message)
+          return null
+        }),
+      ])
+      send(res, 200, { positions, vaults, feeReceivers: getFeeReceiverMetadata() }, { maxAge: 30 })
+    },
+  ],
   ['GET', /^\/api\/geo$/, (req, res) => send(res, 200, { blocked: geoBlocked(req) })],
   ['GET', /^\/api\/fee-receivers$/, (req, res) => send(res, 200, getFeeReceiverMetadata(), { maxAge: 30 })],
   ['GET', /^\/api\/market-updates$/, async (req, res) => send(res, 200, await marketUpdates(), { maxAge: 60 })],
   ['GET', /^\/api\/liquidations$/, async (req, res) => send(res, 200, await marketLiquidations(), { maxAge: 60 })],
-  ['GET', /^\/api\/points$/, async (req, res) => send(res, 200, (await read(POINTS)) ?? EMPTY_POINTS, { type: 'text/csv; charset=utf-8', maxAge: 300 })],
-  ['GET', /^\/api\/apy-history$/, async (req, res) => send(res, 200, (await read(HISTORY)) ?? '{"tokens":{}}', { maxAge: 300 })],
-  ['GET', /^\/api\/health$/, (req, res) => {
-    const s = getSnapshot()
-    const age = s ? Math.round((Date.now() - s.updatedAt) / 1000) : null
-    send(res, s && age < 300 ? 200 : 503, { ok: !!s && age < 300, marketAgeSec: age, sseClients: clients.size, rpcCallsLastHour: rpcCallsLastHour(), sanctionsScreening: screeningStatus() })
-  }],
+  [
+    'GET',
+    /^\/api\/points$/,
+    async (req, res) =>
+      send(res, 200, (await read(POINTS)) ?? EMPTY_POINTS, { type: 'text/csv; charset=utf-8', maxAge: 300 }),
+  ],
+  [
+    'GET',
+    /^\/api\/apy-history$/,
+    async (req, res) => send(res, 200, (await read(HISTORY)) ?? '{"tokens":{}}', { maxAge: 300 }),
+  ],
+  [
+    'GET',
+    /^\/api\/health$/,
+    (req, res) => {
+      const s = getSnapshot()
+      const age = s ? Math.round((Date.now() - s.updatedAt) / 1000) : null
+      send(res, s && age < 300 ? 200 : 503, {
+        ok: !!s && age < 300,
+        marketAgeSec: age,
+        sseClients: clients.size,
+        rpcCallsLastHour: rpcCallsLastHour(),
+        sanctionsScreening: screeningStatus(),
+      })
+    },
+  ],
 ]
 
 // Client-side routes of the SPA (keep in sync with src/main.js). '/', '/lend' and '/market/:id' are old links it redirects.
-const APP_ROUTES = new Set(['/', '/earn', '/lend', '/borrow', '/portfolio', '/swap', ...(loopOn ? ['/loop', ...LOOPS.map((loop) => `/loop/${loop.id}`)] : []), '/analytics', '/liquidations', '/dashboard'])
-const isAppRoute = (p) => APP_ROUTES.has(p.replace(/\/$/, '') || '/')
-  || !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1])
-  || !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
+const APP_ROUTES = new Set([
+  '/',
+  '/earn',
+  '/lend',
+  '/borrow',
+  '/portfolio',
+  '/swap',
+  ...(loopOn ? ['/loop', ...LOOPS.map((loop) => `/loop/${loop.id}`)] : []),
+  '/analytics',
+  '/liquidations',
+  '/dashboard',
+])
+const isAppRoute = (p) =>
+  APP_ROUTES.has(p.replace(/\/$/, '') || '/') ||
+  !!vaultById(p.match(/^\/earn\/([\w-]+)\/?$/)?.[1]) ||
+  !!marketById(p.match(/^\/(?:borrow|market)\/([\w-]+)\/?$/)?.[1])
 
 const SITE = 'https://app.nysa.finance'
 const sitemap = () => `<?xml version="1.0" encoding="UTF-8"?>
@@ -803,7 +1270,8 @@ ${['/earn', ...VAULTS.map((v) => `/earn/${v.id}`), '/borrow', ...LIVE.map((m) =>
 async function serveStatic(pathname, res) {
   const file = normalize(join(DIST, decodeURIComponent(pathname)))
   if (!file.startsWith(DIST)) return send(res, 400, 'Bad request', { type: 'text/plain' }) // no ../ escapes
-  let body, served = file
+  let body,
+    served = file
   try {
     body = await readFile(file)
   } catch {
@@ -836,12 +1304,18 @@ const server = http.createServer(async (req, res) => {
       }
       return send(res, 404, { error: 'Not found' })
     }
-    if (req.method !== 'GET' && req.method !== 'HEAD') return send(res, 405, 'Method not allowed', { type: 'text/plain' })
-    if (pathname === '/sitemap.xml') return send(res, 200, sitemap(), { type: 'application/xml; charset=utf-8', maxAge: 3600 })
+    if (req.method !== 'GET' && req.method !== 'HEAD')
+      return send(res, 405, 'Method not allowed', { type: 'text/plain' })
+    if (pathname === '/sitemap.xml')
+      return send(res, 200, sitemap(), { type: 'application/xml; charset=utf-8', maxAge: 3600 })
     await serveStatic(pathname === '/' ? '/index.html' : pathname, res)
   } catch (e) {
     if (e instanceof UserError) return send(res, 400, { error: e.message })
-    const { status, error: message } = explain(e, `server ${req.method} ${req.url}`, 'Something went wrong on our side.')
+    const { status, error: message } = explain(
+      e,
+      `server ${req.method} ${req.url}`,
+      'Something went wrong on our side.',
+    )
     if (!res.headersSent) send(res, status === 502 ? 500 : status, { error: message })
     else res.end()
   }
@@ -850,7 +1324,10 @@ const server = http.createServer(async (req, res) => {
 // Deploys swap containers and Caddy holds requests meanwhile (lb_try_duration): listen only once the market and the
 // sanctions list are loaded (or after READY_TIMEOUT_MS), so nobody gets "still loading".
 const READY_TIMEOUT_MS = 15_000
-await Promise.race([Promise.all([refreshMarket(), startScreening()]), new Promise((r) => setTimeout(r, READY_TIMEOUT_MS))])
+await Promise.race([
+  Promise.all([refreshMarket(), startScreening()]),
+  new Promise((r) => setTimeout(r, READY_TIMEOUT_MS)),
+])
 server.listen(PORT, () => console.log(`nysa listening on :${PORT}`))
 
 // Node as PID 1 ignores SIGTERM unless handled, and Docker would kill it after 10 s: stop taking connections, end the
@@ -868,9 +1345,13 @@ const HOUR_MS = 3_600_000
 function scheduleSnapshot() {
   const now = Date.now()
   const next = (Math.floor(now / HOUR_MS) + 1) * HOUR_MS + Math.floor(Math.random() * HOUR_MS)
-  setTimeout(() => runSnapshot()
-    .then((r) => console.log('[snapshot] done', r))
-    .catch((e) => console.error('[snapshot] failed', e))
-    .finally(scheduleSnapshot), next - now)
+  setTimeout(
+    () =>
+      runSnapshot()
+        .then((r) => console.log('[snapshot] done', r))
+        .catch((e) => console.error('[snapshot] failed', e))
+        .finally(scheduleSnapshot),
+    next - now,
+  )
 }
 scheduleSnapshot()
