@@ -88,7 +88,8 @@ const app = renderer.createApp(WalletHandoff)
 app.mount(root)
 const nodes = (node) => [node, ...node.children.flatMap(nodes)]
 const textOf = (node) => `${node.text}${node.children.map(textOf).join('')}`
-let cancelButton = nodes(root).find((node) => node.type === 'button' && textOf(node) === 'Cancel action')
+const label = (node) => textOf(node).trim()
+let cancelButton = nodes(root).find((node) => node.type === 'button' && label(node) === 'Cancel action')
 assert.ok(cancelButton, 'confirmed setup card offers an explicit Cancel action')
 cancelButton.props.onClick()
 await nextTick()
@@ -106,7 +107,7 @@ const retryState = applySwapFlowOutcome({
 }, store.state.swapOutcome, wallet, 'withdraw-sell')
 assert.equal(retryState.primaryStatus, 'rejected', 'mounted Swap state becomes retryable after cancel')
 assert.equal(retryState.primaryAmountBaseUnits, null)
-assert.equal(nodes(root).some((node) => node.type === 'button' && textOf(node) === 'Cancel action'), false,
+assert.equal(nodes(root).some((node) => node.type === 'button' && label(node) === 'Cancel action'), false,
   'the setup recovery card disappears after cancellation')
 
 store.state.lendingPending = {
@@ -166,7 +167,7 @@ assert.ok(stackedCards.some((node) => textOf(node).includes('Account setup confi
   'the separate setup recovery card remains visible')
 assert.ok(stackedCards.every((node) => node.parent === stack),
   'setup recovery and pending signatures use normal-flow stacked cards')
-assert.equal(nodes(root).find((node) => node.type === 'button' && textOf(node) === 'Resume action').props.disabled, true,
+assert.equal(nodes(root).find((node) => node.type === 'button' && label(node) === 'Resume action').props.disabled, true,
   'setup continuation stays disabled while an economic signature is unresolved')
 
 // A normal send is not an error: hidden while the page's own sheet runs it, a neutral card after a reload.

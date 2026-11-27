@@ -22,6 +22,10 @@ const v = computed(() => vaultById(route.params.id))
 const live = computed(() => state.vaults[v.value?.id] ?? null)
 const token = computed(() => tok(live.value?.tokenId ?? 'svm-usdc'))
 const pointsOpen = ref(false)
+function openPoints() {
+  pointsOpen.value = true
+  event('Farm Points opened', { from: 'vault' })
+}
 
 const apyHistory = ref(null)
 onMounted(() => loadApyHistory().then((h) => (apyHistory.value = h)).catch((e) => console.error('[apy-history]', e)))
@@ -69,7 +73,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
               <div class="n-banner-t">This vault is eligible for farming Nysa Points.</div>
               <div class="n-banner-s">Deposit and earn points on your balance, every day.</div>
             </div>
-            <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'vault' })">Check your points →</button>
+            <button class="n-btn-sm ghost" @click="openPoints">Check your points →</button>
           </div>
           <div id="side-mobile" /><!-- phones: the deposit panel moves here, above the numbers -->
           <div class="n-stats stat-3 head-stats">

@@ -57,6 +57,10 @@ const hf = computed(() => portfolioHealthFactor(loans.value.map((loan) => loan.h
 const hfText = (v) => (on.value ? v === null ? '—' : hfFmt(v) : '—')
 const hfColor = (v) => (on.value && v !== null ? hfTone(v) : 'var(--n-text-3)')
 const pointsOpen = ref(false)
+function openPoints() {
+  pointsOpen.value = true
+  event('Farm Points opened', { from: 'portfolio' })
+}
 const points = computed(myPoints)
 onMounted(loadPoints)
 const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params: { id: m.id }, query: { mode, tab, asset } })
@@ -99,7 +103,7 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   <div v-if="on" class="n-banner split">
     <span v-if="points">Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span>
     <span v-else>Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as deposited balance × time, snapshotted every hour.</span>
-    <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'portfolio' })">View leaderboard</button>
+    <button class="n-btn-sm ghost" @click="openPoints">View leaderboard</button>
   </div>
 
   <div v-for="c in claimable" :key="c.m.id" class="n-banner reward split">

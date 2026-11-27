@@ -27,6 +27,10 @@ const loans = computed(() => m.value.loans.map(tok))
 const r = (id) => reserveOf(m.value, id)
 const sum = (ids, k) => ids.reduce((s, id) => s + (r(id)?.[k] ?? 0), 0)
 const pointsOpen = ref(false)
+function openPoints() {
+  pointsOpen.value = true
+  event('Farm Points opened', { from: 'market' })
+}
 // the index also holds the vaults' updates, tagged with another source
 const updates = ref(null)
 const updatesError = ref(null)
@@ -63,7 +67,7 @@ function openDd() {
               <div class="n-banner-t">This market is eligible for farming Nysa Points.</div>
               <div class="n-banner-s">Collateral deposited here earns points on its balance, every day.</div>
             </div>
-            <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'market' })">Check your points →</button>
+            <button class="n-btn-sm ghost" @click="openPoints">Check your points →</button>
           </div>
           <div id="side-mobile" /><!-- phones: the borrow panel moves here, above the numbers -->
           <div class="n-stats stat-2 head-stats">

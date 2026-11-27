@@ -41,6 +41,10 @@ const xTicks = computed(() => {
   return out
 })
 const hover = ref(null)
+function selectRange(days) {
+  range.value = days
+  hover.value = null
+}
 function onMove(e) {
   const px = e.clientX - box.value.getBoundingClientRect().left
   hover.value = series.value.reduce((best, p) => (!best || Math.abs(x(p.ts) - px) < Math.abs(x(best.ts) - px) ? p : best), null)
@@ -70,7 +74,7 @@ function onMove(e) {
     <div class="legend">
       <span><i class="line" :style="{ background: COLOR }" />Daily realized APY · {{ token.name }}</span>
       <div class="n-seg range" role="group" aria-label="Chart range">
-        <button v-for="d in RANGES" :key="d" :class="{ on: range === d }" :aria-pressed="range === d" @click="range = d; hover = null">{{ d }}D</button>
+        <button v-for="d in RANGES" :key="d" :class="{ on: range === d }" :aria-pressed="range === d" @click="selectRange(d)">{{ d }}D</button>
       </div>
     </div>
     <div v-if="series.length" ref="box" class="canvas" @pointermove="onMove" @pointerleave="hover = null">
