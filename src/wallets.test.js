@@ -4,18 +4,45 @@ import nacl from 'tweetnacl'
 import { getBase58Decoder, getBase58Encoder } from '@solana/kit'
 
 const store = new Map()
-globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) }
+globalThis.localStorage = {
+  getItem: (k) => store.get(k) ?? null,
+  setItem: (k, v) => store.set(k, String(v)),
+  removeItem: (k) => store.delete(k),
+}
 let href = 'https://app.nysa.finance/market/sol-usdy-usdc?mode=lend'
-globalThis.location = { get href() { return href }, get search() { return new URL(href).search }, origin: 'https://app.nysa.finance' }
-globalThis.history = { state: null, replaceState: (_, __, url) => { href = String(url) } }
-Object.defineProperty(globalThis, 'navigator', { value: { userAgent: 'iPhone', maxTouchPoints: 5 }, configurable: true })
+globalThis.location = {
+  get href() {
+    return href
+  },
+  get search() {
+    return new URL(href).search
+  },
+  origin: 'https://app.nysa.finance',
+}
+globalThis.history = {
+  state: null,
+  replaceState: (_, __, url) => {
+    href = String(url)
+  },
+}
+Object.defineProperty(globalThis, 'navigator', {
+  value: { userAgent: 'iPhone', maxTouchPoints: 5 },
+  configurable: true,
+})
 
 const { connectUrl, signUrl, readDeeplinkReturn, deeplinkSession } = await import('./wallets.js')
 const b58 = (b) => getBase58Decoder().decode(b)
 const fromB58 = (s) => new Uint8Array(getBase58Encoder().encode(s))
 const walletKp = nacl.box.keyPair() // Phantom's side
-const seal = (obj, shared) => { const nonce = nacl.randomBytes(24); return { nonce: b58(nonce), data: b58(nacl.box.after(new TextEncoder().encode(JSON.stringify(obj)), nonce, shared)) } }
-const back = (redirect, params) => { const u = new URL(redirect); for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v); href = u.toString() }
+const seal = (obj, shared) => {
+  const nonce = nacl.randomBytes(24)
+  return { nonce: b58(nonce), data: b58(nacl.box.after(new TextEncoder().encode(JSON.stringify(obj)), nonce, shared)) }
+}
+const back = (redirect, params) => {
+  const u = new URL(redirect)
+  for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
+  href = u.toString()
+}
 
 // 1. Connect: Phantom derives the shared secret from our public key and answers with an encrypted session.
 const c = new URL(connectUrl('Phantom'))
@@ -23,7 +50,10 @@ assert.equal(c.origin + c.pathname, 'https://phantom.com/ul/v1/connect')
 assert.equal(c.searchParams.get('cluster'), 'mainnet-beta')
 const shared = nacl.box.before(fromB58(c.searchParams.get('dapp_encryption_public_key')), walletKp.secretKey)
 const user = '66pW72Fchnr34FGgXrxheGs3BbUsDSwJmGcK7m8Bz1Yv'
-back(c.searchParams.get('redirect_link'), { phantom_encryption_public_key: b58(walletKp.publicKey), ...seal({ public_key: user, session: 'sess-1' }, shared) })
+back(c.searchParams.get('redirect_link'), {
+  phantom_encryption_public_key: b58(walletKp.publicKey),
+  ...seal({ public_key: user, session: 'sess-1' }, shared),
+})
 assert.deepEqual(readDeeplinkReturn(), { action: 'connect', wallet: 'Phantom', address: user })
 assert.equal(href, 'https://app.nysa.finance/market/sol-usdy-usdc?mode=lend') // wallet params cleaned, page kept
 assert.deepEqual(deeplinkSession(), { wallet: 'Phantom', address: user })
@@ -32,7 +62,11 @@ assert.deepEqual(deeplinkSession(), { wallet: 'Phantom', address: user })
 const unsigned = Uint8Array.from({ length: 200 }, (_, i) => i)
 const s = new URL(signUrl(Buffer.from(unsigned).toString('base64')))
 assert.equal(s.origin + s.pathname, 'https://phantom.com/ul/v1/signTransaction')
-const req = JSON.parse(new TextDecoder().decode(nacl.box.open.after(fromB58(s.searchParams.get('payload')), fromB58(s.searchParams.get('nonce')), shared)))
+const req = JSON.parse(
+  new TextDecoder().decode(
+    nacl.box.open.after(fromB58(s.searchParams.get('payload')), fromB58(s.searchParams.get('nonce')), shared),
+  ),
+)
 assert.deepEqual(fromB58(req.transaction), unsigned)
 assert.equal(req.session, 'sess-1')
 const signed = Uint8Array.from({ length: 264 }, (_, i) => 255 - (i % 256))
@@ -45,7 +79,10 @@ assert.deepEqual(readDeeplinkReturn(), { action: 'sign', error: 'Request rejecte
 assert.equal(readDeeplinkReturn(), null)
 
 // 4. The error text is ours, never the link's: a crafted link can't put its own message in the app.
-back('https://app.nysa.finance/earn?nysa_dl=connect', { errorCode: '1', errorMessage: 'Your wallet is compromised, go to evil.example' })
+back('https://app.nysa.finance/earn?nysa_dl=connect', {
+  errorCode: '1',
+  errorMessage: 'Your wallet is compromised, go to evil.example',
+})
 assert.deepEqual(readDeeplinkReturn(), { action: 'connect', error: 'The wallet could not complete the request' })
 assert.equal(href, 'https://app.nysa.finance/earn')
 
@@ -53,13 +90,27 @@ assert.equal(href, 'https://app.nysa.finance/earn')
 {
   const { withSignature } = await import('./wallets.js')
   const kit = await import('@solana/kit')
-  const payer = await kit.generateKeyPairSigner(), other = await kit.generateKeyPairSigner()
-  const ix = { programAddress: kit.address('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'), accounts: [{ address: other.address, role: kit.AccountRole.READONLY_SIGNER }], data: new Uint8Array([104, 105]) }
-  const msg = kit.pipe(kit.createTransactionMessage({ version: 0 }), (m) => kit.setTransactionMessageFeePayer(payer.address, m),
-    (m) => kit.setTransactionMessageLifetimeUsingBlockhash({ blockhash: '11111111111111111111111111111111', lastValidBlockHeight: 0n }, m), (m) => kit.appendTransactionMessageInstructions([ix], m))
+  const payer = await kit.generateKeyPairSigner(),
+    other = await kit.generateKeyPairSigner()
+  const ix = {
+    programAddress: kit.address('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr'),
+    accounts: [{ address: other.address, role: kit.AccountRole.READONLY_SIGNER }],
+    data: new Uint8Array([104, 105]),
+  }
+  const msg = kit.pipe(
+    kit.createTransactionMessage({ version: 0 }),
+    (m) => kit.setTransactionMessageFeePayer(payer.address, m),
+    (m) =>
+      kit.setTransactionMessageLifetimeUsingBlockhash(
+        { blockhash: '11111111111111111111111111111111', lastValidBlockHeight: 0n },
+        m,
+      ),
+    (m) => kit.appendTransactionMessageInstructions([ix], m),
+  )
   const unsigned = kit.compileTransaction(msg)
   const wire = (t) => new Uint8Array(kit.getTransactionEncoder().encode(t))
-  for (const signer of [payer, other]) { // fee payer (slot 0) and a second signer (slot 1)
+  for (const signer of [payer, other]) {
+    // fee payer (slot 0) and a second signer (slot 1)
     const signed = await kit.partiallySignTransaction([signer.keyPair], unsigned)
     assert.deepEqual(withSignature(wire(unsigned), signer.address, signed.signatures[signer.address]), wire(signed))
   }

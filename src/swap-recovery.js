@@ -5,12 +5,20 @@ const base58 = getBase58Decoder()
 export function signatureFromSignedTransaction(signedBytes, wallet) {
   if (!(signedBytes instanceof Uint8Array)) throw new TypeError('Signed transaction bytes are required.')
   let decoded
-  try { decoded = getTransactionDecoder().decode(signedBytes) }
-  catch { throw new Error('Wallet returned an invalid signed transaction.') }
+  try {
+    decoded = getTransactionDecoder().decode(signedBytes)
+  } catch {
+    throw new Error('Wallet returned an invalid signed transaction.')
+  }
   const message = getCompiledTransactionMessageDecoder().decode(decoded.messageBytes)
   let signer
-  try { signer = String(address(wallet)) } catch { throw new Error('Signed transaction wallet is invalid.') }
-  if (String(message.staticAccounts?.[0]) !== signer) throw new Error('Signed transaction fee payer does not match this wallet.')
+  try {
+    signer = String(address(wallet))
+  } catch {
+    throw new Error('Signed transaction wallet is invalid.')
+  }
+  if (String(message.staticAccounts?.[0]) !== signer)
+    throw new Error('Signed transaction fee payer does not match this wallet.')
   const signature = decoded.signatures?.[signer]
   if (!(signature instanceof Uint8Array) || signature.length !== 64 || signature.every((byte) => byte === 0)) {
     throw new Error('Wallet returned a transaction without this wallet’s signature.')
@@ -20,10 +28,12 @@ export function signatureFromSignedTransaction(signedBytes, wallet) {
 
 // Saved before relay: an ambiguous transport outcome stays a blocking pending state.
 export async function persistSignedSwapBeforeRelay({ pending, signedTransaction, persist, relay } = {}) {
-  if (typeof persist !== 'function' || typeof relay !== 'function') throw new TypeError('Swap persistence and relay functions are required.')
+  if (typeof persist !== 'function' || typeof relay !== 'function')
+    throw new TypeError('Swap persistence and relay functions are required.')
   const signature = signatureFromSignedTransaction(signedTransaction, pending?.wallet)
   let binary = ''
-  for (let index = 0; index < signedTransaction.length; index += 0x8000) binary += String.fromCharCode(...signedTransaction.subarray(index, index + 0x8000))
+  for (let index = 0; index < signedTransaction.length; index += 0x8000)
+    binary += String.fromCharCode(...signedTransaction.subarray(index, index + 0x8000))
   let saved = { ...pending, signature, signedTransactionBase64: btoa(binary), status: 'signed-pending' }
   await persist(saved)
   try {
@@ -39,16 +49,21 @@ export async function persistSignedSwapBeforeRelay({ pending, signedTransaction,
     return { pending: saved, error: null }
   } catch (error) {
     const definitelyNotRelayed = [400, 403, 429, 503].includes(error?.status)
-    const relayErrorCode = error?.code === 'RELAY_SIGNATURE_MISMATCH'
-      ? 'RELAY_SIGNATURE_MISMATCH'
-      : definitelyNotRelayed ? 'RELAY_DEFINITE_REJECTION' : 'RELAY_TRANSPORT_UNKNOWN'
+    const relayErrorCode =
+      error?.code === 'RELAY_SIGNATURE_MISMATCH'
+        ? 'RELAY_SIGNATURE_MISMATCH'
+        : definitelyNotRelayed
+          ? 'RELAY_DEFINITE_REJECTION'
+          : 'RELAY_TRANSPORT_UNKNOWN'
     saved = { ...saved, status: definitelyNotRelayed ? 'rejected' : 'relay-unknown', relayErrorCode }
     try {
       const persisted = await persist(saved)
       if (persisted?.terminalOutcome) {
         return { pending: { ...saved, status: 'submitted' }, error: null, terminalOutcome: persisted.terminalOutcome }
       }
-    } catch { /* the first signed-pending record still enables status reconciliation */ }
+    } catch {
+      /* the first signed-pending record still enables status reconciliation */
+    }
     return { pending: saved, error }
   }
 }
@@ -70,8 +85,12 @@ export function confirmedSwapAmountFromDeltas(tokenDeltas, wallet, mint) {
 }
 
 export function confirmedSwapAmountFromTransaction(transaction, wallet, mint) {
-  if (transaction?.status !== 'confirmed' || !Number.isSafeInteger(transaction.slot)
-    || !Number.isSafeInteger(transaction.transactionSlot) || transaction.slot !== transaction.transactionSlot) {
+  if (
+    transaction?.status !== 'confirmed' ||
+    !Number.isSafeInteger(transaction.slot) ||
+    !Number.isSafeInteger(transaction.transactionSlot) ||
+    transaction.slot !== transaction.transactionSlot
+  ) {
     throw new Error('Confirmed transaction token balances are not bound to the confirmed slot.')
   }
   return confirmedSwapAmountFromDeltas(transaction.tokenDeltas, wallet, mint)
@@ -79,7 +98,8 @@ export function confirmedSwapAmountFromTransaction(transaction, wallet, mint) {
 
 // A confirmed swap stays pending until its own output amount can be attributed.
 export function pendingSwapChainOutcome(pending, chain) {
-  if (chain?.status === 'failed') return { status: 'failed', signature: pending.signature, error: chain.error ?? 'Transaction failed on-chain.' }
+  if (chain?.status === 'failed')
+    return { status: 'failed', signature: pending.signature, error: chain.error ?? 'Transaction failed on-chain.' }
   if (chain?.status !== 'confirmed') return { status: 'pending', signature: pending.signature }
   return {
     status: 'confirmed',

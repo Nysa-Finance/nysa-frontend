@@ -3,7 +3,9 @@ import { createLatestRequestGate } from './swap-quote-request.js'
 
 const deferred = () => {
   let resolve
-  const promise = new Promise((done) => { resolve = done })
+  const promise = new Promise((done) => {
+    resolve = done
+  })
   return { promise, resolve }
 }
 
@@ -26,12 +28,17 @@ assert.equal(afterInvalidate.signal.aborted, true)
 assert.equal(afterInvalidate.isCurrent('wallet-b|usdy|usdc|1|50'), false)
 
 const responses = createLatestRequestGate()
-const firstResult = deferred(), secondResult = deferred()
+const firstResult = deferred(),
+  secondResult = deferred()
 let visibleQuote = null
 const firstRequest = responses.begin('same-wallet|usdc|usdy|1|50')
-const firstCommit = firstResult.promise.then((quote) => { if (firstRequest.isCurrent('same-wallet|usdc|usdy|1|50')) visibleQuote = quote })
+const firstCommit = firstResult.promise.then((quote) => {
+  if (firstRequest.isCurrent('same-wallet|usdc|usdy|1|50')) visibleQuote = quote
+})
 const secondRequest = responses.begin('same-wallet|usdc|usdy|2|50')
-const secondCommit = secondResult.promise.then((quote) => { if (secondRequest.isCurrent('same-wallet|usdc|usdy|2|50')) visibleQuote = quote })
+const secondCommit = secondResult.promise.then((quote) => {
+  if (secondRequest.isCurrent('same-wallet|usdc|usdy|2|50')) visibleQuote = quote
+})
 secondResult.resolve('new amount route')
 await secondCommit
 firstResult.resolve('stale old amount route')

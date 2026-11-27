@@ -6,12 +6,13 @@ function validDecimals(decimals) {
 }
 
 export function calculateSwapFeeBaseUnits(amountBaseUnits, feeBps = 10) {
-  if (typeof amountBaseUnits !== 'string' && typeof amountBaseUnits !== 'bigint') throw new TypeError('Invalid base-unit amount')
+  if (typeof amountBaseUnits !== 'string' && typeof amountBaseUnits !== 'bigint')
+    throw new TypeError('Invalid base-unit amount')
   const raw = String(amountBaseUnits)
   if (!/^\d+$/.test(raw)) throw new TypeError('Invalid base-unit amount')
   if (!Number.isSafeInteger(feeBps) || feeBps < 0 || feeBps > 10_000) throw new RangeError('Invalid fee basis points')
   // Match integer on-chain token accounting: discard fractions of one base unit, never round up.
-  return BigInt(raw) * BigInt(feeBps) / BASIS_POINTS_DENOMINATOR
+  return (BigInt(raw) * BigInt(feeBps)) / BASIS_POINTS_DENOMINATOR
 }
 
 export function parseBaseUnits(amount, decimals) {

@@ -1,6 +1,11 @@
 // Which markets a vault is exposed to comes from its on-chain allocation, never from config.
 import { createRequire } from 'node:module'
-import { KaminoVaultClient, KaminoVault, getSingleReserve, DEFAULT_RECENT_SLOT_DURATION_MS } from '@kamino-finance/klend-sdk'
+import {
+  KaminoVaultClient,
+  KaminoVault,
+  getSingleReserve,
+  DEFAULT_RECENT_SLOT_DURATION_MS,
+} from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
 import Decimal from 'decimal.js'
 import { LIVE, MARKETS, OTHER_MARKETS, VAULTS, TOKENS } from '../src/config.js'
@@ -19,7 +24,14 @@ export async function readVault(v, markets, now) {
   const state = await kv.getState()
   const reserveAddrs = vaultClient.getVaultReserves(state)
   const loaded = [...markets.values()].flatMap((m) => [...m.reserves.values()])
-  const reserves = new Map(await Promise.all(reserveAddrs.map(async (a) => [a, loaded.find((r) => r.address === a) ?? (await getSingleReserve(a, rpc, DEFAULT_RECENT_SLOT_DURATION_MS))])))
+  const reserves = new Map(
+    await Promise.all(
+      reserveAddrs.map(async (a) => [
+        a,
+        loaded.find((r) => r.address === a) ?? (await getSingleReserve(a, rpc, DEFAULT_RECENT_SLOT_DURATION_MS)),
+      ]),
+    ),
+  )
   const [holdings, perShare, apy, target] = await Promise.all([
     vaultClient.getVaultHoldings(state, now, reserves, now),
     vaultClient.getTokensPerShareSingleVault(state, now, reserves, now),
@@ -35,22 +47,32 @@ export async function readVault(v, markets, now) {
   // so they count in the vault's value and share value.
   const ri = state.rewardInfo
   const perSecond = Number(ri.rewardPerSecond) / 10 ** dec
-  const vested = Number(ri.lastIssuanceTs) > 0
-    ? Math.min(Math.max(Number(now.blockTime) - Number(ri.lastIssuanceTs), 0) * perSecond, Number(ri.rewardsAvailable) / 10 ** dec) : 0
+  const vested =
+    Number(ri.lastIssuanceTs) > 0
+      ? Math.min(
+          Math.max(Number(now.blockTime) - Number(ri.lastIssuanceTs), 0) * perSecond,
+          Number(ri.rewardsAvailable) / 10 ** dec,
+        )
+      : 0
   const rewardsLeft = Number(ri.rewardsAvailable) / 10 ** dec - vested
   const total = n(holdings.totalAUMIncludingFees) - n(holdings.pendingFees) + vested
   const shares = Number(state.sharesIssued) / 10 ** Number(state.sharesMintDecimals)
   const perShareNow = shares > 0 ? new Decimal(total).div(shares) : perShare
   const weights = new Map(vaultClient.getVaultAllocations(state))
   const caps = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), String(x.tokenAllocationCap)]))
-  const ctokens = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), BigInt(String(x.ctokenAllocation))]))
+  const ctokens = new Map(
+    state.vaultAllocationStrategy.map((x) => [String(x.reserve), BigInt(String(x.ctokenAllocation))]),
+  )
 
   const allocations = reserveAddrs.map((a) => {
     const r = reserves.get(a)
     const m = LIVE.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
-    const known = MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket)) ?? OTHER_MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
+    const known =
+      MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket)) ??
+      OTHER_MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
     const invested = n(holdings.investedInReserves.get(a))
-    const supply = BigInt(String(r.state.collateral.mintTotalSupply)), mine = ctokens.get(String(a)) ?? 0n
+    const supply = BigInt(String(r.state.collateral.mintTotalSupply)),
+      mine = ctokens.get(String(a)) ?? 0n
     const part = (raw) => (supply > 0n ? Number((raw * mine) / supply) / 10 ** dec : 0)
     return {
       reserve: String(a),
@@ -70,14 +92,27 @@ export async function readVault(v, markets, now) {
     }
   })
   // As Kamino shows it: uninvested tokens count as idle.
-  const borrowed = reserveAddrs.reduce((s, a) => s + n(holdings.investedInReserves.get(a)) * reserves.get(a).calculateUtilizationRatio(), 0)
+  const borrowed = reserveAddrs.reduce(
+    (s, a) => s + n(holdings.investedInReserves.get(a)) * reserves.get(a).calculateUtilizationRatio(),
+    0,
+  )
   // = klend-sdk's calculateVaultRewardsAprApy (not exported): linear, since it's a fixed amount, not a rate.
   const rewardsApy = rewardsLeft > 0 && total > 0 ? ((perSecond * SECONDS_PER_YEAR) / total) * 100 : 0
-  const oracles = [...new Set(reserveAddrs.map((a) => String(reserves.get(a).state.config.tokenInfo.scopeConfiguration.priceFeed)))]
+  const oracles = [
+    ...new Set(reserveAddrs.map((a) => String(reserves.get(a).state.config.tokenInfo.scopeConfiguration.priceFeed))),
+  ]
   // Kamino's UI stakes deposited shares in the vault farm: positions and withdrawals count (and unstake) them.
   const farmAddr = String(state.vaultFarm)
-  const farm = farmAddr === NONE ? null : { address: farmAddr, state: (await fetchFarmState(rpc, address(farmAddr))).data }
-  const live = { kv: KaminoVault.loadWithClientAndState(vaultClient, address(v.address), state), state, reserves, perShare: perShareNow, now, farm }
+  const farm =
+    farmAddr === NONE ? null : { address: farmAddr, state: (await fetchFarmState(rpc, address(farmAddr))).data }
+  const live = {
+    kv: KaminoVault.loadWithClientAndState(vaultClient, address(v.address), state),
+    state,
+    reserves,
+    perShare: perShareNow,
+    now,
+    farm,
+  }
   return {
     live,
     view: {
@@ -88,7 +123,15 @@ export async function readVault(v, markets, now) {
       supplyApy: n(apy.netAPY) * 100,
       rewardsApy,
       apy: n(apy.netAPY) * 100 + rewardsApy,
-      rewards: rewardsApy > 0 ? { symbol: token?.name ?? '', perWeek: perSecond * 604_800, left: rewardsLeft, daysLeft: rewardsLeft / perSecond / 86_400 } : null,
+      rewards:
+        rewardsApy > 0
+          ? {
+              symbol: token?.name ?? '',
+              perWeek: perSecond * 604_800,
+              left: rewardsLeft,
+              daysLeft: rewardsLeft / perSecond / 86_400,
+            }
+          : null,
       borrowed,
       utilization: total > 0 ? (borrowed / total) * 100 : 0,
       tokensPerShare: n(perShareNow),
@@ -117,13 +160,16 @@ export async function readVault(v, markets, now) {
 
 // A vault that fails to read is left out (logged) so the markets still load.
 export async function readVaults(markets, now) {
-  const live = new Map(), views = {}
+  const live = new Map(),
+    views = {}
   for (const v of VAULTS) {
     try {
       const r = await readVault(v, markets, now)
       live.set(v.id, r.live)
       views[v.id] = r.view
-    } catch (e) { console.error('[vault] read failed', v.id, e?.message) }
+    } catch (e) {
+      console.error('[vault] read failed', v.id, e?.message)
+    }
   }
   return { live, views }
 }

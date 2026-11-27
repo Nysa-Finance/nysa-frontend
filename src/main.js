@@ -30,10 +30,20 @@ const router = createRouter({
     { path: '/borrow/:id', name: 'market-detail', component: () => import('./pages/MarketDetail.vue') },
     { path: '/portfolio', name: 'portfolio', component: () => import('./pages/Portfolio.vue') },
     { path: '/swap', name: 'swap', component: () => import('./pages/Swap.vue') },
-    { path: `/loop/:asset(${LOOPS.map((l) => l.id).join('|')})?`, name: 'loop', component: () => import('./pages/Loop.vue') }, // a 404 page unless the wallet is in LOOP_WALLETS
+    {
+      path: `/loop/:asset(${LOOPS.map((l) => l.id).join('|')})?`,
+      name: 'loop',
+      component: () => import('./pages/Loop.vue'),
+    }, // a 404 page unless the wallet is in LOOP_WALLETS
     // Old links: Lend is now Earn (the vault); a market page is now its borrow page.
     { path: '/lend', redirect: { name: 'earn' } },
-    { path: '/market/:id', redirect: (to) => (to.query.mode === 'lend' && VAULTS[0] ? { name: 'vault', params: { id: VAULTS[0].id } } : { name: 'market-detail', params: to.params, query: to.query }) },
+    {
+      path: '/market/:id',
+      redirect: (to) =>
+        to.query.mode === 'lend' && VAULTS[0]
+          ? { name: 'vault', params: { id: VAULTS[0].id } }
+          : { name: 'market-detail', params: to.params, query: to.query },
+    },
     { path: '/analytics', name: 'analytics', component: () => import('./pages/Analytics.vue') },
     { path: '/liquidations', name: 'liquidations', component: () => import('./pages/Liquidations.vue') },
     { path: '/dashboard', redirect: { name: 'earn' } },
@@ -44,12 +54,16 @@ const router = createRouter({
 router.afterEach(applySeo)
 
 // Phones with a comma-decimal locale show "," on the decimal keypad: turned into "." before v-model reads it.
-document.addEventListener('input', ({ target: el }) => {
-  if (el.inputMode !== 'decimal' || !el.value.includes(',')) return
-  const caret = el.selectionStart
-  el.value = el.value.replaceAll(',', '.')
-  el.setSelectionRange(caret, caret)
-}, true)
+document.addEventListener(
+  'input',
+  ({ target: el }) => {
+    if (el.inputMode !== 'decimal' || !el.value.includes(',')) return
+    const caret = el.selectionStart
+    el.value = el.value.replaceAll(',', '.')
+    el.setSelectionRange(caret, caret)
+  },
+  true,
+)
 
 createApp(App).use(router).mount('#app')
 startAnalytics()

@@ -35,10 +35,12 @@ const wallet = {
   chains: ['solana:mainnet'],
   features: {
     'standard:connect': { connect: async () => ({ accounts: [account] }) },
-    'solana:signAndSendTransaction': { signAndSendTransaction: async () => {
-      walletPromptCount++
-      return [{ signature: new Uint8Array(64).fill(1) }]
-    } },
+    'solana:signAndSendTransaction': {
+      signAndSendTransaction: async () => {
+        walletPromptCount++
+        return [{ signature: new Uint8Array(64).fill(1) }]
+      },
+    },
   },
 }
 await store.connectWallet(wallet)
@@ -51,19 +53,34 @@ await store.claimRewards(market)
 assert.equal(buildCount, 3, 'ordinary lending, Earn, and claim actions remain available without Web Locks')
 assert.equal(walletPromptCount, 3, 'ordinary actions continue through the existing wallet capability')
 
-await assert.rejects(store.sendKaminoAction('deposit', {
-  market, token, amount: '1', swapFlow: 'acquire-supply', swapFlowStage: 'supply',
-}), (error) => {
-  assert.equal(error.code, 'ACTION_RESERVATION_LOCK_UNAVAILABLE')
-  assert.match(error.message, /secure browser with Web Locks enabled/i,
-    'the surfaced error explains why the protected feature action is unavailable')
-  return true
-}, 'borrower flow fails closed when cross-tab Web Locks are unavailable')
-await assert.rejects(store.signAndSendSwap({
-  built: { tx: 'AQ==', intentId: 'intent', expiresAt: Date.now() + 10_000 },
-  request: { wallet: walletAddress }, outputTokenId: 'svm-usdy',
-}), (error) => error.code === 'ACTION_RESERVATION_LOCK_UNAVAILABLE',
-'router actions fail closed when cross-tab Web Locks are unavailable')
+await assert.rejects(
+  store.sendKaminoAction('deposit', {
+    market,
+    token,
+    amount: '1',
+    swapFlow: 'acquire-supply',
+    swapFlowStage: 'supply',
+  }),
+  (error) => {
+    assert.equal(error.code, 'ACTION_RESERVATION_LOCK_UNAVAILABLE')
+    assert.match(
+      error.message,
+      /secure browser with Web Locks enabled/i,
+      'the surfaced error explains why the protected feature action is unavailable',
+    )
+    return true
+  },
+  'borrower flow fails closed when cross-tab Web Locks are unavailable',
+)
+await assert.rejects(
+  store.signAndSendSwap({
+    built: { tx: 'AQ==', intentId: 'intent', expiresAt: Date.now() + 10_000 },
+    request: { wallet: walletAddress },
+    outputTokenId: 'svm-usdy',
+  }),
+  (error) => error.code === 'ACTION_RESERVATION_LOCK_UNAVAILABLE',
+  'router actions fail closed when cross-tab Web Locks are unavailable',
+)
 assert.equal(buildCount, 3, 'protected borrower and router actions never build without Web Locks')
 assert.equal(walletPromptCount, 3, 'protected feature actions never prompt the wallet without Web Locks')
 assert.equal(values.has('nysaPendingTx'), false, 'completed ordinary actions release their reservation')

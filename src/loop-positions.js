@@ -18,24 +18,37 @@ export function loopPortfolioTotals(positions = [], prices = {}, rates = {}) {
     const liabilityAmount = Number(position.liability?.amount)
     const liabilityPrice = Number(prices[position.liability?.tokenId])
     if (Number.isFinite(liabilityAmount) && liabilityAmount > 0) hasActiveDebt = true
-    if (Number.isFinite(collateralAmount) && collateralAmount >= 0 && Number.isFinite(collateralPrice) && collateralPrice >= 0) {
+    if (
+      Number.isFinite(collateralAmount) &&
+      collateralAmount >= 0 &&
+      Number.isFinite(collateralPrice) &&
+      collateralPrice >= 0
+    ) {
       const value = collateralAmount * collateralPrice
       suppliedUsd += value
       const supplyApr = Number(rates[position.market?.id]?.[position.collateral?.tokenId]?.supplyAPR)
       if (Number.isFinite(supplyApr)) netAprUsd += value * supplyApr
     }
-    if (Number.isFinite(liabilityAmount) && liabilityAmount >= 0 && Number.isFinite(liabilityPrice) && liabilityPrice >= 0) {
+    if (
+      Number.isFinite(liabilityAmount) &&
+      liabilityAmount >= 0 &&
+      Number.isFinite(liabilityPrice) &&
+      liabilityPrice >= 0
+    ) {
       const value = liabilityAmount * liabilityPrice
       borrowedUsd += value
       const borrowApr = Number(rates[position.market?.id]?.[position.liability?.tokenId]?.borrowAPR)
       if (Number.isFinite(borrowApr)) netAprUsd -= value * borrowApr
     }
     const factor = Number(position.healthFactor)
-    if (Number.isFinite(factor) && factor > 0) healthFactor = healthFactor == null ? factor : Math.min(healthFactor, factor)
+    if (Number.isFinite(factor) && factor > 0)
+      healthFactor = healthFactor == null ? factor : Math.min(healthFactor, factor)
     else if (Number.isFinite(liabilityAmount) && liabilityAmount > 0) hasUnknownHealth = true
   }
   return {
-    suppliedUsd, borrowedUsd, netAprUsd,
+    suppliedUsd,
+    borrowedUsd,
+    netAprUsd,
     healthFactor: hasUnknownHealth ? null : healthFactor,
     healthFactorKnown: !hasActiveDebt || !hasUnknownHealth,
   }
@@ -51,31 +64,53 @@ export function portfolioHealthFactor(loanHealthFactors = [], loopTotals = {}) {
 
 export function selectedLoopCloseReadiness(readiness, position, wallet, loopPositionReadStatus) {
   if (!readiness) return null
-  const identityVerified = typeof wallet === 'string' && position?.wallet === wallet
-    && !!loopByMarket(position?.market?.id) && position?.obligation?.type === 'multiply'
-    && typeof position?.obligation?.address === 'string' && position.obligation.address.length > 0
-    && typeof position.id === 'string' && /^multiply:[a-f0-9]{64}$/.test(position.id)
-    && loopPositionReadStatus?.[position.market.id] === 'verified'
+  const identityVerified =
+    typeof wallet === 'string' &&
+    position?.wallet === wallet &&
+    !!loopByMarket(position?.market?.id) &&
+    position?.obligation?.type === 'multiply' &&
+    typeof position?.obligation?.address === 'string' &&
+    position.obligation.address.length > 0 &&
+    typeof position.id === 'string' &&
+    /^multiply:[a-f0-9]{64}$/.test(position.id) &&
+    loopPositionReadStatus?.[position.market.id] === 'verified'
   const exactRawAmount = (value) => typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value)
   const balances = position?.obligation?.balances
-  const balancesVerified = Array.isArray(balances?.deposits) && balances.deposits.every((item) =>
-    typeof item?.reserve === 'string' && exactRawAmount(item.cTokenBaseUnits) && exactRawAmount(item.amountBaseUnits))
-    && Array.isArray(balances?.borrows) && balances.borrows.every((item) =>
-      typeof item?.reserve === 'string' && exactRawAmount(item.amountScaled) && exactRawAmount(item.amountBaseUnits))
+  const balancesVerified =
+    Array.isArray(balances?.deposits) &&
+    balances.deposits.every(
+      (item) =>
+        typeof item?.reserve === 'string' &&
+        exactRawAmount(item.cTokenBaseUnits) &&
+        exactRawAmount(item.amountBaseUnits),
+    ) &&
+    Array.isArray(balances?.borrows) &&
+    balances.borrows.every(
+      (item) =>
+        typeof item?.reserve === 'string' && exactRawAmount(item.amountScaled) && exactRawAmount(item.amountBaseUnits),
+    )
   const unsupportedReserves = position?.obligation?.unsupportedReserves
   const noUnsupportedReserves = Array.isArray(unsupportedReserves) && unsupportedReserves.length === 0
   const verified = identityVerified && balancesVerified && noUnsupportedReserves
-  const unavailableReasons = (readiness.unavailableReasons ?? []).filter((item) =>
-    !(identityVerified && item?.code === 'loop-position-identity-required'))
+  const unavailableReasons = (readiness.unavailableReasons ?? []).filter(
+    (item) => !(identityVerified && item?.code === 'loop-position-identity-required'),
+  )
   if (!identityVerified && !unavailableReasons.some((item) => item?.code === 'loop-position-owner-unverified')) {
-    unavailableReasons.push({ code: 'loop-position-owner-unverified', message: 'Select a Multiply position verified for this wallet.' })
+    unavailableReasons.push({
+      code: 'loop-position-owner-unverified',
+      message: 'Select a Multiply position verified for this wallet.',
+    })
   }
-  if (identityVerified && !balancesVerified) unavailableReasons.push({
-    code: 'loop-position-balances-unverified', message: 'The complete Multiply reserve balances could not be verified.',
-  })
-  if (identityVerified && balancesVerified && !noUnsupportedReserves) unavailableReasons.push({
-    code: 'loop-position-extra-reserves', message: 'This Multiply position has active reserves outside its loop pair.',
-  })
+  if (identityVerified && !balancesVerified)
+    unavailableReasons.push({
+      code: 'loop-position-balances-unverified',
+      message: 'The complete Multiply reserve balances could not be verified.',
+    })
+  if (identityVerified && balancesVerified && !noUnsupportedReserves)
+    unavailableReasons.push({
+      code: 'loop-position-extra-reserves',
+      message: 'This Multiply position has active reserves outside its loop pair.',
+    })
   return { ...readiness, unavailableReasons, executionEnabled: verified && unavailableReasons.length === 0 }
 }
 
@@ -85,12 +120,22 @@ export function loopPositionFullyClosed(positions, positionId, loopPositionReadS
   if (loopPositionReadStatus?.[market] !== 'verified') return false
   const position = (positions ?? []).find((item) => item?.id === positionId)
   if (!position) return true
-  const isExactRawZero = (value) => typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value)
-    && !/[1-9]/.test(value)
+  const isExactRawZero = (value) => typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value) && !/[1-9]/.test(value)
   const balances = position.obligation?.balances
-  return isExactRawZero(position.liability?.amountBaseUnits) && isExactRawZero(position.collateral?.amountBaseUnits)
-    && Array.isArray(balances?.deposits) && balances.deposits.every((item) =>
-      typeof item?.reserve === 'string' && isExactRawZero(item.cTokenBaseUnits) && isExactRawZero(item.amountBaseUnits))
-    && Array.isArray(balances?.borrows) && balances.borrows.every((item) =>
-      typeof item?.reserve === 'string' && isExactRawZero(item.amountScaled) && isExactRawZero(item.amountBaseUnits))
+  return (
+    isExactRawZero(position.liability?.amountBaseUnits) &&
+    isExactRawZero(position.collateral?.amountBaseUnits) &&
+    Array.isArray(balances?.deposits) &&
+    balances.deposits.every(
+      (item) =>
+        typeof item?.reserve === 'string' &&
+        isExactRawZero(item.cTokenBaseUnits) &&
+        isExactRawZero(item.amountBaseUnits),
+    ) &&
+    Array.isArray(balances?.borrows) &&
+    balances.borrows.every(
+      (item) =>
+        typeof item?.reserve === 'string' && isExactRawZero(item.amountScaled) && isExactRawZero(item.amountBaseUnits),
+    )
+  )
 }

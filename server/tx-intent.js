@@ -7,14 +7,36 @@ const clone = (value) => structuredClone(value)
 
 export class TransactionIntentError extends Error {}
 
-const LENDING_BUILD_ACTIONS = new Set(['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate', 'vault-deposit', 'vault-withdraw'])
+const LENDING_BUILD_ACTIONS = new Set([
+  'deposit',
+  'withdraw',
+  'borrow',
+  'repay',
+  'claim',
+  'liquidate',
+  'vault-deposit',
+  'vault-withdraw',
+])
 const LIGHTHOUSE_PROGRAM_ID = 'L2TExMFKdjpN9kozasaurPirfHy9P8sbXoAN1qA3S95'
 // Borsh variants from Lighthouse programs/lighthouse/src/instruction.rs. 0 and 1 are MemoryWrite/MemoryClose;
 // only assertion variants with explicit account lists are admitted. Variant 15 (AssertSysvarClock) is accountless,
 // so it is deliberately outside the wallet guard allowance.
 const LIGHTHOUSE_ASSERTION_ACCOUNT_COUNTS = new Map([
-  [2, 1], [3, 1], [4, 2], [5, 1], [6, 1], [7, 1], [8, 1], [9, 1],
-  [10, 1], [11, 1], [12, 1], [13, 1], [14, 1], [16, 3], [17, 1],
+  [2, 1],
+  [3, 1],
+  [4, 2],
+  [5, 1],
+  [6, 1],
+  [7, 1],
+  [8, 1],
+  [9, 1],
+  [10, 1],
+  [11, 1],
+  [12, 1],
+  [13, 1],
+  [14, 1],
+  [16, 3],
+  [17, 1],
 ])
 
 const BORROWER_FLOW_ACTIONS = new Map([
@@ -30,12 +52,20 @@ function validateBorrowerFlowMetadata(metadata) {
   if (!expectedAction || metadata.action !== expectedAction) {
     throw new TransactionIntentError('Borrower flow stage does not match its Kamino action.')
   }
-  if (typeof metadata.marketId !== 'string' || !metadata.marketId.trim()
-    || typeof metadata.tokenId !== 'string' || !metadata.tokenId.trim()) {
+  if (
+    typeof metadata.marketId !== 'string' ||
+    !metadata.marketId.trim() ||
+    typeof metadata.tokenId !== 'string' ||
+    !metadata.tokenId.trim()
+  ) {
     throw new TransactionIntentError('Borrower flow intent requires a market and token.')
   }
-  if (metadata.amountBaseUnits != null && (typeof metadata.amountBaseUnits !== 'string' || !/^\d+$/.test(metadata.amountBaseUnits)
-    || BigInt(metadata.amountBaseUnits) <= 0n)) {
+  if (
+    metadata.amountBaseUnits != null &&
+    (typeof metadata.amountBaseUnits !== 'string' ||
+      !/^\d+$/.test(metadata.amountBaseUnits) ||
+      BigInt(metadata.amountBaseUnits) <= 0n)
+  ) {
     throw new TransactionIntentError('Invalid borrower flow amount.')
   }
 }
@@ -58,27 +88,37 @@ export function loopSetupMessageMatchesIgnoringBlockhash(expectedBytes, candidat
     const expected = decode.decode(expectedBytes)
     const candidate = decode.decode(candidateBytes)
     const accountKeys = (message) => message.staticAccounts.map(String)
-    const lookups = (message) => (message.addressTableLookups ?? []).map((item) => ({
-      address: String(item.lookupTableAddress),
-      writable: [...(item.writableIndexes ?? item.writableIndices ?? [])],
-      readonly: [...(item.readonlyIndexes ?? item.readableIndices ?? [])],
-    }))
-    const instructions = (message) => (message.instructions ?? []).map((item) => ({
-      programIndex: item.programAddressIndex,
-      accounts: [...(item.accountIndices ?? [])],
-      data: Buffer.from(item.data ?? []).toString('hex'),
-    }))
-    return expected.version === candidate.version
-      && JSON.stringify(expected.header) === JSON.stringify(candidate.header)
-      && JSON.stringify(accountKeys(expected)) === JSON.stringify(accountKeys(candidate))
-      && JSON.stringify(lookups(expected)) === JSON.stringify(lookups(candidate))
-      && JSON.stringify(instructions(expected)) === JSON.stringify(instructions(candidate))
-  } catch { return false }
+    const lookups = (message) =>
+      (message.addressTableLookups ?? []).map((item) => ({
+        address: String(item.lookupTableAddress),
+        writable: [...(item.writableIndexes ?? item.writableIndices ?? [])],
+        readonly: [...(item.readonlyIndexes ?? item.readableIndices ?? [])],
+      }))
+    const instructions = (message) =>
+      (message.instructions ?? []).map((item) => ({
+        programIndex: item.programAddressIndex,
+        accounts: [...(item.accountIndices ?? [])],
+        data: Buffer.from(item.data ?? []).toString('hex'),
+      }))
+    return (
+      expected.version === candidate.version &&
+      JSON.stringify(expected.header) === JSON.stringify(candidate.header) &&
+      JSON.stringify(accountKeys(expected)) === JSON.stringify(accountKeys(candidate)) &&
+      JSON.stringify(lookups(expected)) === JSON.stringify(lookups(candidate)) &&
+      JSON.stringify(instructions(expected)) === JSON.stringify(instructions(candidate))
+    )
+  } catch {
+    return false
+  }
 }
 
 function sameBytes(left, right) {
-  return left instanceof Uint8Array && right instanceof Uint8Array
-    && left.length === right.length && left.every((value, index) => value === right[index])
+  return (
+    left instanceof Uint8Array &&
+    right instanceof Uint8Array &&
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  )
 }
 
 function lookupTables(message) {
@@ -90,23 +130,42 @@ function lookupTables(message) {
 }
 
 // Wallets recompile lookups too (Phantom reorders a table's indexes): compare each table's writable and readonly index sets.
-const sortedLookupTables = (message) => lookupTables(message)
-  .map((t) => ({ ...t, writable: [...t.writable].sort((a, b) => a - b), readonly: [...t.readonly].sort((a, b) => a - b) }))
-  .sort((a, b) => (a.address < b.address ? -1 : a.address > b.address ? 1 : 0))
+const sortedLookupTables = (message) =>
+  lookupTables(message)
+    .map((t) => ({
+      ...t,
+      writable: [...t.writable].sort((a, b) => a - b),
+      readonly: [...t.readonly].sort((a, b) => a - b),
+    }))
+    .sort((a, b) => (a.address < b.address ? -1 : a.address > b.address ? 1 : 0))
 
 function validStaticRoles(message) {
   const { staticAccounts, header } = message
   const { numSignerAccounts, numReadonlySignerAccounts, numReadonlyNonSignerAccounts } = header
-  if (![numSignerAccounts, numReadonlySignerAccounts, numReadonlyNonSignerAccounts].every(Number.isSafeInteger)
-    || numSignerAccounts < 0 || numReadonlySignerAccounts < 0 || numReadonlyNonSignerAccounts < 0
-    || numReadonlySignerAccounts > numSignerAccounts || numSignerAccounts > staticAccounts.length
-    || numReadonlyNonSignerAccounts > staticAccounts.length - numSignerAccounts) return null
+  if (
+    ![numSignerAccounts, numReadonlySignerAccounts, numReadonlyNonSignerAccounts].every(Number.isSafeInteger) ||
+    numSignerAccounts < 0 ||
+    numReadonlySignerAccounts < 0 ||
+    numReadonlyNonSignerAccounts < 0 ||
+    numReadonlySignerAccounts > numSignerAccounts ||
+    numSignerAccounts > staticAccounts.length ||
+    numReadonlyNonSignerAccounts > staticAccounts.length - numSignerAccounts
+  )
+    return null
   const writableSignerEnd = numSignerAccounts - numReadonlySignerAccounts
   const writableNonSignerEnd = staticAccounts.length - numReadonlyNonSignerAccounts
-  return new Map(staticAccounts.map((account, index) => [String(account),
-    index < writableSignerEnd ? 'writable-signer'
-      : index < numSignerAccounts ? 'readonly-signer'
-        : index < writableNonSignerEnd ? 'writable' : 'readonly']))
+  return new Map(
+    staticAccounts.map((account, index) => [
+      String(account),
+      index < writableSignerEnd
+        ? 'writable-signer'
+        : index < numSignerAccounts
+          ? 'readonly-signer'
+          : index < writableNonSignerEnd
+            ? 'writable'
+            : 'readonly',
+    ]),
+  )
 }
 
 function loadedAccountKeys(message) {
@@ -123,10 +182,7 @@ function loadedAccountKeys(message) {
 }
 
 function messageAccountKeys(message) {
-  return [
-    ...message.staticAccounts.map((key) => `static:${String(key)}`),
-    ...loadedAccountKeys(message),
-  ]
+  return [...message.staticAccounts.map((key) => `static:${String(key)}`), ...loadedAccountKeys(message)]
 }
 
 function instructionMatches(left, leftKeys, right, rightKeys) {
@@ -134,10 +190,15 @@ function instructionMatches(left, leftKeys, right, rightKeys) {
   const rightProgram = rightKeys[right.programAddressIndex]
   const leftAccounts = left.accountIndices ?? []
   const rightAccounts = right.accountIndices ?? []
-  return !!leftProgram && leftProgram === rightProgram
-    && leftAccounts.length === rightAccounts.length
-    && leftAccounts.every((index, position) => !!leftKeys[index] && leftKeys[index] === rightKeys[rightAccounts[position]])
-    && sameBytes(left.data, right.data)
+  return (
+    !!leftProgram &&
+    leftProgram === rightProgram &&
+    leftAccounts.length === rightAccounts.length &&
+    leftAccounts.every(
+      (index, position) => !!leftKeys[index] && leftKeys[index] === rightKeys[rightAccounts[position]],
+    ) &&
+    sameBytes(left.data, right.data)
+  )
 }
 
 function isReadOnlyLighthouseAssertion(instruction, accountKeys) {
@@ -146,8 +207,11 @@ function isReadOnlyLighthouseAssertion(instruction, accountKeys) {
   if (!(data instanceof Uint8Array) || data.length < 3) return false
   const expectedAccounts = LIGHTHOUSE_ASSERTION_ACCOUNT_COUNTS.get(data[0])
   const accountIndices = instruction.accountIndices ?? []
-  return expectedAccounts != null && accountIndices.length === expectedAccounts
-    && accountIndices.every((index) => Number.isSafeInteger(index) && !!accountKeys[index])
+  return (
+    expectedAccounts != null &&
+    accountIndices.length === expectedAccounts &&
+    accountIndices.every((index) => Number.isSafeInteger(index) && !!accountKeys[index])
+  )
 }
 
 // Phantom appends Lighthouse guard instructions when signing: only appended read-only assertions are allowed.
@@ -157,25 +221,39 @@ export function messageMatchesWithLighthouse(originalBytes, candidateBytes, { ig
     const decode = getCompiledTransactionMessageDecoder().decode
     original = decode(originalBytes)
     candidate = decode(candidateBytes)
-  } catch { return false }
-  if (original.version !== candidate.version || (!ignoreLifetimeToken && original.lifetimeToken !== candidate.lifetimeToken)
-    || original.staticAccounts[0] !== candidate.staticAccounts[0]
-    || JSON.stringify(sortedLookupTables(original)) !== JSON.stringify(sortedLookupTables(candidate))) return false
+  } catch {
+    return false
+  }
+  if (
+    original.version !== candidate.version ||
+    (!ignoreLifetimeToken && original.lifetimeToken !== candidate.lifetimeToken) ||
+    original.staticAccounts[0] !== candidate.staticAccounts[0] ||
+    JSON.stringify(sortedLookupTables(original)) !== JSON.stringify(sortedLookupTables(candidate))
+  )
+    return false
   const originalHeader = original.header
   const candidateHeader = candidate.header
-  if (candidateHeader.numSignerAccounts !== originalHeader.numSignerAccounts
-    || candidateHeader.numReadonlySignerAccounts !== originalHeader.numReadonlySignerAccounts) return false
+  if (
+    candidateHeader.numSignerAccounts !== originalHeader.numSignerAccounts ||
+    candidateHeader.numReadonlySignerAccounts !== originalHeader.numReadonlySignerAccounts
+  )
+    return false
 
   const originalStatic = original.staticAccounts.map(String)
   const candidateStatic = candidate.staticAccounts.map(String)
-  if (new Set(originalStatic).size !== originalStatic.length || new Set(candidateStatic).size !== candidateStatic.length) return false
+  if (
+    new Set(originalStatic).size !== originalStatic.length ||
+    new Set(candidateStatic).size !== candidateStatic.length
+  )
+    return false
   const originalStaticSet = new Set(originalStatic)
   const addedStatic = candidateStatic.filter((account) => !originalStaticSet.has(account))
   if (addedStatic.length > 1 || addedStatic.some((account) => account !== LIGHTHOUSE_PROGRAM_ID)) return false
   // Wallets recompile the message, which can reorder static keys (Phantom does); instructions are compared by address
   // and every account must keep its role below, so only the set of keys must match.
   if (candidateStatic.length !== originalStatic.length + addedStatic.length) return false
-  if (candidateHeader.numReadonlyNonSignerAccounts !== originalHeader.numReadonlyNonSignerAccounts + addedStatic.length) return false
+  if (candidateHeader.numReadonlyNonSignerAccounts !== originalHeader.numReadonlyNonSignerAccounts + addedStatic.length)
+    return false
 
   const originalRoles = validStaticRoles(original)
   const candidateRoles = validStaticRoles(candidate)
@@ -187,12 +265,19 @@ export function messageMatchesWithLighthouse(originalBytes, candidateBytes, { ig
   const originalKeys = messageAccountKeys(original)
   const candidateKeys = messageAccountKeys(candidate)
   for (let index = 0; index < original.instructions.length; index++) {
-    if (!instructionMatches(original.instructions[index], originalKeys, candidate.instructions[index], candidateKeys)) return false
+    if (!instructionMatches(original.instructions[index], originalKeys, candidate.instructions[index], candidateKeys))
+      return false
   }
   const appendedInstructions = candidate.instructions.slice(original.instructions.length)
-  if (!appendedInstructions.length || appendedInstructions.some((instruction) =>
-    candidate.staticAccounts[instruction.programAddressIndex] !== LIGHTHOUSE_PROGRAM_ID
-      || !isReadOnlyLighthouseAssertion(instruction, candidateKeys))) return false
+  if (
+    !appendedInstructions.length ||
+    appendedInstructions.some(
+      (instruction) =>
+        candidate.staticAccounts[instruction.programAddressIndex] !== LIGHTHOUSE_PROGRAM_ID ||
+        !isReadOnlyLighthouseAssertion(instruction, candidateKeys),
+    )
+  )
+    return false
   return true
 }
 
@@ -211,17 +296,31 @@ export function transactionMessageBytesFromBase64(transactionBase64) {
 }
 
 function validateLendingBuildMetadata(metadata) {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata) || metadata.kind !== 'lending-build'
-    || !LENDING_BUILD_ACTIONS.has(metadata.action)) {
+  if (
+    !metadata ||
+    typeof metadata !== 'object' ||
+    Array.isArray(metadata) ||
+    metadata.kind !== 'lending-build' ||
+    !LENDING_BUILD_ACTIONS.has(metadata.action)
+  ) {
     throw new TransactionIntentError('Invalid lending build intent metadata.')
   }
   if (metadata.flow == null && metadata.stage == null) return
   const expectedAction = BORROWER_FLOW_ACTIONS.get(`${metadata.flow}:${metadata.stage}`)
-  if (!expectedAction || metadata.action !== expectedAction || metadata.marketId !== 'sol-usdy-usdc' || metadata.tokenId !== 'svm-usdy') {
+  if (
+    !expectedAction ||
+    metadata.action !== expectedAction ||
+    metadata.marketId !== 'sol-usdy-usdc' ||
+    metadata.tokenId !== 'svm-usdy'
+  ) {
     throw new TransactionIntentError('Borrower flow stage does not match its Kamino action or configured market token.')
   }
-  if (metadata.flowAmountBaseUnits != null && (typeof metadata.flowAmountBaseUnits !== 'string'
-    || !/^\d+$/.test(metadata.flowAmountBaseUnits) || BigInt(metadata.flowAmountBaseUnits) <= 0n)) {
+  if (
+    metadata.flowAmountBaseUnits != null &&
+    (typeof metadata.flowAmountBaseUnits !== 'string' ||
+      !/^\d+$/.test(metadata.flowAmountBaseUnits) ||
+      BigInt(metadata.flowAmountBaseUnits) <= 0n)
+  ) {
     throw new TransactionIntentError('Invalid borrower flow amount.')
   }
 }
@@ -232,17 +331,37 @@ function messageSummary(bytes) {
     const message = getCompiledTransactionMessageDecoder().decode(bytes)
     const keys = message.staticAccounts.map(String)
     return {
-      blockhash: String(message.lifetimeToken), header: message.header, staticAccounts: keys,
+      blockhash: String(message.lifetimeToken),
+      header: message.header,
+      staticAccounts: keys,
       lookups: lookupTables(message).map((t) => `${t.address} w[${t.writable}] r[${t.readonly}]`),
-      instructions: message.instructions.map((ix) => `${keys[ix.programAddressIndex] ?? `#${ix.programAddressIndex}`} accts[${(ix.accountIndices ?? []).join(',')}] data ${Buffer.from(ix.data ?? []).toString('hex')}`),
+      instructions: message.instructions.map(
+        (ix) =>
+          `${keys[ix.programAddressIndex] ?? `#${ix.programAddressIndex}`} accts[${(ix.accountIndices ?? []).join(',')}] data ${Buffer.from(ix.data ?? []).toString('hex')}`,
+      ),
     }
-  } catch { return 'undecodable' }
+  } catch {
+    return 'undecodable'
+  }
 }
 
-export function createSwapIntentStore({ ttlMs = 15_000, maxEntries = MAX_ENTRIES, now = Date.now, idFactory = randomUUID, messageMatcher = null } = {}) {
-  if (!Number.isSafeInteger(ttlMs) || ttlMs <= 0 || !Number.isSafeInteger(maxEntries) || maxEntries <= 0
-    || typeof now !== 'function' || typeof idFactory !== 'function'
-    || messageMatcher != null && typeof messageMatcher !== 'function') throw new TypeError('Invalid transaction intent store settings.')
+export function createSwapIntentStore({
+  ttlMs = 15_000,
+  maxEntries = MAX_ENTRIES,
+  now = Date.now,
+  idFactory = randomUUID,
+  messageMatcher = null,
+} = {}) {
+  if (
+    !Number.isSafeInteger(ttlMs) ||
+    ttlMs <= 0 ||
+    !Number.isSafeInteger(maxEntries) ||
+    maxEntries <= 0 ||
+    typeof now !== 'function' ||
+    typeof idFactory !== 'function' ||
+    (messageMatcher != null && typeof messageMatcher !== 'function')
+  )
+    throw new TypeError('Invalid transaction intent store settings.')
   const intents = new Map()
   function prune(at) {
     for (const [id, intent] of intents) if (at >= intent.expiresAt) intents.delete(id)
@@ -251,21 +370,32 @@ export function createSwapIntentStore({ ttlMs = 15_000, maxEntries = MAX_ENTRIES
     issue({ wallet, messageBytes, metadata = null, expiresAt = Infinity } = {}) {
       const at = now()
       if (!Number.isFinite(at)) throw new TransactionIntentError('Invalid transaction intent clock.')
-      if (typeof wallet !== 'string' || !isAddress(wallet)) throw new TransactionIntentError('Invalid wallet for transaction intent.')
-      if (expiresAt !== Infinity && (!Number.isFinite(expiresAt) || expiresAt <= at)) throw new TransactionIntentError('Transaction intent quote has expired.')
+      if (typeof wallet !== 'string' || !isAddress(wallet))
+        throw new TransactionIntentError('Invalid wallet for transaction intent.')
+      if (expiresAt !== Infinity && (!Number.isFinite(expiresAt) || expiresAt <= at))
+        throw new TransactionIntentError('Transaction intent quote has expired.')
       const digest = messageDigest(messageBytes)
       let safeMetadata
-      try { safeMetadata = clone(metadata) } catch { throw new TransactionIntentError('Invalid transaction intent metadata.') }
+      try {
+        safeMetadata = clone(metadata)
+      } catch {
+        throw new TransactionIntentError('Invalid transaction intent metadata.')
+      }
       if (safeMetadata != null && (typeof safeMetadata !== 'object' || Array.isArray(safeMetadata))) {
         throw new TransactionIntentError('Invalid transaction intent metadata.')
       }
       prune(at)
       while (intents.size >= maxEntries) intents.delete(intents.keys().next().value)
       const id = idFactory()
-      if (typeof id !== 'string' || !id || intents.has(id)) throw new TransactionIntentError('Could not create a unique transaction intent.')
+      if (typeof id !== 'string' || !id || intents.has(id))
+        throw new TransactionIntentError('Could not create a unique transaction intent.')
       const record = {
-        id, wallet, digest, messageBytes: messageMatcher ? Uint8Array.from(messageBytes) : null,
-        expiresAt: Math.min(at + ttlMs, expiresAt), metadata: safeMetadata,
+        id,
+        wallet,
+        digest,
+        messageBytes: messageMatcher ? Uint8Array.from(messageBytes) : null,
+        expiresAt: Math.min(at + ttlMs, expiresAt),
+        metadata: safeMetadata,
       }
       intents.set(id, record)
       return { id, wallet, expiresAt: record.expiresAt, metadata: clone(safeMetadata) }
@@ -286,10 +416,18 @@ export function createSwapIntentStore({ ttlMs = 15_000, maxEntries = MAX_ENTRIES
       const exactMatch = digest.length === intent.digest.length && timingSafeEqual(digest, intent.digest)
       let normalizedMatch = false
       if (!exactMatch && messageMatcher) {
-        try { normalizedMatch = messageMatcher(intent.messageBytes, messageBytes, intent.metadata) === true } catch { normalizedMatch = false }
+        try {
+          normalizedMatch = messageMatcher(intent.messageBytes, messageBytes, intent.metadata) === true
+        } catch {
+          normalizedMatch = false
+        }
       }
       if (!exactMatch && !normalizedMatch) {
-        if (intent.messageBytes) console.warn('[intent] signed message differs', JSON.stringify({ built: messageSummary(intent.messageBytes), signed: messageSummary(messageBytes) }))
+        if (intent.messageBytes)
+          console.warn(
+            '[intent] signed message differs',
+            JSON.stringify({ built: messageSummary(intent.messageBytes), signed: messageSummary(messageBytes) }),
+          )
         throw new TransactionIntentError('Signed transaction changed after authorization.')
       }
       intents.delete(id)
@@ -316,7 +454,9 @@ export function createLendingTransactionIntentStore(options = {}) {
       validateLendingBuildMetadata(intent.metadata)
       return intent
     },
-    size() { return store.size() },
+    size() {
+      return store.size()
+    },
   }
 }
 
@@ -332,6 +472,8 @@ export function createBorrowerFlowIntentStore(options = {}) {
       validateBorrowerFlowMetadata(intent.metadata)
       return intent
     },
-    size() { return store.size() },
+    size() {
+      return store.size()
+    },
   }
 }
