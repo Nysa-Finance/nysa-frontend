@@ -117,7 +117,6 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
     </template>
     <div v-else class="ea-card"><span class="n-skel" /></div>
   </div>
-  <p class="hint">Total Deposits: everything in the vault, invested in its markets or waiting in the vault.</p>
   <FarmPointsModal v-if="pointsOpen" @close="pointsOpen = false" />
 </template>
 
@@ -212,11 +211,5 @@ const go = (v) => router.push({ name: 'vault', params: { id: v.id } })
 }
 .name {
   font-weight: 600;
-}
-.hint {
-  margin-top: 12px;
-  color: var(--n-text-4);
-  font-size: 12px;
-  line-height: 1.6;
 }
 </style>

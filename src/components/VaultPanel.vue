@@ -100,9 +100,6 @@ async function submit() {
       </button>
     </div>
     <div style="margin-bottom: 4px" />
-    <p v-if="all && !warning" class="n-note" style="margin-bottom: 16px">
-      Withdrawing in full: every share is redeemed.
-    </p>
     <p v-if="warning" class="n-warn" style="margin-bottom: 16px">{{ warning }}</p>
     <button class="n-btn-block" :disabled="!canSubmit" @click="submit">
       {{ tab === 'deposit' ? 'Deposit' : 'Withdraw' }} {{ token.name }}

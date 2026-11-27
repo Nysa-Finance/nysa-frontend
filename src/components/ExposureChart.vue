@@ -120,15 +120,7 @@ const RI = 56
       <div class="n-cell n-accent n-num" data-label="Deposit APY">{{ pct(x.supplyApy) }}</div>
     </div>
   </div>
-  <p class="hint">
-    Targets come from the curator's on-chain weights and caps, read live from Kamino.
-    <template v-if="vault.bufferTarget > 0"
-      >A liquidity buffer ({{ pct((vault.bufferTarget / vault.total) * 100, 1) }} today) stays uninvested so withdrawals
-      are paid at once.</template
-    >
-    Deposits made on Nysa are invested in the same transaction.
-    <template v-if="!invested">Nothing is invested yet: the chart shows the targets.</template>
-  </p>
+  <p v-if="!invested" class="hint">Nothing is invested yet: the chart shows the targets.</p>
 </template>
 
 <style scoped>
