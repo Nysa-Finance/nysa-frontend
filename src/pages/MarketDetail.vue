@@ -158,10 +158,6 @@ function openDd() {
               </div>
             </div>
           </div>
-          <p class="hint">
-            Rates are annualised from the vault's per-second borrow rate. Suppliers receive the borrow rate scaled by
-            utilisation, net of the reserve fee.
-          </p>
           <div class="irm-charts">
             <div v-for="t in tokens.filter((t) => irmOf(m, t.token_id))" :key="t.token_id" class="irm-card">
               <div class="n-asset irm-card-head"><TokenIcon :token="t" size="sm" />{{ t.name }}</div>
@@ -205,10 +201,6 @@ function openDd() {
               </div>
             </div>
           </div>
-          <p class="hint">
-            An LTV belongs to a (collateral, liability) pair, not to an asset on its own — the same collateral can carry
-            a different limit against a different loan.
-          </p>
         </Section>
 
         <Section title="Market Updates">
@@ -386,12 +378,6 @@ function openDd() {
 }
 .collateral-only {
   font-size: 13px;
-}
-.hint {
-  margin-top: 12px;
-  color: var(--n-text-4);
-  font-size: 12px;
-  line-height: 1.6;
 }
 .irm-charts {
   display: grid;

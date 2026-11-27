@@ -150,9 +150,6 @@ async function submit() {
     <div class="n-kv" style="margin-bottom: 18px">
       <span class="k">Value</span><span class="v">{{ usdFull(value) }}</span>
     </div>
-    <p v-if="withdrawAll && !warning" class="n-note" style="margin-bottom: 16px">
-      Withdrawing in full. The exact balance is settled on-chain so no dust is left behind.
-    </p>
     <p v-if="warning" class="n-warn" style="margin-bottom: 16px">{{ warning }}</p>
     <button class="n-btn-block" :disabled="!canSubmit" @click="submit">
       {{ tab === 'withdraw' ? 'Withdraw' : 'Deposit' }} {{ token.name }}

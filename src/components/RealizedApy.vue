@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue'
-import { pct, ago, windowApy, dailyApySeries, niceTicks } from '../logic.js'
+import { pct, windowApy, dailyApySeries, niceTicks } from '../logic.js'
 
 const props = defineProps({ token: Object, history: Object, currentApy: Number })
 
@@ -12,13 +12,12 @@ const withLaunch = computed(() =>
 const w30 = computed(() => windowApy(withLaunch.value, 30))
 const w7 = computed(() => windowApy(recorded.value, 7))
 const days = (count) => `${count < 1 ? count.toFixed(1) : Math.round(count)}d`
-function sub(apyWindow, windowDays) {
+function sub(apyWindow) {
   if (!apyWindow) return 'collecting data'
   if (apyWindow.from === props.history?.inception) return `since launch · ${days(apyWindow.spanDays)}`
-  if (apyWindow.full) return `${windowDays}-day window`
+  if (apyWindow.full) return null
   return `based on ${days(apyWindow.spanDays)}`
 }
-const lastTs = computed(() => recorded.value.at(-1)?.ts)
 
 const RANGES = [7, 30]
 const range = ref(30)
@@ -82,17 +81,16 @@ function onMove(e) {
     <div class="n-stat">
       <div class="k">30D Realized APY</div>
       <div class="v sm">{{ w30 ? pct(w30.apy) : '—' }}</div>
-      <div class="s">{{ sub(w30, 30) }}</div>
+      <div v-if="sub(w30)" class="s">{{ sub(w30) }}</div>
     </div>
     <div class="n-stat">
       <div class="k">7D Realized APY</div>
       <div class="v sm">{{ w7 ? pct(w7.apy) : '—' }}</div>
-      <div class="s">{{ sub(w7, 7) }}</div>
+      <div v-if="sub(w7)" class="s">{{ sub(w7) }}</div>
     </div>
     <div class="n-stat">
       <div class="k">Current APY</div>
       <div class="v sm accent">{{ pct(currentApy) }}</div>
-      <div class="s">live APY</div>
     </div>
   </div>
 
@@ -148,11 +146,6 @@ function onMove(e) {
       shows one point per day.
     </div>
   </div>
-  <p class="hint">
-    Realized APY is measured from the growth in value of a {{ token.name }} deposit, recorded daily{{
-      lastTs ? ` · last snapshot ${ago(lastTs)}` : ''
-    }}.
-  </p>
 </template>
 
 <style scoped>
@@ -240,12 +233,6 @@ function onMove(e) {
   color: #fff;
   font-weight: 500;
   margin-left: 6px;
-}
-.hint {
-  margin-top: 12px;
-  color: var(--n-text-4);
-  font-size: 12px;
-  line-height: 1.6;
 }
 @media (max-width: 860px) {
   .ra-stats {
