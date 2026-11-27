@@ -105,3 +105,13 @@ export function dur(sec) {
   if (seconds < 2 * DAY) return `${Math.round(seconds / 3600)}h`
   return `${Math.round(seconds / DAY)}d`
 }
+
+// "3.0×", "2.5×", "1.75×": a leverage multiple with one or two decimals.
+export const leverageText = (value) => `${Number(value).toFixed(2).replace(/0$/, '')}×`
+
+// A health factor's chip: class and label.
+export function healthLevel(hf) {
+  if (hf >= 1.8) return ['ok', 'Safe']
+  if (hf >= 1.3) return ['warn', 'Medium']
+  return ['bad', 'Risky']
+}
