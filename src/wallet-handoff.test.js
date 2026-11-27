@@ -3,7 +3,11 @@ import { readFile } from 'node:fs/promises'
 import { createRenderer, nextTick } from 'vue'
 import { compileScript, parse } from 'vue/compiler-sfc'
 import { applySwapFlowOutcome } from './swap-flow-state.js'
-import { assertCanStartLendingAction, canRetryAfterTransactionOutcome, recoverConfirmedSetupTransaction } from './pending-reconciliation.js'
+import {
+  assertCanStartLendingAction,
+  canRetryAfterTransactionOutcome,
+  recoverConfirmedSetupTransaction,
+} from './pending-reconciliation.js'
 
 const wallet = 'wallet-a'
 const setupAfterTimeout = {
@@ -26,7 +30,11 @@ const setupAfterTimeout = {
   },
 }
 const recovery = recoverConfirmedSetupTransaction(setupAfterTimeout, { status: 'confirmed' })
-assert.equal(recovery.status, 'setup-confirmed', 'a lost relay response recovers to confirmed setup before showing cancel')
+assert.equal(
+  recovery.status,
+  'setup-confirmed',
+  'a lost relay response recovers to confirmed setup before showing cancel',
+)
 const values = new Map([['nysaSetupRecovery', JSON.stringify(recovery)]])
 globalThis.localStorage = {
   getItem: (key) => values.get(key) ?? null,
@@ -44,15 +52,17 @@ async function componentUrl(name, imports = {}) {
   const source = await readFile(new URL(`./components/${name}.vue`, import.meta.url), 'utf8')
   const { descriptor, errors } = parse(source, { filename: `${name}.vue` })
   assert.deepEqual(errors, [])
-  let component = compileScript(descriptor, { id: `${name}-test`, inlineTemplate: true }).content
-    .replace('from "vue"', `from "${import.meta.resolve('vue')}"`)
+  let component = compileScript(descriptor, { id: `${name}-test`, inlineTemplate: true })
+    .content.replace('from "vue"', `from "${import.meta.resolve('vue')}"`)
     .replace("from 'vue'", `from '${import.meta.resolve('vue')}'`)
     .replace("from '../store.js'", `from '${new URL('./store.js', import.meta.url).href}'`)
     .replace("from '../config.js'", `from '${new URL('./config.js', import.meta.url).href}'`)
   for (const [path, url] of Object.entries(imports)) component = component.replace(`from '${path}'`, `from '${url}'`)
   return `data:text/javascript;base64,${Buffer.from(component).toString('base64')}`
 }
-const { default: WalletHandoff } = await import(await componentUrl('WalletHandoff', { './TxProgress.vue': await componentUrl('TxProgress') }))
+const { default: WalletHandoff } = await import(
+  await componentUrl('WalletHandoff', { './TxProgress.vue': await componentUrl('TxProgress') })
+)
 
 function element(type, text = '') {
   return { type, text, props: {}, children: [], parent: null }
@@ -63,9 +73,16 @@ const renderer = createRenderer({
   createElement: (type) => element(type),
   createText: (text) => element('#text', text),
   createComment: (text) => element('#comment', text),
-  setText: (node, text) => { node.text = text },
-  setElementText: (node, text) => { node.text = text; node.children = [] },
-  patchProp: (node, key, _previous, next) => { node.props[key] = next },
+  setText: (node, text) => {
+    node.text = text
+  },
+  setElementText: (node, text) => {
+    node.text = text
+    node.children = []
+  },
+  patchProp: (node, key, _previous, next) => {
+    node.props[key] = next
+  },
   parentNode: (node) => node.parent,
   nextSibling(node) {
     if (!node.parent) return null
@@ -97,18 +114,33 @@ await nextTick()
 assert.equal(store.state.lendingSetupRecovery, null, 'cancel removes only the confirmed setup marker')
 assert.equal(values.has('nysaSetupRecovery'), false)
 assert.equal(store.state.swapOutcome.status, 'rejected', 'cancel settles the matching withdrawal as a refusal')
-assert.equal(store.state.swapOutcome.signature, null, 'the setup signature is never presented as a withdrawal signature')
+assert.equal(
+  store.state.swapOutcome.signature,
+  null,
+  'the setup signature is never presented as a withdrawal signature',
+)
 assert.equal(store.state.swapOutcome.amountBaseUnits, null, 'cancel never claims withdrawn USDY')
 assert.equal(canRetryAfterTransactionOutcome(store.state.swapOutcome.status), true)
 assert.doesNotThrow(() => assertCanStartLendingAction(store.state.lendingPending, { kind: 'withdraw' }))
-const retryState = applySwapFlowOutcome({
-  primaryStatus: 'pending', primaryAmountBaseUnits: null, followUpStatus: null,
-  inputId: 'svm-usdy', outputId: 'svm-usdc',
-}, store.state.swapOutcome, wallet, 'withdraw-sell')
+const retryState = applySwapFlowOutcome(
+  {
+    primaryStatus: 'pending',
+    primaryAmountBaseUnits: null,
+    followUpStatus: null,
+    inputId: 'svm-usdy',
+    outputId: 'svm-usdc',
+  },
+  store.state.swapOutcome,
+  wallet,
+  'withdraw-sell',
+)
 assert.equal(retryState.primaryStatus, 'rejected', 'mounted Swap state becomes retryable after cancel')
 assert.equal(retryState.primaryAmountBaseUnits, null)
-assert.equal(nodes(root).some((node) => node.type === 'button' && label(node) === 'Cancel action'), false,
-  'the setup recovery card disappears after cancellation')
+assert.equal(
+  nodes(root).some((node) => node.type === 'button' && label(node) === 'Cancel action'),
+  false,
+  'the setup recovery card disappears after cancellation',
+)
 
 store.state.lendingPending = {
   wallet,
@@ -119,36 +151,54 @@ store.state.lendingPending = {
 }
 store.state.handoff = { status: 'sending', label: 'Full close' }
 await nextTick()
-assert.ok(nodes(root).some((node) => textOf(node).includes('Full close')),
-  'a pending loop action remains visible after the app reloads')
-assert.ok(nodes(root).some((node) => textOf(node).includes('Sending and confirming')),
-  'the iOS sending handoff remains visible beside the durable signature')
-assert.ok(nodes(root).some((node) => node.type === 'a' && node.props.href === 'https://solscan.io/tx/pending-loop-signature'),
-  'the durable card exposes the saved signature for reconciliation')
+assert.ok(
+  nodes(root).some((node) => textOf(node).includes('Full close')),
+  'a pending loop action remains visible after the app reloads',
+)
+assert.ok(
+  nodes(root).some((node) => textOf(node).includes('Sending and confirming')),
+  'the iOS sending handoff remains visible beside the durable signature',
+)
+assert.ok(
+  nodes(root).some((node) => node.type === 'a' && node.props.href === 'https://solscan.io/tx/pending-loop-signature'),
+  'the durable card exposes the saved signature for reconciliation',
+)
 let stack = nodes(root).find((node) => node.props.class === 'ho-stack')
 let stackedCards = nodes(root).filter((node) => node.type === 'div' && node.props.class?.includes('ho '))
 const sheet = () => nodes(root).find((node) => node.props.class?.includes('sheet '))
 assert.equal(stackedCards.length, 1, 'the durable pending signature stays a card')
-assert.ok(sheet().props.class.includes('running') && sheet().parent.parent !== stack, 'the sending handoff is the transaction sheet, apart from the cards')
-assert.ok(stackedCards.every((node) => node.parent === stack),
-  'the pending signature uses a normal-flow stacked card')
+assert.ok(
+  sheet().props.class.includes('running') && sheet().parent.parent !== stack,
+  'the sending handoff is the transaction sheet, apart from the cards',
+)
+assert.ok(
+  stackedCards.every((node) => node.parent === stack),
+  'the pending signature uses a normal-flow stacked card',
+)
 store.state.handoff = {
-  status: 'error', label: 'Full close',
+  status: 'error',
+  label: 'Full close',
   error: 'Relay outcome is unknown; Nysa is checking the saved signature.',
 }
 await nextTick()
-assert.ok(nodes(root).some((node) => textOf(node).includes('Relay outcome is unknown; Nysa is checking the saved signature.')),
-  'a signatureless relay error remains visible beside the durable signature')
-assert.ok(nodes(root).some((node) => textOf(node).includes('outcome is unknown')),
-  'a signatureless same-label error does not replace the current signature status with stale error text')
+assert.ok(
+  nodes(root).some((node) => textOf(node).includes('Relay outcome is unknown; Nysa is checking the saved signature.')),
+  'a signatureless relay error remains visible beside the durable signature',
+)
+assert.ok(
+  nodes(root).some((node) => textOf(node).includes('outcome is unknown')),
+  'a signatureless same-label error does not replace the current signature status with stale error text',
+)
 stack = nodes(root).find((node) => node.props.class === 'ho-stack')
 stackedCards = nodes(root).filter((node) => node.type === 'div' && node.props.class?.includes('ho '))
 assert.equal(stackedCards.length, 1, 'the pending signature stays a card')
 assert.ok(sheet().props.class.includes('error'), 'the signatureless error is the transaction sheet')
 store.state.handoff = null
 await nextTick()
-assert.ok(nodes(root).some((node) => textOf(node).includes('outcome is unknown')),
-  'the durable card explains an ambiguous relay outcome when no send handoff is active')
+assert.ok(
+  nodes(root).some((node) => textOf(node).includes('outcome is unknown')),
+  'the durable card explains an ambiguous relay outcome when no send handoff is active',
+)
 
 store.state.lendingSetupRecovery = {
   wallet,
@@ -161,25 +211,49 @@ await nextTick()
 stackedCards = nodes(root).filter((node) => node.type === 'div' && node.props.class?.includes('ho '))
 stack = nodes(root).find((node) => node.props.class === 'ho-stack')
 assert.ok(stack, 'wallet recovery cards share a single stack container')
-assert.ok(stackedCards.includes(nodes(root).find((node) => node.props.class === 'ho warn' && textOf(node).includes('Full close pending'))),
-  'the unresolved economic signature remains visible beside setup recovery')
-assert.ok(stackedCards.some((node) => textOf(node).includes('Account setup confirmed')),
-  'the separate setup recovery card remains visible')
-assert.ok(stackedCards.every((node) => node.parent === stack),
-  'setup recovery and pending signatures use normal-flow stacked cards')
-assert.equal(nodes(root).find((node) => node.type === 'button' && label(node) === 'Resume action').props.disabled, true,
-  'setup continuation stays disabled while an economic signature is unresolved')
+assert.ok(
+  stackedCards.includes(
+    nodes(root).find((node) => node.props.class === 'ho warn' && textOf(node).includes('Full close pending')),
+  ),
+  'the unresolved economic signature remains visible beside setup recovery',
+)
+assert.ok(
+  stackedCards.some((node) => textOf(node).includes('Account setup confirmed')),
+  'the separate setup recovery card remains visible',
+)
+assert.ok(
+  stackedCards.every((node) => node.parent === stack),
+  'setup recovery and pending signatures use normal-flow stacked cards',
+)
+assert.equal(
+  nodes(root).find((node) => node.type === 'button' && label(node) === 'Resume action').props.disabled,
+  true,
+  'setup continuation stays disabled while an economic signature is unresolved',
+)
 
 // A normal send is not an error: hidden while the page's own sheet runs it, a neutral card after a reload.
 store.state.lendingSetupRecovery = null
-store.state.lendingPending = { wallet, signature: 'sending-loop-signature', status: 'signed-pending', kind: 'loop-open', params: { wallet, kind: 'loop-open', loopAction: true } }
+store.state.lendingPending = {
+  wallet,
+  signature: 'sending-loop-signature',
+  status: 'signed-pending',
+  kind: 'loop-open',
+  params: { wallet, kind: 'loop-open', loopAction: true },
+}
 store.state.lendingActionBusy = true
 await nextTick()
-assert.equal(nodes(root).some((node) => node.props?.['data-testid'] === 'durable-pending-action'), false, 'no card while the page runs the send')
+assert.equal(
+  nodes(root).some((node) => node.props?.['data-testid'] === 'durable-pending-action'),
+  false,
+  'no card while the page runs the send',
+)
 store.state.lendingActionBusy = false
 await nextTick()
 const sending = nodes(root).find((node) => node.props?.['data-testid'] === 'durable-pending-action')
-assert.ok(sending && sending.props.class === 'ho busy' && textOf(sending).includes('Sending your signed transaction'), 'a reloaded send shows as busy, not as an error')
+assert.ok(
+  sending && sending.props.class === 'ho busy' && textOf(sending).includes('Sending your signed transaction'),
+  'a reloaded send shows as busy, not as an error',
+)
 app.unmount()
 
 console.log('wallet handoff cancel restores retryable withdrawal state')

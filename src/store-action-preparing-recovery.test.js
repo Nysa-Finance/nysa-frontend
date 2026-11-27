@@ -35,12 +35,20 @@ let walletPromptCount = 0
 globalThis.fetch = async (path, init = {}) => {
   const requestPath = String(path)
   if (requestPath.startsWith('/api/account/')) {
-    return { ok: true, status: 200, json: async () => ({ balances: {}, balancesBaseUnits: {}, positions: {}, positionsBaseUnits: {}, claimable: {} }) }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ balances: {}, balancesBaseUnits: {}, positions: {}, positionsBaseUnits: {}, claimable: {} }),
+    }
   }
   if (requestPath === '/api/tx' && init.method === 'POST') {
     buildCount++
-    if (buildCount === 1) return await new Promise((resolve) => { resolveInterruptedBuild = resolve })
-    if (buildCount === 2) return { ok: true, status: 200, json: async () => ({ tx: 'AQ==', minContextSlot: 1, final: true }) }
+    if (buildCount === 1)
+      return await new Promise((resolve) => {
+        resolveInterruptedBuild = resolve
+      })
+    if (buildCount === 2)
+      return { ok: true, status: 200, json: async () => ({ tx: 'AQ==', minContextSlot: 1, final: true }) }
   }
   if (requestPath === `/api/tx/${signature}`) {
     return { ok: true, status: 200, json: async () => ({ status: 'confirmed', slot: 12 }) }
@@ -78,8 +86,10 @@ assert.equal(walletPromptCount, 0, 'wallet is not invoked before build completes
 assert.equal(typeof heartbeatTick, 'function', 'active build has a renewable lease heartbeat')
 await heartbeatTick()
 const renewed = JSON.parse(values.get('nysaPendingTx'))
-assert.ok(renewed.leaseExpiresAt > saved.leaseExpiresAt,
-  `heartbeat renews the same reservation under the shared lock (${saved.leaseExpiresAt} -> ${renewed.leaseExpiresAt})`)
+assert.ok(
+  renewed.leaseExpiresAt > saved.leaseExpiresAt,
+  `heartbeat renews the same reservation under the shared lock (${saved.leaseExpiresAt} -> ${renewed.leaseExpiresAt})`,
+)
 
 const activeNewTab = await import('./store.js?preparing-active-new-tab')
 await activeNewTab.connectWallet(wallet)
@@ -92,33 +102,62 @@ assert.equal(walletPromptCount, 0)
 values.set('nysaPendingTx', JSON.stringify({ ...saved, leaseExpiresAt: Date.now() - 1 }))
 const otherTabStore = await import('./store.js?preparing-after-close')
 await otherTabStore.connectWallet(wallet)
-assert.equal(otherTabStore.state.lendingPending.status, 'preparing', 'new tab restores the interrupted build reservation')
+assert.equal(
+  otherTabStore.state.lendingPending.status,
+  'preparing',
+  'new tab restores the interrupted build reservation',
+)
 assert.equal(otherTabStore.state.lendingActionBusy, false, 'new tab has no active in-memory action')
 assert.equal(otherTabStore.state.lendingBuildCancelable, true, 'expired pre-wallet lease may be cancelled')
-assert.equal(await otherTabStore.cancelLendingBuildReservation(), true, 'user may explicitly release the expired pre-wallet build reservation')
+assert.equal(
+  await otherTabStore.cancelLendingBuildReservation(),
+  true,
+  'user may explicitly release the expired pre-wallet build reservation',
+)
 assert.equal(values.has('nysaPendingTx'), false, 'explicit release removes the no-signature reservation')
 await heartbeatTick()
-assert.equal(values.has('nysaPendingTx'), false, 'late heartbeat rechecks its token and cannot resurrect a cancelled reservation')
+assert.equal(
+  values.has('nysaPendingTx'),
+  false,
+  'late heartbeat rechecks its token and cannot resurrect a cancelled reservation',
+)
 
 resolveInterruptedBuild({ ok: true, status: 200, json: async () => ({ tx: 'AQ==', minContextSlot: 1, final: true }) })
-await assert.rejects(interrupted, (error) => error.code === 'PENDING_TRANSACTION',
-  'the original in-flight builder notices its token was replaced before opening the wallet')
+await assert.rejects(
+  interrupted,
+  (error) => error.code === 'PENDING_TRANSACTION',
+  'the original in-flight builder notices its token was replaced before opening the wallet',
+)
 assert.equal(walletPromptCount, 0, 'cancelled in-flight build cannot invoke the old wallet prompt')
 
-assert.equal(await otherTabStore.sendKaminoAction('deposit', { market, token, amount: '1' }), signature,
-  'user can retry after releasing the stale pre-wallet reservation')
+assert.equal(
+  await otherTabStore.sendKaminoAction('deposit', { market, token, amount: '1' }),
+  signature,
+  'user can retry after releasing the stale pre-wallet reservation',
+)
 assert.equal(buildCount, 2)
 assert.equal(walletPromptCount, 1)
 assert.equal(values.has('nysaPendingTx'), false, 'confirmed retry clears its reservation')
 
 const legacyReservationId = `${(Date.now() - 60_001).toString(36)}-1`
-values.set('nysaPendingTx', JSON.stringify({
-  reservationId: legacyReservationId, reservationOwner: 'old-session', wallet: walletAddress,
-  kind: 'deposit', status: 'preparing', phase: 'building', signature: null,
-}))
+values.set(
+  'nysaPendingTx',
+  JSON.stringify({
+    reservationId: legacyReservationId,
+    reservationOwner: 'old-session',
+    wallet: walletAddress,
+    kind: 'deposit',
+    status: 'preparing',
+    phase: 'building',
+    signature: null,
+  }),
+)
 const noSessionRecovery = await import('./store.js?legacy-no-session-recovery')
-assert.equal(noSessionRecovery.state.lendingBuildCancelable, true,
-  'legacy reservation without a lease or sessionStorage becomes cancellable after its ID age expires')
+assert.equal(
+  noSessionRecovery.state.lendingBuildCancelable,
+  true,
+  'legacy reservation without a lease or sessionStorage becomes cancellable after its ID age expires',
+)
 assert.equal(await noSessionRecovery.cancelLendingBuildReservation(), true)
 assert.equal(values.has('nysaPendingTx'), false)
 

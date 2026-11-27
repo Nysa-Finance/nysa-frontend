@@ -6,7 +6,10 @@ export function installMockWebLocks() {
         return Promise.reject(new Error('Unexpected Web Lock request.'))
       }
       const result = queue.then(callback)
-      queue = result.then(() => undefined, () => undefined)
+      queue = result.then(
+        () => undefined,
+        () => undefined,
+      )
       return result
     },
   }

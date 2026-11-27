@@ -11,7 +11,9 @@ const { tx, run, reset } = useTx()
 
 const tab = ref(props.initialTab === 'withdraw' ? 'withdraw' : 'deposit')
 const amount = ref('')
-watch(amount, (v) => { amount.value = cleanAmount(v, token.value.decimals) })
+watch(amount, (v) => {
+  amount.value = cleanAmount(v, token.value.decimals)
+})
 const token = computed(() => tok(props.live?.tokenId ?? 'svm-usdc'))
 const on = computed(() => !!state.address)
 const position = computed(() => state.vaultPositions[props.vault.id]?.value ?? 0)
@@ -24,51 +26,87 @@ const warning = computed(() => {
   if (!props.live) return 'Vault data could not be read — actions are disabled until it recovers.'
   const a = num(amount.value)
   if (!a) return null
-  if (a > available.value + 10 ** -token.value.decimals) return tab.value === 'deposit' ? `You only hold ${amt(available.value)} ${token.value.name}.` : `Your deposit is worth ${amt(available.value)} ${token.value.name}.`
-  if (tab.value === 'deposit' && a < props.live.minDeposit) return `The minimum deposit is ${props.live.minDeposit} ${token.value.name}.`
-  if (tab.value === 'deposit' && a > capRoom.value) return `The vault's deposit cap leaves room for ${amt(capRoom.value)} ${token.value.name}.`
+  if (a > available.value + 10 ** -token.value.decimals)
+    return tab.value === 'deposit'
+      ? `You only hold ${amt(available.value)} ${token.value.name}.`
+      : `Your deposit is worth ${amt(available.value)} ${token.value.name}.`
+  if (tab.value === 'deposit' && a < props.live.minDeposit)
+    return `The minimum deposit is ${props.live.minDeposit} ${token.value.name}.`
+  if (tab.value === 'deposit' && a > capRoom.value)
+    return `The vault's deposit cap leaves room for ${amt(capRoom.value)} ${token.value.name}.`
   return null
 })
 const canSubmit = computed(() => on.value && num(amount.value) > 0 && !warning.value && tx.status !== 'running')
 // Everything (within one unit) redeems every share, so no dust is left in the vault.
-const all = computed(() => tab.value === 'withdraw' && coversAll(num(amount.value), position.value, token.value.decimals))
+const all = computed(
+  () => tab.value === 'withdraw' && coversAll(num(amount.value), position.value, token.value.decimals),
+)
 const quick = (p) => {
   const v = floorTo((available.value * p) / 100, token.value.decimals)
   amount.value = v > 0 ? String(v) : ''
 }
-watch(tab, () => { amount.value = ''; reset() })
+watch(tab, () => {
+  amount.value = ''
+  reset()
+})
 
 async function submit() {
   const kind = tab.value === 'deposit' ? 'vault-deposit' : 'vault-withdraw'
   const label = `${tab.value === 'deposit' ? 'Deposit' : 'Withdraw'} ${token.value.name}`
-  if (await run([{ label, run: () => sendVaultAction(kind, props.vault, { amount: num(amount.value), all: all.value }) }])) amount.value = ''
+  if (
+    await run([{ label, run: () => sendVaultAction(kind, props.vault, { amount: num(amount.value), all: all.value }) }])
+  )
+    amount.value = ''
 }
 </script>
 
 <template>
   <div class="n-panel">
     <div class="n-seg" style="margin-bottom: 22px">
-      <button :class="{ on: tab === 'deposit' }" :aria-pressed="tab === 'deposit'" @click="tab = 'deposit'">Deposit</button>
-      <button :class="{ on: tab === 'withdraw' }" :aria-pressed="tab === 'withdraw'" @click="tab = 'withdraw'">Withdraw</button>
+      <button :class="{ on: tab === 'deposit' }" :aria-pressed="tab === 'deposit'" @click="tab = 'deposit'">
+        Deposit
+      </button>
+      <button :class="{ on: tab === 'withdraw' }" :aria-pressed="tab === 'withdraw'" @click="tab = 'withdraw'">
+        Withdraw
+      </button>
     </div>
     <div class="n-kv" style="margin-bottom: 10px">
       <span class="k">Vault APY</span>
-      <span class="v accent">{{ live ? pct(live.apy) : '—' }}<Boost v-if="live?.rewardsApy" :title="apyNote(live)" /></span>
+      <span class="v accent"
+        >{{ live ? pct(live.apy) : '—' }}<Boost v-if="live?.rewardsApy" :title="apyNote(live)"
+      /></span>
     </div>
-    <div class="n-kv" style="margin-bottom: 10px"><span class="k">Your deposit</span><span class="v">{{ on ? `${amt(position)} ${token.name}` : '—' }}</span></div>
+    <div class="n-kv" style="margin-bottom: 10px">
+      <span class="k">Your deposit</span><span class="v">{{ on ? `${amt(position)} ${token.name}` : '—' }}</span>
+    </div>
     <div class="n-kv" style="margin-bottom: 20px">
       <span class="k">{{ tab === 'deposit' ? 'Wallet balance' : 'Available to withdraw' }}</span>
       <span class="v">{{ on ? `${amt(available)} ${token.name}` : '—' }}</span>
     </div>
     <div class="n-label">Amount ({{ token.name }})</div>
-    <input v-model="amount" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
+    <input
+      v-model="amount"
+      class="n-input"
+      type="text"
+      inputmode="decimal"
+      autocomplete="off"
+      placeholder="0.00"
+      :disabled="!on"
+      style="margin-bottom: 10px"
+    />
     <div class="n-quick" style="margin-bottom: 14px">
-      <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">{{ p === 100 ? 'Max' : p + '%' }}</button>
+      <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on" @click="quick(p)">
+        {{ p === 100 ? 'Max' : p + '%' }}
+      </button>
     </div>
     <div style="margin-bottom: 4px" />
-    <p v-if="all && !warning" class="n-note" style="margin-bottom: 16px">Withdrawing in full: every share is redeemed.</p>
+    <p v-if="all && !warning" class="n-note" style="margin-bottom: 16px">
+      Withdrawing in full: every share is redeemed.
+    </p>
     <p v-if="warning" class="n-warn" style="margin-bottom: 16px">{{ warning }}</p>
-    <button class="n-btn-block" :disabled="!canSubmit" @click="submit">{{ tab === 'deposit' ? 'Deposit' : 'Withdraw' }} {{ token.name }}</button>
+    <button class="n-btn-block" :disabled="!canSubmit" @click="submit">
+      {{ tab === 'deposit' ? 'Deposit' : 'Withdraw' }} {{ token.name }}
+    </button>
     <TxProgress :tx="tx" @dismiss="reset" />
   </div>
 </template>

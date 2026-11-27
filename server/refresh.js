@@ -1,7 +1,11 @@
 // Requests can only bring the next read forward, never postpone it, and post-transaction reads are at least `minGap`
 // ms apart: a client polling confirmations can neither freeze the cache nor make it hammer the RPC.
 export function createRefresher(read, { every, soon, minGap }) {
-  let timer = null, dueAt = 0, inflight = null, startedAt = -Infinity, again = false
+  let timer = null,
+    dueAt = 0,
+    inflight = null,
+    startedAt = -Infinity,
+    again = false
 
   function arm(ms) {
     if (timer && dueAt <= Date.now() + ms) return
@@ -12,7 +16,8 @@ export function createRefresher(read, { every, soon, minGap }) {
   }
   function fire() {
     timer = null
-    if (inflight) again = true // the running read may predate the request: read once more when it ends
+    if (inflight)
+      again = true // the running read may predate the request: read once more when it ends
     else run()
   }
 
@@ -24,13 +29,18 @@ export function createRefresher(read, { every, soon, minGap }) {
     startedAt = Date.now()
     inflight = new Promise((ok) => ok(read())).finally(() => {
       inflight = null
-      if (again) { again = false; soonRead() }
+      if (again) {
+        again = false
+        soonRead()
+      }
       arm(every)
     })
     return inflight
   }
 
-  function soonRead() { arm(Math.max(soon, startedAt + minGap - Date.now())) }
+  function soonRead() {
+    arm(Math.max(soon, startedAt + minGap - Date.now()))
+  }
 
   return { run, soon: soonRead }
 }

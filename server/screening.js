@@ -17,7 +17,10 @@ export const screeningStatus = () => ({ source: 'OFAC SDN', addresses: addresses
 
 export function parseSdn(xml) {
   const out = new Set()
-  for (const m of xml.matchAll(/<idType>Digital Currency Address - [A-Z0-9]+<\/idType>\s*<idNumber>([^<]+)<\/idNumber>/g)) out.add(m[1].trim())
+  for (const m of xml.matchAll(
+    /<idType>Digital Currency Address - [A-Z0-9]+<\/idType>\s*<idNumber>([^<]+)<\/idNumber>/g,
+  ))
+    out.add(m[1].trim())
   return out
 }
 
@@ -35,10 +38,16 @@ export async function refreshSanctions() {
 export async function startScreening() {
   try {
     const saved = JSON.parse((await read(SANCTIONS)) ?? 'null')
-    if (saved?.addresses?.length >= MIN_ADDRESSES) ({ updatedAt } = saved), (addresses = new Set(saved.addresses))
-  } catch (e) { console.error('[screening] saved list unreadable', e.message) }
-  const tick = () => refreshSanctions()
-    .then(() => setTimeout(tick, DAY_MS).unref?.())
-    .catch((e) => { console.error('[screening] OFAC download failed', e.message); setTimeout(tick, RETRY_MS).unref?.() })
+    if (saved?.addresses?.length >= MIN_ADDRESSES) (({ updatedAt } = saved), (addresses = new Set(saved.addresses)))
+  } catch (e) {
+    console.error('[screening] saved list unreadable', e.message)
+  }
+  const tick = () =>
+    refreshSanctions()
+      .then(() => setTimeout(tick, DAY_MS).unref?.())
+      .catch((e) => {
+        console.error('[screening] OFAC download failed', e.message)
+        setTimeout(tick, RETRY_MS).unref?.()
+      })
   tick()
 }

@@ -13,7 +13,9 @@ assert.equal(feeBpsFromEnv('10'), 10)
 assert.throws(() => feeBpsFromEnv('101'), /0 to 100/)
 assert.throws(() => feeBpsFromEnv('2.5'), /0 to 100/)
 
-const fixture = JSON.parse(await readFile(new URL('../tests/fixtures/jupiter-v2-build-whirlpool-route.json', import.meta.url), 'utf8'))
+const fixture = JSON.parse(
+  await readFile(new URL('../tests/fixtures/jupiter-v2-build-whirlpool-route.json', import.meta.url), 'utf8'),
+)
 const captured = fixture.response
 const wallet = fixture.capture.request.taker
 const { inputMint, outputMint } = fixture.capture.request
@@ -26,8 +28,12 @@ assert.deepEqual(configuredFeeAccountForMint(outputMint), { account: null, mint:
 assert.equal(swapFeeAccountsConfigured(), true)
 
 // The captured route as Jupiter returns it without a platform fee: no fee account slot, fee bps 0, route out = out.
-const inputAta = String(await ataOf(address(wallet), address(inputMint), address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')))
-const outputAta = String(await ataOf(address(wallet), address(outputMint), address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')))
+const inputAta = String(
+  await ataOf(address(wallet), address(inputMint), address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')),
+)
+const outputAta = String(
+  await ataOf(address(wallet), address(outputMint), address('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')),
+)
 const accounts = captured.swapInstruction.accounts.filter((_, index) => index !== 10)
 accounts[1] = { ...accounts[1], pubkey: inputAta }
 accounts[2] = { ...accounts[2], pubkey: outputAta }
@@ -42,16 +48,40 @@ data[35] = 0
 const noFeeResponse = {
   ...captured,
   platformFee: undefined,
-  routePlan: [{ ...captured.routePlan[0], swapInfo: { ...captured.routePlan[0].swapInfo, outAmount: captured.outAmount, programId: whirlpoolProgram, ammKey: pool } }],
+  routePlan: [
+    {
+      ...captured.routePlan[0],
+      swapInfo: {
+        ...captured.routePlan[0].swapInfo,
+        outAmount: captured.outAmount,
+        programId: whirlpoolProgram,
+        ammKey: pool,
+      },
+    },
+  ],
   swapInstruction: { ...captured.swapInstruction, accounts, data: data.toString('base64') },
-  computeBudgetInstructions: [], setupInstructions: [], otherInstructions: [], cleanupInstruction: null, tipInstruction: null,
+  computeBudgetInstructions: [],
+  setupInstructions: [],
+  otherInstructions: [],
+  cleanupInstruction: null,
+  tipInstruction: null,
 }
 const requests = []
-const build = (response) => buildSwap({
-  inputMint, outputMint, inputAmountBaseUnits: captured.inAmount, wallet, slippageBps: Number(captured.slippageBps),
-  providerApiKey: 'test', fetcher: async (url) => { requests.push(new URL(url)); return { ok: true, json: async () => response } },
-  routeProgramIdsByLabel: { Whirlpool: [whirlpoolProgram] }, feeBalanceDeltaVerified: true,
-})
+const build = (response) =>
+  buildSwap({
+    inputMint,
+    outputMint,
+    inputAmountBaseUnits: captured.inAmount,
+    wallet,
+    slippageBps: Number(captured.slippageBps),
+    providerApiKey: 'test',
+    fetcher: async (url) => {
+      requests.push(new URL(url))
+      return { ok: true, json: async () => response }
+    },
+    routeProgramIdsByLabel: { Whirlpool: [whirlpoolProgram] },
+    feeBalanceDeltaVerified: true,
+  })
 const built = await build(noFeeResponse)
 assert.equal(requests[0].searchParams.has('platformFeeBps'), false, 'no fee is requested from Jupiter')
 assert.equal(requests[0].searchParams.has('feeAccount'), false)
@@ -65,17 +95,46 @@ const skimmed = structuredClone(noFeeResponse)
 skimmed.routePlan[0].swapInfo.outAmount = String(BigInt(captured.outAmount) + 867n)
 await assert.rejects(build(skimmed), /fee Nysa did not request/)
 
-const request = { wallet, inputMint, outputMint, amountBaseUnits: captured.inAmount, slippageBps: Number(captured.slippageBps) }
-await assert.doesNotReject(validateProviderSwapInstructions(request, built, { deriveAta: ataOf }), 'the 26-account no-fee route passes')
-const withFeeBps = { ...built, swapInstruction: { ...built.swapInstruction, data: Uint8Array.from(built.swapInstruction.data) } }
+const request = {
+  wallet,
+  inputMint,
+  outputMint,
+  amountBaseUnits: captured.inAmount,
+  slippageBps: Number(captured.slippageBps),
+}
+await assert.doesNotReject(
+  validateProviderSwapInstructions(request, built, { deriveAta: ataOf }),
+  'the 26-account no-fee route passes',
+)
+const withFeeBps = {
+  ...built,
+  swapInstruction: { ...built.swapInstruction, data: Uint8Array.from(built.swapInstruction.data) },
+}
 withFeeBps.swapInstruction.data[26] = 10
 withFeeBps.instructions = [withFeeBps.swapInstruction]
-await assert.rejects(validateProviderSwapInstructions(request, withFeeBps, { deriveAta: ataOf }), /platform fee/, 'an encoded platform fee is refused')
+await assert.rejects(
+  validateProviderSwapInstructions(request, withFeeBps, { deriveAta: ataOf }),
+  /platform fee/,
+  'an encoded platform fee is refused',
+)
 assert.equal(String(built.swapInstruction.programAddress), jupiterProgram)
-assert.equal(built.swapInstruction.accounts[10].role, AccountRole.READONLY, 'index 10 is the Orca program, not a fee account')
+assert.equal(
+  built.swapInstruction.accounts[10].role,
+  AccountRole.READONLY,
+  'index 10 is the Orca program, not a fee account',
+)
 
-const effects = { inputAmountBaseUnits: captured.inAmount, minimumOutputBaseUnits: built.minimumOutputBaseUnits, feeAmountBaseUnits: '0' }
-const simulation = { inputDeltaBaseUnits: captured.inAmount, outputDeltaBaseUnits: captured.outAmount, feeDeltaBaseUnits: '0', additionalTokenDeltas: [] }
+const effects = {
+  inputAmountBaseUnits: captured.inAmount,
+  minimumOutputBaseUnits: built.minimumOutputBaseUnits,
+  feeAmountBaseUnits: '0',
+}
+const simulation = {
+  inputDeltaBaseUnits: captured.inAmount,
+  outputDeltaBaseUnits: captured.outAmount,
+  feeDeltaBaseUnits: '0',
+  additionalTokenDeltas: [],
+}
 assert.doesNotThrow(() => assertSwapSimulationEffects(effects, simulation))
 assert.throws(() => assertSwapSimulationEffects({ ...effects, feeAmountBaseUnits: '867' }, simulation), /no fee/)
 

@@ -1,6 +1,12 @@
 // Two RPC calls per read (the obligation, then token accounts + farm user states in one getMultipleAccounts).
 import { createRequire } from 'node:module'
-import { VanillaObligation, ObligationTypeTag, PROGRAM_ID, getObligationType, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
+import {
+  VanillaObligation,
+  ObligationTypeTag,
+  PROGRAM_ID,
+  getObligationType,
+  obligationFarmStatePda,
+} from '@kamino-finance/klend-sdk'
 import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddress, some } from '@solana/kit'
 import { TOKEN_PROGRAM_ADDRESS, getTokenDecoder } from '@solana-program/token'
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
@@ -21,18 +27,33 @@ const enc = getAddressEncoder()
 export const obligationType = () => new VanillaObligation(PROGRAM_ID)
 
 // Multiply reads are isolated and additive: the ordinary obligation stays the primary result.
-export async function readWalletObligations({ wallet, marketConfig, market, now, vanillaObligationType = obligationType(), readObligation = obligationByWallet } = {}) {
-  if (typeof wallet !== 'string' || !wallet || !marketConfig || !market) throw new TypeError('Wallet, market configuration and market are required.')
+export async function readWalletObligations({
+  wallet,
+  marketConfig,
+  market,
+  now,
+  vanillaObligationType = obligationType(),
+  readObligation = obligationByWallet,
+} = {}) {
+  if (typeof wallet !== 'string' || !wallet || !marketConfig || !market)
+    throw new TypeError('Wallet, market configuration and market are required.')
   const owner = address(wallet)
   const loop = LOOP_POSITION_MARKET_IDS.includes(marketConfig.id) ? loopByMarket(marketConfig.id) : null
-  const multiplyPairs = loop ? marketConfig.pairs.filter((pair) => pair.collateral === loop.collateral && pair.liability === loop.debt) : []
+  const multiplyPairs = loop
+    ? marketConfig.pairs.filter((pair) => pair.collateral === loop.collateral && pair.liability === loop.debt)
+    : []
   const loopPositionReadStatus = multiplyPairs.length ? { [marketConfig.id]: 'verified' } : {}
   const reads = await Promise.allSettled([
     readObligation(market, owner, vanillaObligationType, now),
     ...multiplyPairs.map(async (pair) => {
       const collateralReserve = reserveOf(market, TOKENS[pair.collateral])
       const liabilityReserve = reserveOf(market, TOKENS[pair.liability])
-      const type = getObligationType(market, ObligationTypeTag.Multiply, some(collateralReserve.address), some(liabilityReserve.address))
+      const type = getObligationType(
+        market,
+        ObligationTypeTag.Multiply,
+        some(collateralReserve.address),
+        some(liabilityReserve.address),
+      )
       const obligation = await readObligation(market, owner, type, now)
       return { obligation, pair, collateralReserve, liabilityReserve }
     }),
@@ -72,12 +93,23 @@ export async function readWalletObligations({ wallet, marketConfig, market, now,
 export function maxOf(kind, ob, market, reserve, now) {
   try {
     const f = num(reserve.getMintFactor()) || 1
-    return num(kind === 'borrow' ? ob.getMaxBorrowAmount(market, reserve.address, now, false) : ob.getMaxWithdrawAmount(market, reserve.address, now).maxWithdrawAmount) / f
-  } catch { return null }
+    return (
+      num(
+        kind === 'borrow'
+          ? ob.getMaxBorrowAmount(market, reserve.address, now, false)
+          : ob.getMaxWithdrawAmount(market, reserve.address, now).maxWithdrawAmount,
+      ) / f
+    )
+  } catch {
+    return null
+  }
 }
 
 export async function ataOf(owner, mint, tokenProgram) {
-  const [ata] = await getProgramDerivedAddress({ programAddress: ATA_PROGRAM, seeds: [enc.encode(owner), enc.encode(tokenProgram), enc.encode(mint)] })
+  const [ata] = await getProgramDerivedAddress({
+    programAddress: ATA_PROGRAM,
+    seeds: [enc.encode(owner), enc.encode(tokenProgram), enc.encode(mint)],
+  })
   return ata
 }
 
@@ -93,18 +125,41 @@ export function maxWithdrawBaseUnits({ maxWithdrawAmountScaled, suppliedAmountSc
     max = new Decimal(String(maxWithdrawAmountScaled))
     supplied = new Decimal(String(suppliedAmountScaled))
     factor = new Decimal(String(mintFactor))
-  } catch { throw new TypeError('Invalid withdrawal amount.') }
-  if (!max.isFinite() || !supplied.isFinite() || !factor.isFinite() || max.isNegative() || supplied.isNegative() || factor.lte(0)) {
+  } catch {
+    throw new TypeError('Invalid withdrawal amount.')
+  }
+  if (
+    !max.isFinite() ||
+    !supplied.isFinite() ||
+    !factor.isFinite() ||
+    max.isNegative() ||
+    supplied.isNegative() ||
+    factor.lte(0)
+  ) {
     throw new TypeError('Invalid withdrawal amount.')
   }
   return Decimal.min(max, supplied).div(factor).mul(new Decimal(10).pow(decimals)).floor().toFixed(0)
 }
 
-export function maxWithdrawFromObligation({ obligation, market, reserve, instant, suppliedAmountScaled, mintFactor, decimals } = {}) {
-  if (!obligation) return maxWithdrawBaseUnits({ maxWithdrawAmountScaled: '0', suppliedAmountScaled: '0', mintFactor, decimals })
+export function maxWithdrawFromObligation({
+  obligation,
+  market,
+  reserve,
+  instant,
+  suppliedAmountScaled,
+  mintFactor,
+  decimals,
+} = {}) {
+  if (!obligation)
+    return maxWithdrawBaseUnits({ maxWithdrawAmountScaled: '0', suppliedAmountScaled: '0', mintFactor, decimals })
   let maxWithdrawAmountScaled
-  try { maxWithdrawAmountScaled = String(obligation.getMaxWithdrawAmount(market, reserve.address, instant).maxWithdrawAmount) }
-  catch { throw new TypeError('Could not calculate the fresh withdrawal allowance.') }
+  try {
+    maxWithdrawAmountScaled = String(
+      obligation.getMaxWithdrawAmount(market, reserve.address, instant).maxWithdrawAmount,
+    )
+  } catch {
+    throw new TypeError('Could not calculate the fresh withdrawal allowance.')
+  }
   return maxWithdrawBaseUnits({ maxWithdrawAmountScaled, suppliedAmountScaled, mintFactor, decimals })
 }
 
@@ -126,17 +181,29 @@ export function pendingRewards(farmStates, userStates) {
 async function readAccount(wallet) {
   const owner = address(wallet)
   // a token lent in two markets is two positions
-  const balances = {}, balancesBaseUnits = {}, positions = {}, positionsBaseUnits = {}, claimable = {}, loopPositions = [], loopPositionReadStatus = {}
+  const balances = {},
+    balancesBaseUnits = {},
+    positions = {},
+    positionsBaseUnits = {},
+    claimable = {},
+    loopPositions = [],
+    loopPositionReadStatus = {}
   let sol = 0
   for (const m of MARKETS) {
     positions[m.id] = {}
     positionsBaseUnits[m.id] = {}
     const { market, now, farms: farmStates } = getLive(m)
     const tokens = tokensOf(m)
-    const { obligation: ob, loopPositions: marketLoopPositions, loopPositionReadStatus: marketLoopPositionReadStatus } = await readWalletObligations({ wallet, marketConfig: m, market, now })
+    const {
+      obligation: ob,
+      loopPositions: marketLoopPositions,
+      loopPositionReadStatus: marketLoopPositionReadStatus,
+    } = await readWalletObligations({ wallet, marketConfig: m, market, now })
     loopPositions.push(...marketLoopPositions)
     Object.assign(loopPositionReadStatus, marketLoopPositionReadStatus)
-    const atas = await Promise.all(tokens.map((t) => ataOf(owner, address(t.mint), reserveOf(market, t).getLiquidityTokenProgram())))
+    const atas = await Promise.all(
+      tokens.map((t) => ataOf(owner, address(t.mint), reserveOf(market, t).getLiquidityTokenProgram())),
+    )
     const farmAddrs = ob ? [...farmStates.keys()] : []
     const userPdas = await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress)))
     const accounts = await fetchEncodedAccounts(rpc, [...atas, ...userPdas, owner])
@@ -150,7 +217,10 @@ async function readAccount(wallet) {
       const acc = accounts[atas.length + i]
       return [f, acc.exists ? decodeUserState(acc).data : null]
     })
-    claimable[m.id] = pendingRewards(farmStates, users).map(({ mint, amount }) => ({ symbol: tokens.find((t) => t.mint === mint)?.name ?? mint, amount }))
+    claimable[m.id] = pendingRewards(farmStates, users).map(({ mint, amount }) => ({
+      symbol: tokens.find((t) => t.mint === mint)?.name ?? mint,
+      amount,
+    }))
     for (const t of tokens) {
       const r = reserveOf(market, t)
       const factorValue = r.getMintFactor()
@@ -174,30 +244,65 @@ async function readAccount(wallet) {
       positions[m.id][t.token_id].maxBorrow = maxBorrow
     }
   }
-  return { balances, balancesBaseUnits, positions, positionsBaseUnits, loopPositions, loopPositionReadStatus, claimable, sol, vaults: await vaultPositions(owner) }
+  return {
+    balances,
+    balancesBaseUnits,
+    positions,
+    positionsBaseUnits,
+    loopPositions,
+    loopPositionReadStatus,
+    claimable,
+    sol,
+    vaults: await vaultPositions(owner),
+  }
 }
 
 // Kamino's UI stakes vault deposits in the vault farm: they count as klend-sdk counts them (the active stake).
 export async function vaultShares(live, owners, config) {
   const dec = Number(live.state.sharesMintDecimals)
   const atas = await Promise.all(owners.map((o) => ataOf(address(o), live.state.sharesMint, TOKEN_PROGRAM)))
-  const pdas = live.farm ? await Promise.all(owners.map((o) => getUserStatePDA(farms.getProgramID(), address(live.farm.address), address(o)))) : []
-  const keys = [...atas, ...pdas], accounts = []
-  for (let i = 0; i < keys.length; i += 100) accounts.push(...await fetchEncodedAccounts(rpc, keys.slice(i, i + 100), config)) // RPC limit
-  return new Map(owners.map((o, i) => {
-    const user = pdas.length && accounts[atas.length + i]?.exists ? decodeUserState(accounts[atas.length + i]).data : null
-    return [o, { wallet: Number(tokenAccountAmount(accounts[i]?.data)) / 10 ** dec, staked: user ? stakedShares(user, dec) : 0 }]
-  }))
+  const pdas = live.farm
+    ? await Promise.all(
+        owners.map((o) => getUserStatePDA(farms.getProgramID(), address(live.farm.address), address(o))),
+      )
+    : []
+  const keys = [...atas, ...pdas],
+    accounts = []
+  for (let i = 0; i < keys.length; i += 100)
+    accounts.push(...(await fetchEncodedAccounts(rpc, keys.slice(i, i + 100), config))) // RPC limit
+  return new Map(
+    owners.map((o, i) => {
+      const user =
+        pdas.length && accounts[atas.length + i]?.exists ? decodeUserState(accounts[atas.length + i]).data : null
+      return [
+        o,
+        {
+          wallet: Number(tokenAccountAmount(accounts[i]?.data)) / 10 ** dec,
+          staked: user ? stakedShares(user, dec) : 0,
+        },
+      ]
+    }),
+  )
 }
 // Farm stakes are WAD-scaled lamports (farms-sdk scaleDownWads).
 const stakedShares = (user, dec) => Number(BigInt(user.activeStakeScaled) / 10n ** 18n) / 10 ** dec
 
 async function vaultPositions(owner) {
-  const vaults = VAULTS.flatMap((v) => { try { return [{ v, live: getVault(v.id) }] } catch { return [] } })
-  return Object.fromEntries(await Promise.all(vaults.map(async ({ v, live }) => {
-    const { wallet, staked } = (await vaultShares(live, [String(owner)])).get(String(owner))
-    return [v.id, { shares: wallet + staked, staked, value: (wallet + staked) * num(live.perShare) }]
-  })))
+  const vaults = VAULTS.flatMap((v) => {
+    try {
+      return [{ v, live: getVault(v.id) }]
+    } catch {
+      return []
+    }
+  })
+  return Object.fromEntries(
+    await Promise.all(
+      vaults.map(async ({ v, live }) => {
+        const { wallet, staked } = (await vaultShares(live, [String(owner)])).get(String(owner))
+        return [v.id, { shares: wallet + staked, staked, value: (wallet + staked) * num(live.perShare) }]
+      }),
+    ),
+  )
 }
 
 const cache = new Map()

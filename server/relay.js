@@ -1,7 +1,11 @@
 // Deeplink wallets (Phantom/Solflare on iOS) sign but don't send, so /api/tx/send relays for them. GET /api/tx/:sig,
 // which anyone can call with any signature, refreshes the market cache only for our own transactions.
 import {
-  address, getTransactionDecoder, getCompiledTransactionMessageDecoder, getPublicKeyFromAddress, verifySignature,
+  address,
+  getTransactionDecoder,
+  getCompiledTransactionMessageDecoder,
+  getPublicKeyFromAddress,
+  verifySignature,
 } from '@solana/kit'
 import { isSanctioned } from './screening.js'
 
@@ -39,32 +43,59 @@ export function noteBuilt(wallet) {
 }
 
 export const noteRelayed = (signature) => remember(relayed, signature, Date.now())
-const builtAt = (wallet) => { const at = built.get(wallet); return at && Date.now() - at <= WINDOW_MS ? at : null }
+const builtAt = (wallet) => {
+  const at = built.get(wallet)
+  return at && Date.now() - at <= WINDOW_MS ? at : null
+}
 
 // The fee payer is screened by the route too; a co-signer only here.
-export async function relayRefusal(tx, wallet, { approvedProgramIds = [], intentStore, intentId, requireIntent = false } = {}) {
+export async function relayRefusal(
+  tx,
+  wallet,
+  { approvedProgramIds = [], intentStore, intentId, requireIntent = false } = {},
+) {
   if (!builtAt(wallet)) return 'Unknown transaction, please try again'
   let messageBytes, signatures, message
   try {
     ;({ messageBytes, signatures } = getTransactionDecoder().decode(Uint8Array.from(Buffer.from(tx, 'base64'))))
     message = getCompiledTransactionMessageDecoder().decode(messageBytes)
-  } catch { return 'Invalid transaction' }
+  } catch {
+    return 'Invalid transaction'
+  }
   const accounts = message.staticAccounts.map(String)
   const signature = signatures[wallet]
-  if (accounts[0] !== wallet || !signature || !(await verifySignature(await getPublicKeyFromAddress(address(wallet)), signature, messageBytes))) {
+  if (
+    accounts[0] !== wallet ||
+    !signature ||
+    !(await verifySignature(await getPublicKeyFromAddress(address(wallet)), signature, messageBytes))
+  ) {
     return 'The transaction is not signed by this wallet'
   }
-  if (accounts.slice(0, message.header.numSignerAccounts).some(isSanctioned)) return 'A signer of this transaction is on a sanctions list, so Nysa cannot relay it.'
+  if (accounts.slice(0, message.header.numSignerAccounts).some(isSanctioned))
+    return 'A signer of this transaction is on a sanctions list, so Nysa cannot relay it.'
   // Program ids are always static accounts; an index past them is malformed and refused as well.
   const approved = new Set(approvedProgramIds)
-  if (message.instructions.some((ix) => !RELAY_PROGRAMS.has(accounts[ix.programAddressIndex]) && !approved.has(accounts[ix.programAddressIndex]))) return 'This transaction calls a program Nysa doesn\'t use, so it cannot be relayed.'
+  if (
+    message.instructions.some(
+      (ix) => !RELAY_PROGRAMS.has(accounts[ix.programAddressIndex]) && !approved.has(accounts[ix.programAddressIndex]),
+    )
+  )
+    return "This transaction calls a program Nysa doesn't use, so it cannot be relayed."
   if (requireIntent) {
-    if (typeof intentId !== 'string' || !intentId || !intentStore || typeof intentStore.assertAndConsume !== 'function') {
+    if (
+      typeof intentId !== 'string' ||
+      !intentId ||
+      !intentStore ||
+      typeof intentStore.assertAndConsume !== 'function'
+    ) {
       return 'An exact transaction intent is required to relay this transaction.'
     }
     let intent
-    try { intent = intentStore.assertAndConsume(intentId, wallet, messageBytes) }
-    catch (error) { return error?.message ?? 'Transaction intent is invalid.' }
+    try {
+      intent = intentStore.assertAndConsume(intentId, wallet, messageBytes)
+    } catch (error) {
+      return error?.message ?? 'Transaction intent is invalid.'
+    }
     if (intent?.metadata?.kind !== 'lending-build') return 'Transaction intent is invalid.'
   }
   return null
@@ -78,7 +109,11 @@ export async function confirmedHere(signature, lookup) {
   if (relayed.has(signature)) return true
   if (Date.now() - lastBuild > WINDOW_MS) return false // no build in the window: no transaction can be ours, skip the lookup
   let tx = null
-  try { tx = await lookup(signature) } finally { if (!tx) counted.delete(signature) } // not visible yet, or failed: a later poll retries
+  try {
+    tx = await lookup(signature)
+  } finally {
+    if (!tx) counted.delete(signature)
+  } // not visible yet, or failed: a later poll retries
   if (!tx) return false
   const at = builtAt(tx.feePayer)
   return !!at && (tx.blockTime == null || tx.blockTime * 1000 >= at - CLOCK_SLACK_MS)

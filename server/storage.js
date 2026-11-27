@@ -9,7 +9,12 @@ export const INDEX = 'market-history/index-v4.json' // v4: + vault updates and d
 export const SANCTIONS = 'sanctions/ofac-addresses.json'
 
 export async function read(path) {
-  try { return await readFile(join(DIR, path), 'utf8') } catch (e) { if (e.code === 'ENOENT') return null; throw e }
+  try {
+    return await readFile(join(DIR, path), 'utf8')
+  } catch (e) {
+    if (e.code === 'ENOENT') return null
+    throw e
+  }
 }
 
 export async function write(path, body) {

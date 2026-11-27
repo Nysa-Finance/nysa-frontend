@@ -41,7 +41,15 @@ async function loadFeeReceivers() {
   }
 }
 let timer
-onMounted(() => { load(); loadFeeReceivers(); loadPoints(); timer = setInterval(() => { load(); loadFeeReceivers() }, 60_000) })
+onMounted(() => {
+  load()
+  loadFeeReceivers()
+  loadPoints()
+  timer = setInterval(() => {
+    load()
+    loadFeeReceivers()
+  }, 60_000)
+})
 onUnmounted(() => clearInterval(timer))
 
 async function copyFeeReceiver(label, value) {
@@ -55,7 +63,9 @@ async function copyFeeReceiver(label, value) {
     feeCopyStatus.value = ''
     copied.value = value
     clearTimeout(copiedTimer)
-    copiedTimer = setTimeout(() => { copied.value = null }, 1500)
+    copiedTimer = setTimeout(() => {
+      copied.value = null
+    }, 1500)
   } catch {
     feeCopyStatus.value = `Copy unavailable. Select the ${label} address to copy it.`
   }
@@ -66,20 +76,31 @@ const feeReceiverNetwork = computed(() => {
   if (feeReceivers.value?.network === 'mainnet') return 'Solana mainnet'
   return 'Network unverified'
 })
-const feeReceiverAccounts = computed(() => (feeReceivers.value?.accounts ?? []).map((account) => ({
-  ...account,
-  name: TOKENS[account.tokenId]?.name ?? account.tokenId,
-})))
+const feeReceiverAccounts = computed(() =>
+  (feeReceivers.value?.accounts ?? []).map((account) => ({
+    ...account,
+    name: TOKENS[account.tokenId]?.name ?? account.tokenId,
+  })),
+)
 
-const reserves = computed(() => LIVE.flatMap((m) => tokensOf(m).filter((t) => reserveOf(m, t.token_id))
-  .map((t) => ({ m, key: m.id + t.token_id, token: t, ...reserveOf(m, t.token_id) }))))
+const reserves = computed(() =>
+  LIVE.flatMap((m) =>
+    tokensOf(m)
+      .filter((t) => reserveOf(m, t.token_id))
+      .map((t) => ({ m, key: m.id + t.token_id, token: t, ...reserveOf(m, t.token_id) })),
+  ),
+)
 const collateral = computed(() => reserves.value.filter((r) => r.m.collateral.includes(r.token.token_id)))
 const borrowable = computed(() => reserves.value.filter((r) => r.m.loans.includes(r.token.token_id)))
 // TVL as risk curators count it (Gauntlet, Sentora on DefiLlama): every deposit, lent-out tokens included. Vault
 // deposits into our markets are already in our reserves; those in other markets are added. Kamino's oracle prices,
 // so a few dollars off DefiLlama's.
 const outside = (x) => x.allocations.filter((a) => !a.marketId).reduce((s, a) => s + a.liquid + a.lent, 0)
-const vaultsUsd = (pick) => VAULTS.reduce((s, v) => { const x = state.vaults[v.id]; return s + (x ? pick(x) * x.price : 0) }, 0)
+const vaultsUsd = (pick) =>
+  VAULTS.reduce((s, v) => {
+    const x = state.vaults[v.id]
+    return s + (x ? pick(x) * x.price : 0)
+  }, 0)
 const vaultCashUsd = computed(() => vaultsUsd((x) => x.available + outside(x)))
 const tvl = computed(() => reserves.value.reduce((s, r) => s + r.supplyUsd, 0) + vaultCashUsd.value)
 const borrowed = computed(() => reserves.value.reduce((s, r) => s + r.borrowUsd, 0))
@@ -93,14 +114,20 @@ const age = (r) => nowSec.value - r.oracleTs
 const fresh = (r) => r.oracleTs > 0 && age(r) <= r.maxAge
 const stale = computed(() => [...new Set(reserves.value.filter((r) => !fresh(r)).map((r) => r.token.name))])
 
-const vaults = computed(() => VAULTS.map((v) => {
-  const live = state.vaults[v.id]
-  const price = live && live.total > 0 ? live.totalUsd / live.total : 1
-  const list = holders.value?.[v.id]
-  const total = list?.reduce((s, h) => s + h.wallet + h.staked, 0) ?? 0
-  const rows = list?.map((h) => ({ ...h, value: (h.wallet + h.staked) * (live?.tokensPerShare ?? 0) * price, share: total > 0 ? ((h.wallet + h.staked) / total) * 100 : 0 }))
-  return { v, live, rows }
-}))
+const vaults = computed(() =>
+  VAULTS.map((v) => {
+    const live = state.vaults[v.id]
+    const price = live && live.total > 0 ? live.totalUsd / live.total : 1
+    const list = holders.value?.[v.id]
+    const total = list?.reduce((s, h) => s + h.wallet + h.staked, 0) ?? 0
+    const rows = list?.map((h) => ({
+      ...h,
+      value: (h.wallet + h.staked) * (live?.tokensPerShare ?? 0) * price,
+      share: total > 0 ? ((h.wallet + h.staked) / total) * 100 : 0,
+    }))
+    return { v, live, rows }
+  }),
+)
 
 const board = computed(() => state.points.board)
 const totalPoints = computed(() => board.value?.rows.reduce((s, r) => s + r.points, 0) ?? 0)
@@ -114,29 +141,48 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
   </div>
 
   <div v-if="stale.length" class="n-banner warn" role="status">
-    {{ stale.length }} price {{ stale.length === 1 ? 'feed is' : 'feeds are' }} past the reserve's max age ({{ stale.join(', ') }}).
-    Kamino refreshes the price inside every transaction, so this only matters if the Scope feed itself stops updating.
+    {{ stale.length }} price {{ stale.length === 1 ? 'feed is' : 'feeds are' }} past the reserve's max age ({{
+      stale.join(', ')
+    }}). Kamino refreshes the price inside every transaction, so this only matters if the Scope feed itself stops
+    updating.
   </div>
 
   <div class="n-stats stat-4">
     <div class="n-stat">
       <div class="k">Total value locked</div>
-      <div class="v"><span v-if="state.loaded">{{ usd(tvl) }}</span><span v-else class="n-skel" /></div>
-      <div class="s">{{ reserves.length }} reserves{{ vaultCashUsd >= 0.005 ? ` + ${usd(vaultCashUsd)} in vaults` : '' }} · borrowed included</div>
+      <div class="v">
+        <span v-if="state.loaded">{{ usd(tvl) }}</span
+        ><span v-else class="n-skel" />
+      </div>
+      <div class="s">
+        {{ reserves.length }} reserves{{ vaultCashUsd >= 0.005 ? ` + ${usd(vaultCashUsd)} in vaults` : '' }} · borrowed
+        included
+      </div>
     </div>
     <div class="n-stat">
       <div class="k">Total borrowed</div>
-      <div class="v"><span v-if="state.loaded">{{ usd(borrowed) }}</span><span v-else class="n-skel" /></div>
+      <div class="v">
+        <span v-if="state.loaded">{{ usd(borrowed) }}</span
+        ><span v-else class="n-skel" />
+      </div>
       <div class="s">{{ usd(lendable - borrowed) }} available</div>
     </div>
     <div class="n-stat">
       <div class="k">Avg utilization</div>
-      <div class="v"><span v-if="state.loaded">{{ pct(avgUtil, 1) }}</span><span v-else class="n-skel" /></div>
-      <div class="s">across {{ borrowable.length }} borrowable {{ borrowable.length === 1 ? 'reserve' : 'reserves' }}</div>
+      <div class="v">
+        <span v-if="state.loaded">{{ pct(avgUtil, 1) }}</span
+        ><span v-else class="n-skel" />
+      </div>
+      <div class="s">
+        across {{ borrowable.length }} borrowable {{ borrowable.length === 1 ? 'reserve' : 'reserves' }}
+      </div>
     </div>
     <div class="n-stat">
       <div class="k">RWA share of TVL</div>
-      <div class="v accent"><span v-if="state.loaded">{{ pct(tvl > 0 ? (rwaUsd / tvl) * 100 : 0, 1) }}</span><span v-else class="n-skel" /></div>
+      <div class="v accent">
+        <span v-if="state.loaded">{{ pct(tvl > 0 ? (rwaUsd / tvl) * 100 : 0, 1) }}</span
+        ><span v-else class="n-skel" />
+      </div>
       <div class="s">{{ usd(rwaUsd) }} in RWAs</div>
     </div>
   </div>
@@ -144,8 +190,14 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
   <div class="sections">
     <Section v-if="feeReceivers?.feeBps" title="Swap fee receivers" open>
       <template #meta>{{ feeReceivers.feeBps }} bps per swap</template>
-      <div class="receiver-network"><span class="n-chip">Network: {{ feeReceiverNetwork }}</span></div>
-      <p class="receiver-intro">Nysa charges {{ feeReceivers.feeBps }} bps ({{ (feeReceivers.feeBps / 100).toFixed(2) }}%) once per economic swap. Standalone swaps and swaps inside loops use these same configured receivers; route hops do not add another Nysa fee. These addresses identify where fees are sent, not a total of fees earned.</p>
+      <div class="receiver-network">
+        <span class="n-chip">Network: {{ feeReceiverNetwork }}</span>
+      </div>
+      <p class="receiver-intro">
+        Nysa charges {{ feeReceivers.feeBps }} bps ({{ (feeReceivers.feeBps / 100).toFixed(2) }}%) once per economic
+        swap. Standalone swaps and swaps inside loops use these same configured receivers; route hops do not add another
+        Nysa fee. These addresses identify where fees are sent, not a total of fees earned.
+      </p>
       <div v-if="feeReceivers === undefined" class="n-empty">Loading fee receiver settings…</div>
       <div v-else-if="feeReceivers === null" class="n-empty">Fee receiver settings are temporarily unavailable.</div>
       <template v-else>
@@ -155,9 +207,28 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
             <template v-if="feeReceivers.treasuryAuthority">
               <code class="receiver-address">{{ feeReceivers.treasuryAuthority }}</code>
               <div class="receiver-actions">
-                <button class="n-btn-sm ghost" type="button" @click="copyFeeReceiver('treasury authority', feeReceivers.treasuryAuthority)" :class="{ copied: copied === feeReceivers.treasuryAuthority }" aria-live="polite">{{ copied === feeReceivers.treasuryAuthority ? '✓ Copied' : 'Copy address' }}</button>
-                <a v-if="feeReceivers.network === 'mainnet'" class="sub-link" :href="explorer(feeReceivers.treasuryAuthority)" target="_blank" rel="noopener noreferrer">Solscan ↗</a>
-                <span v-else class="receiver-network-note">{{ feeReceivers.network === 'surfpool-local' ? 'Local Surfpool address' : 'Explorer unavailable until network is verified' }}</span>
+                <button
+                  class="n-btn-sm ghost"
+                  type="button"
+                  @click="copyFeeReceiver('treasury authority', feeReceivers.treasuryAuthority)"
+                  :class="{ copied: copied === feeReceivers.treasuryAuthority }"
+                  aria-live="polite"
+                >
+                  {{ copied === feeReceivers.treasuryAuthority ? '✓ Copied' : 'Copy address' }}
+                </button>
+                <a
+                  v-if="feeReceivers.network === 'mainnet'"
+                  class="sub-link"
+                  :href="explorer(feeReceivers.treasuryAuthority)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >Solscan ↗</a
+                >
+                <span v-else class="receiver-network-note">{{
+                  feeReceivers.network === 'surfpool-local'
+                    ? 'Local Surfpool address'
+                    : 'Explorer unavailable until network is verified'
+                }}</span>
               </div>
             </template>
             <span v-else class="receiver-missing">Not configured</span>
@@ -167,11 +238,32 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
             <template v-if="account.address">
               <code class="receiver-address">{{ account.address }}</code>
               <div class="receiver-actions">
-                <button class="n-btn-sm ghost" type="button" @click="copyFeeReceiver(`${account.name} fee account`, account.address)" :class="{ copied: copied === account.address }" aria-live="polite">{{ copied === account.address ? '✓ Copied' : 'Copy address' }}</button>
-                <a v-if="feeReceivers.network === 'mainnet'" class="sub-link" :href="explorer(account.address)" target="_blank" rel="noopener noreferrer">Solscan ↗</a>
-                <span v-else class="receiver-network-note">{{ feeReceivers.network === 'surfpool-local' ? 'Local Surfpool address' : 'Explorer unavailable until network is verified' }}</span>
+                <button
+                  class="n-btn-sm ghost"
+                  type="button"
+                  @click="copyFeeReceiver(`${account.name} fee account`, account.address)"
+                  :class="{ copied: copied === account.address }"
+                  aria-live="polite"
+                >
+                  {{ copied === account.address ? '✓ Copied' : 'Copy address' }}
+                </button>
+                <a
+                  v-if="feeReceivers.network === 'mainnet'"
+                  class="sub-link"
+                  :href="explorer(account.address)"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >Solscan ↗</a
+                >
+                <span v-else class="receiver-network-note">{{
+                  feeReceivers.network === 'surfpool-local'
+                    ? 'Local Surfpool address'
+                    : 'Explorer unavailable until network is verified'
+                }}</span>
               </div>
-              <div class="receiver-mint">Mint: <code>{{ account.mint }}</code></div>
+              <div class="receiver-mint">
+                Mint: <code>{{ account.mint }}</code>
+              </div>
             </template>
             <span v-else class="receiver-missing">Not configured</span>
           </div>
@@ -183,18 +275,34 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <Section title="Oracle feeds" open>
       <template #meta>{{ reserves.length }} feeds · live</template>
       <div class="n-table">
-        <div class="n-thead or-grid"><div>Feed</div><div>Price</div><div>Last update</div><div>Window</div><div>Expires in</div><div>Status</div></div>
+        <div class="n-thead or-grid">
+          <div>Feed</div>
+          <div>Price</div>
+          <div>Last update</div>
+          <div>Window</div>
+          <div>Expires in</div>
+          <div>Status</div>
+        </div>
         <div v-if="!state.loaded" class="n-empty">Reading on-chain data…</div>
         <div v-for="r in reserves" :key="r.key" class="n-tr sm or-grid">
           <div class="n-cell n-asset" data-label="Feed">
             <TokenIcon :token="r.token" size="sm" />
-            <div><div>{{ r.token.name }}<span v-if="multi" class="mkt"> · {{ r.m.name }}</span></div><a class="sub-link" :href="explorer(r.priceFeed)" target="_blank" rel="noopener noreferrer">{{ r.feedNote }} ↗&#xFE0E;</a></div>
+            <div>
+              <div>
+                {{ r.token.name }}<span v-if="multi" class="mkt"> · {{ r.m.name }}</span>
+              </div>
+              <a class="sub-link" :href="explorer(r.priceFeed)" target="_blank" rel="noopener noreferrer"
+                >{{ r.feedNote }} ↗&#xFE0E;</a
+              >
+            </div>
           </div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-muted" data-label="Last update">{{ ago(r.oracleTs, nowSec * 1000) }}</div>
           <div class="n-cell n-muted" data-label="Window">{{ dur(r.maxAge) }}</div>
           <div class="n-cell n-muted" data-label="Expires in">{{ fresh(r) ? dur(r.maxAge - age(r)) : 'expired' }}</div>
-          <div class="n-cell" data-label="Status"><span class="n-chip" :class="fresh(r) ? 'ok' : 'warn'">{{ fresh(r) ? 'Fresh' : 'Stale' }}</span></div>
+          <div class="n-cell" data-label="Status">
+            <span class="n-chip" :class="fresh(r) ? 'ok' : 'warn'">{{ fresh(r) ? 'Fresh' : 'Stale' }}</span>
+          </div>
         </div>
       </div>
     </Section>
@@ -203,7 +311,10 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
       <template #meta>by total deposits</template>
       <div class="bars">
         <div v-for="r in [...reserves].sort((a, b) => b.supplyUsd - a.supplyUsd)" :key="r.key" class="bar-row">
-          <div class="n-asset"><TokenIcon :token="r.token" size="sm" />{{ r.token.name }}<span v-if="multi" class="mkt">{{ r.m.name }}</span></div>
+          <div class="n-asset">
+            <TokenIcon :token="r.token" size="sm" />{{ r.token.name
+            }}<span v-if="multi" class="mkt">{{ r.m.name }}</span>
+          </div>
           <div class="bar"><span :style="{ width: Math.max((r.supplyUsd / maxSupply) * 100, 1) + '%' }" /></div>
           <div class="n-num">{{ usd(r.supplyUsd) }}</div>
         </div>
@@ -211,11 +322,26 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     </Section>
 
     <Section title="Collateral assets">
-      <template #meta>{{ collateral.length }} {{ collateral.length === 1 ? 'reserve' : 'reserves' }} · borrowing disabled</template>
+      <template #meta
+        >{{ collateral.length }} {{ collateral.length === 1 ? 'reserve' : 'reserves' }} · borrowing disabled</template
+      >
       <div class="n-table">
-        <div class="n-thead co-grid"><div>Asset</div><div>Price</div><div>Total deposited</div><div>Max LTV</div><div>Deposit cap</div><div>Status</div></div>
+        <div class="n-thead co-grid">
+          <div>Asset</div>
+          <div>Price</div>
+          <div>Total deposited</div>
+          <div>Max LTV</div>
+          <div>Deposit cap</div>
+          <div>Status</div>
+        </div>
         <div v-for="r in collateral" :key="r.key" class="n-tr sm co-grid">
-          <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="r.token" size="sm" /><div>{{ r.token.name }}<div v-if="multi" class="mkt">{{ r.m.name }}</div></div></div>
+          <div class="n-cell n-asset" data-label="Asset">
+            <TokenIcon :token="r.token" size="sm" />
+            <div>
+              {{ r.token.name }}
+              <div v-if="multi" class="mkt">{{ r.m.name }}</div>
+            </div>
+          </div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-num" data-label="Total deposited">{{ usd(r.supplyUsd) }}</div>
           <div class="n-cell n-num" data-label="Max LTV">{{ pct(r.maxLtv, 0) }}</div>
@@ -228,9 +354,23 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <Section title="Borrowable assets">
       <template #meta>{{ borrowable.length }} {{ borrowable.length === 1 ? 'reserve' : 'reserves' }}</template>
       <div class="n-table">
-        <div class="n-thead bo-grid"><div>Asset</div><div>Price</div><div>Deposited</div><div>Borrowed</div><div>Utilization</div><div>Deposit APY</div><div>Borrow APY</div></div>
+        <div class="n-thead bo-grid">
+          <div>Asset</div>
+          <div>Price</div>
+          <div>Deposited</div>
+          <div>Borrowed</div>
+          <div>Utilization</div>
+          <div>Deposit APY</div>
+          <div>Borrow APY</div>
+        </div>
         <div v-for="r in borrowable" :key="r.key" class="n-tr sm bo-grid">
-          <div class="n-cell n-asset" data-label="Asset"><TokenIcon :token="r.token" size="sm" /><div>{{ r.token.name }}<div v-if="multi" class="mkt">{{ r.m.name }}</div></div></div>
+          <div class="n-cell n-asset" data-label="Asset">
+            <TokenIcon :token="r.token" size="sm" />
+            <div>
+              {{ r.token.name }}
+              <div v-if="multi" class="mkt">{{ r.m.name }}</div>
+            </div>
+          </div>
           <div class="n-cell n-num" data-label="Price">${{ amt(r.price, 4) }}</div>
           <div class="n-cell n-num" data-label="Deposited">{{ usd(r.supplyUsd) }}</div>
           <div class="n-cell n-num" data-label="Borrowed">{{ usd(r.borrowUsd) }}</div>
@@ -242,41 +382,85 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     </Section>
 
     <Section v-for="x in vaults" :key="x.v.id" :title="x.live?.name ?? x.v.name">
-      <template #meta>Earn vault · {{ x.rows ? `${x.rows.length} ${x.rows.length === 1 ? 'depositor' : 'depositors'}` : '' }}</template>
+      <template #meta
+        >Earn vault ·
+        {{ x.rows ? `${x.rows.length} ${x.rows.length === 1 ? 'depositor' : 'depositors'}` : '' }}</template
+      >
       <div class="n-stats stat-4 vs-stats">
-        <div class="n-stat"><div class="k">Total deposits</div><div class="v sm">{{ x.live ? usd(x.live.totalUsd) : '—' }}</div></div>
-        <div class="n-stat"><div class="k">Invested</div><div class="v sm">{{ x.live ? usd(x.live.invested * (x.live.totalUsd / x.live.total || 1)) : '—' }}</div></div>
-        <div class="n-stat"><div class="k">In the vault</div><div class="v sm">{{ x.live ? usd(x.live.available * (x.live.totalUsd / x.live.total || 1)) : '—' }}</div></div>
-        <div class="n-stat"><div class="k">APY</div><div class="v sm accent">{{ x.live ? pct(x.live.apy) : '—' }}</div></div>
+        <div class="n-stat">
+          <div class="k">Total deposits</div>
+          <div class="v sm">{{ x.live ? usd(x.live.totalUsd) : '—' }}</div>
+        </div>
+        <div class="n-stat">
+          <div class="k">Invested</div>
+          <div class="v sm">{{ x.live ? usd(x.live.invested * (x.live.totalUsd / x.live.total || 1)) : '—' }}</div>
+        </div>
+        <div class="n-stat">
+          <div class="k">In the vault</div>
+          <div class="v sm">{{ x.live ? usd(x.live.available * (x.live.totalUsd / x.live.total || 1)) : '—' }}</div>
+        </div>
+        <div class="n-stat">
+          <div class="k">APY</div>
+          <div class="v sm accent">{{ x.live ? pct(x.live.apy) : '—' }}</div>
+        </div>
       </div>
       <div class="n-table">
-        <div class="n-thead vh-grid"><div>Wallet</div><div>Shares in wallet</div><div>Staked in vault farm</div><div>Value</div><div>Share of vault</div></div>
+        <div class="n-thead vh-grid">
+          <div>Wallet</div>
+          <div>Shares in wallet</div>
+          <div>Staked in vault farm</div>
+          <div>Value</div>
+          <div>Share of vault</div>
+        </div>
         <div v-if="holders === null" class="n-empty">Depositors are temporarily unavailable.</div>
         <div v-else-if="x.rows?.length === 0" class="n-empty">No deposits in this vault yet.</div>
         <div v-for="h in x.rows ?? []" :key="h.owner" class="n-tr sm vh-grid">
-          <div class="n-cell" data-label="Wallet"><a class="sub-link mono" :href="explorer(h.owner)" target="_blank" rel="noopener noreferrer">{{ short(h.owner, 6) }} ↗&#xFE0E;</a></div>
+          <div class="n-cell" data-label="Wallet">
+            <a class="sub-link mono" :href="explorer(h.owner)" target="_blank" rel="noopener noreferrer"
+              >{{ short(h.owner, 6) }} ↗&#xFE0E;</a
+            >
+          </div>
           <div class="n-cell n-num" data-label="Shares in wallet">{{ amt(h.wallet, 4) }}</div>
           <div class="n-cell n-num" data-label="Staked in vault farm">{{ h.staked > 0 ? amt(h.staked, 4) : '—' }}</div>
           <div class="n-cell n-num" data-label="Value">{{ usd(h.value) }}</div>
           <div class="n-cell n-num" data-label="Share of vault">{{ pct(h.share, 1) }}</div>
         </div>
       </div>
-      <p class="hint">Depositors and their shares are read on-chain, including shares staked in the vault farm (deposits made on Kamino's interface).</p>
+      <p class="hint">
+        Depositors and their shares are read on-chain, including shares staked in the vault farm (deposits made on
+        Kamino's interface).
+      </p>
     </Section>
 
     <Section title="Positions">
       <template #meta>{{ positions ? `${positions.length} open · sorted by risk` : '' }}</template>
       <div class="n-table">
-        <div class="n-thead po-grid"><div>Wallet</div><div>Deposits</div><div>Debt</div><div>LTV</div><div>Liquidation LTV</div><div>Health factor</div></div>
+        <div class="n-thead po-grid">
+          <div>Wallet</div>
+          <div>Deposits</div>
+          <div>Debt</div>
+          <div>LTV</div>
+          <div>Liquidation LTV</div>
+          <div>Health factor</div>
+        </div>
         <div v-if="positions === null" class="n-empty">Open positions are temporarily unavailable.</div>
         <div v-else-if="positions?.length === 0" class="n-empty">No open positions yet.</div>
         <div v-for="p in positions ?? []" :key="p.market + p.owner" class="n-tr sm po-grid">
-          <div class="n-cell" data-label="Wallet"><div><a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer">{{ short(p.owner, 6) }} ↗&#xFE0E;</a><div v-if="multi" class="mkt">{{ marketById(p.market)?.name }}</div></div></div>
+          <div class="n-cell" data-label="Wallet">
+            <div>
+              <a class="sub-link mono" :href="explorer(p.owner)" target="_blank" rel="noopener noreferrer"
+                >{{ short(p.owner, 6) }} ↗&#xFE0E;</a
+              >
+              <div v-if="multi" class="mkt">{{ marketById(p.market)?.name }}</div>
+            </div>
+          </div>
           <div class="n-cell n-num" data-label="Deposits">{{ usd(p.deposits) }}</div>
           <div class="n-cell n-num" data-label="Debt">{{ usd(p.debt) }}</div>
           <div class="n-cell n-num" data-label="LTV">{{ pct(p.ltv, 1) }}</div>
           <div class="n-cell n-num" data-label="Liquidation LTV">{{ p.debt > 0 ? pct(p.liqLtv, 0) : '—' }}</div>
-          <div class="n-cell n-num" data-label="Health factor" :style="{ color: hfColor(p.hf), fontWeight: 600 }">{{ hfText(p.hf) }}</div>
+          <div class="n-cell n-num" data-label="Health factor" :style="{ color: hfColor(p.hf), fontWeight: 600 }">
+            {{ hfText(p.hf) }}
+          </div>
         </div>
       </div>
     </Section>
@@ -284,9 +468,18 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <Section title="Farm Points">
       <template #meta>{{ farming }} wallets farming</template>
       <div class="n-stats fp-stats">
-        <div class="n-stat"><div class="k">Wallets farming</div><div class="v sm">{{ board ? farming : '—' }}</div></div>
-        <div class="n-stat"><div class="k">Points issued</div><div class="v sm">{{ board ? amt(totalPoints, 0) : '—' }}</div></div>
-        <div class="n-stat"><div class="k">Last snapshot</div><div class="v sm">{{ board?.updatedTs ? ago(board.updatedTs) : '—' }}</div></div>
+        <div class="n-stat">
+          <div class="k">Wallets farming</div>
+          <div class="v sm">{{ board ? farming : '—' }}</div>
+        </div>
+        <div class="n-stat">
+          <div class="k">Points issued</div>
+          <div class="v sm">{{ board ? amt(totalPoints, 0) : '—' }}</div>
+        </div>
+        <div class="n-stat">
+          <div class="k">Last snapshot</div>
+          <div class="v sm">{{ board?.updatedTs ? ago(board.updatedTs) : '—' }}</div>
+        </div>
       </div>
       <button class="n-btn-sm ghost" style="margin-top: 16px" @click="pointsOpen = true">View leaderboard</button>
     </Section>
@@ -295,41 +488,180 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
 </template>
 
 <style scoped>
-.sections { display: flex; flex-direction: column; gap: 16px; }
-.receiver-network { display: flex; align-items: center; margin-bottom: 12px; }
-.receiver-intro { margin: 0 0 16px; color: var(--n-text-3); font-size: 12px; line-height: 1.6; }
-.receiver-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 12px; }
-.receiver-card { min-width: 0; padding: 16px; border: 1px solid var(--n-line); border-radius: 12px; }
-.receiver-label { margin-bottom: 10px; color: var(--n-text-3); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; }
-.receiver-address { display: block; color: var(--n-text); font-family: var(--mono); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; user-select: all; }
-.receiver-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
-.receiver-actions .sub-link { font-size: 12px; }
-.receiver-network-note,.receiver-missing,.receiver-mint { color: var(--n-text-4); font-size: 11px; }
-.receiver-mint { margin-top: 12px; overflow-wrap: anywhere; }
-.receiver-mint code { font-family: var(--mono); user-select: all; }
-.receiver-copy-status { margin: 12px 0 0; color: var(--n-text-2); font-size: 12px; }
-.receiver-actions .copied { border-color: #3ddc8459; color: var(--n-green); animation: copied-pop .25s ease-out; }
-@keyframes copied-pop { 50% { transform: scale(1.06); } }
-.n-thead { font-size: 11px; padding: 14px 20px; }
-.n-tr.sm { padding: 15px 20px; font-size: 14px; }
-.or-grid { grid-template-columns: 1.5fr 1fr 1fr .8fr .9fr .8fr; }
-.co-grid { grid-template-columns: 1.4fr 1fr 1.2fr .9fr 1.1fr .8fr; }
-.bo-grid { grid-template-columns: 1.3fr 1fr 1fr 1fr 1fr 1fr 1fr; }
-.po-grid { grid-template-columns: 1.5fr 1fr 1fr .8fr .8fr 1fr; }
-.vh-grid { grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr; }
-.vs-stats { margin-bottom: 16px; }
-.hint { margin-top: 12px; color: var(--n-text-4); font-size: 12px; line-height: 1.6; }
-.sub-link { color: var(--n-text-3); font-size: 12px; font-weight: 400; }
-.sub-link:hover { color: var(--n-pink); }
-.mkt { color: var(--n-text-4); font-size: 11px; font-weight: 400; }
-.sub-link.mono { font-family: var(--mono); font-size: 13px; color: var(--n-text-2); }
-.bars { display: flex; flex-direction: column; gap: 14px; }
-.bar-row { display: grid; grid-template-columns: 140px 1fr 90px; gap: 16px; align-items: center; font-size: 14px; }
-.bar-row .n-num { text-align: right; }
-.bar { height: 8px; border-radius: 4px; background: var(--n-bg-3); overflow: hidden; }
-.bar span { display: block; height: 100%; border-radius: 4px; background: var(--n-grad); }
-.fp-stats { grid-template-columns: repeat(3, 1fr); }
-.n-stat .v.sm { font-size: 22px; }
-@media (max-width: 1180px) { .n-table { overflow-x: auto; } }
-@media (max-width: 860px) { .bar-row { grid-template-columns: 90px 1fr 70px; gap: 10px; } }
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.receiver-network {
+  display: flex;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.receiver-intro {
+  margin: 0 0 16px;
+  color: var(--n-text-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.receiver-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 12px;
+}
+.receiver-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--n-line);
+  border-radius: 12px;
+}
+.receiver-label {
+  margin-bottom: 10px;
+  color: var(--n-text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.receiver-address {
+  display: block;
+  color: var(--n-text);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.receiver-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.receiver-actions .sub-link {
+  font-size: 12px;
+}
+.receiver-network-note,
+.receiver-missing,
+.receiver-mint {
+  color: var(--n-text-4);
+  font-size: 11px;
+}
+.receiver-mint {
+  margin-top: 12px;
+  overflow-wrap: anywhere;
+}
+.receiver-mint code {
+  font-family: var(--mono);
+  user-select: all;
+}
+.receiver-copy-status {
+  margin: 12px 0 0;
+  color: var(--n-text-2);
+  font-size: 12px;
+}
+.receiver-actions .copied {
+  border-color: #3ddc8459;
+  color: var(--n-green);
+  animation: copied-pop 0.25s ease-out;
+}
+@keyframes copied-pop {
+  50% {
+    transform: scale(1.06);
+  }
+}
+.n-thead {
+  font-size: 11px;
+  padding: 14px 20px;
+}
+.n-tr.sm {
+  padding: 15px 20px;
+  font-size: 14px;
+}
+.or-grid {
+  grid-template-columns: 1.5fr 1fr 1fr 0.8fr 0.9fr 0.8fr;
+}
+.co-grid {
+  grid-template-columns: 1.4fr 1fr 1.2fr 0.9fr 1.1fr 0.8fr;
+}
+.bo-grid {
+  grid-template-columns: 1.3fr 1fr 1fr 1fr 1fr 1fr 1fr;
+}
+.po-grid {
+  grid-template-columns: 1.5fr 1fr 1fr 0.8fr 0.8fr 1fr;
+}
+.vh-grid {
+  grid-template-columns: 1.5fr 1fr 1fr 1fr 1fr;
+}
+.vs-stats {
+  margin-bottom: 16px;
+}
+.hint {
+  margin-top: 12px;
+  color: var(--n-text-4);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.sub-link {
+  color: var(--n-text-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+.sub-link:hover {
+  color: var(--n-pink);
+}
+.mkt {
+  color: var(--n-text-4);
+  font-size: 11px;
+  font-weight: 400;
+}
+.sub-link.mono {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--n-text-2);
+}
+.bars {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 90px;
+  gap: 16px;
+  align-items: center;
+  font-size: 14px;
+}
+.bar-row .n-num {
+  text-align: right;
+}
+.bar {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--n-bg-3);
+  overflow: hidden;
+}
+.bar span {
+  display: block;
+  height: 100%;
+  border-radius: 4px;
+  background: var(--n-grad);
+}
+.fp-stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+.n-stat .v.sm {
+  font-size: 22px;
+}
+@media (max-width: 1180px) {
+  .n-table {
+    overflow-x: auto;
+  }
+}
+@media (max-width: 860px) {
+  .bar-row {
+    grid-template-columns: 90px 1fr 70px;
+    gap: 10px;
+  }
+}
 </style>

@@ -1,8 +1,12 @@
-
 const ok = (v) => typeof v === 'number' && Number.isFinite(v)
 
 // Thousands get separators (an incentive APY on a tiny vault can reach 11,214.30%).
-export const pct = (v, d = 2) => (!ok(v) ? '—' : Math.abs(v) >= 1000 ? `${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}%` : `${v.toFixed(d)}%`)
+export const pct = (v, d = 2) =>
+  !ok(v)
+    ? '—'
+    : Math.abs(v) >= 1000
+      ? `${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}%`
+      : `${v.toFixed(d)}%`
 export const usd = (v) => {
   if (!ok(v)) return '—'
   const a = Math.abs(v)
@@ -15,8 +19,12 @@ export const usdFull = (v) =>
   ok(v) ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
 // Truncated, never rounded up: a max or balance shown is one that can be typed back and sent (9.99996 reads 9.9999,
 // not 10). Amounts below the last shown digit read "< 0.0001", not 0.
-export const amt = (v, d = 4) => (!ok(v) ? '—' : v > 0 && v < 10 ** -d ? `< ${(10 ** -d).toFixed(d)}`
-  : v.toLocaleString('en-US', { maximumFractionDigits: d, roundingMode: 'trunc' }))
+export const amt = (v, d = 4) =>
+  !ok(v)
+    ? '—'
+    : v > 0 && v < 10 ** -d
+      ? `< ${(10 ** -d).toFixed(d)}`
+      : v.toLocaleString('en-US', { maximumFractionDigits: d, roundingMode: 'trunc' })
 export const compact = (v, unit) => {
   if (!ok(v)) return '—'
   const a = Math.abs(v)
@@ -28,12 +36,18 @@ export const short = (s, a = 4, b = 4) => (s && s.length > a + b + 1 ? `${s.slic
 // at once so "1,000" reads 1.000, never a silent 1; "1,000.5" and "1.000,5" read 1000.5. Digits past the token's
 // decimals are dropped: the chain can't move them.
 export const cleanAmount = (s, d) => {
-  const t = String(s ?? ''), i = Math.max(t.lastIndexOf('.'), t.lastIndexOf(',')), digits = (x) => x.replace(/\D/g, '')
+  const t = String(s ?? ''),
+    i = Math.max(t.lastIndexOf('.'), t.lastIndexOf(',')),
+    digits = (x) => x.replace(/\D/g, '')
   return i < 0 ? digits(t) : `${digits(t.slice(0, i)) || '0'}.${digits(t.slice(i + 1)).slice(0, d)}`
 }
 // "," or "." as the decimal separator; anything else is invalid → 0.
 export const num = (s) => {
-  const n = Number(String(s ?? '').trim().replace(',', '.'))
+  const n = Number(
+    String(s ?? '')
+      .trim()
+      .replace(',', '.'),
+  )
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
@@ -95,26 +109,46 @@ export function ago(ts, now = Date.now()) {
 // Points accrue on the lower of the balances at the previous snapshot and now: depositing just before a snapshot and
 // withdrawing right after earns nothing.
 export function snapshotPoints(prev, balances, nowSec) {
-  const rows = new Map(prev.map((r) => {
-    const days = Number.isFinite(r.ts) ? Math.max(nowSec - r.ts, 0) / 86400 : 0
-    const now = balances.get(r.address) ?? 0
-    return [r.address, { address: r.address, points: r.points + Math.min(r.supplied || 0, now) * days, supplied: now, ts: nowSec }]
-  }))
-  for (const [address, usd] of balances) if (!rows.has(address)) rows.set(address, { address, points: 0, supplied: usd, ts: nowSec })
+  const rows = new Map(
+    prev.map((r) => {
+      const days = Number.isFinite(r.ts) ? Math.max(nowSec - r.ts, 0) / 86400 : 0
+      const now = balances.get(r.address) ?? 0
+      return [
+        r.address,
+        { address: r.address, points: r.points + Math.min(r.supplied || 0, now) * days, supplied: now, ts: nowSec },
+      ]
+    }),
+  )
+  for (const [address, usd] of balances)
+    if (!rows.has(address)) rows.set(address, { address, points: 0, supplied: usd, ts: nowSec })
   return [...rows.values()]
 }
 
 export const pointsCsv = (rows) =>
-  ['address,cumulative_points,last_supplied_usd,last_snapshot_ts', ...rows.map((r) => `${r.address},${r.points},${r.supplied},${r.ts}`)].join('\n') + '\n'
+  [
+    'address,cumulative_points,last_supplied_usd,last_snapshot_ts',
+    ...rows.map((r) => `${r.address},${r.points},${r.supplied},${r.ts}`),
+  ].join('\n') + '\n'
 
 // Rounded down (never shown safer than it is), with 3 decimals near 1: 0.9996 reads 0.999, not a healthy-looking 1.00.
-export const hfText = (v) => { if (!Number.isFinite(v) || v > 999) return '∞'; const d = v < 1.1 ? 3 : 2; return (Math.floor(v * 10 ** d + 1e-9) / 10 ** d).toFixed(d) } // + 1e-9: 1.15 * 100 is 114.999…
-export const hfColor = (v) => (!Number.isFinite(v) || v >= 1.8 ? 'var(--n-green)' : v >= 1.3 ? 'var(--n-amber)' : 'var(--n-red)')
+export const hfText = (v) => {
+  if (!Number.isFinite(v) || v > 999) return '∞'
+  const d = v < 1.1 ? 3 : 2
+  return (Math.floor(v * 10 ** d + 1e-9) / 10 ** d).toFixed(d)
+} // + 1e-9: 1.15 * 100 is 114.999…
+export const hfColor = (v) =>
+  !Number.isFinite(v) || v >= 1.8 ? 'var(--n-green)' : v >= 1.3 ? 'var(--n-amber)' : 'var(--n-red)'
 
 export function dur(sec) {
   if (!Number.isFinite(sec)) return '—'
   const s = Math.max(Math.round(sec), 0)
-  return s < 90 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`
+  return s < 90
+    ? `${s}s`
+    : s < 3600
+      ? `${Math.round(s / 60)}m`
+      : s < 172800
+        ? `${Math.round(s / 3600)}h`
+        : `${Math.round(s / 86400)}d`
 }
 
 // Kamino re-checks borrow and withdraw limits at the transaction's block (fresh prices, accrued interest), so offered
@@ -130,11 +164,17 @@ export const coversAll = (amount, total, d) => total > 0 && amount >= total - 10
 export function repayPlan(amount, debt, wallet, decimals) {
   const all = coversAll(amount, debt, decimals)
   const maxPartial = floorTo(Math.min(wallet, debt - 2 * 10 ** -decimals), decimals)
-  const issue = !amount ? null
-    : all ? (wallet < ceilTo(debt, decimals) ? 'short' : null)
-    : amount > wallet ? 'wallet'
-    : amount > maxPartial ? 'dust'
-    : null
+  const issue = !amount
+    ? null
+    : all
+      ? wallet < ceilTo(debt, decimals)
+        ? 'short'
+        : null
+      : amount > wallet
+        ? 'wallet'
+        : amount > maxPartial
+          ? 'dust'
+          : null
   return { all, maxPartial, issue }
 }
 
@@ -151,18 +191,25 @@ export function windowApy(points, days) {
   const target = end.ts - days * 86400
   const start = [...points].reverse().find((p) => p.ts <= target) ?? points[0]
   const spanDays = (end.ts - start.ts) / 86400
-  return spanDays > 0 ? { apy: realizedApy(start.rate, end.rate, spanDays), spanDays, full: start.ts <= target, from: start.ts } : null
+  return spanDays > 0
+    ? { apy: realizedApy(start.rate, end.rate, spanDays), spanDays, full: start.ts <= target, from: start.ts }
+    : null
 }
 
 // A token's own yield from its recorded prices (USDY: Ondo's rate), over the last 30 days; null under a week of them.
 export function priceApy(points) {
-  const w = windowApy(points.filter((p) => p.price > 0).map((p) => ({ ts: p.ts, rate: p.price })), 30)
+  const w = windowApy(
+    points.filter((p) => p.price > 0).map((p) => ({ ts: p.ts, rate: p.price })),
+    30,
+  )
   return w && w.spanDays >= 7 ? w.apy : null
 }
 
 export function dailyApySeries(points) {
   const byDay = [...new Map(points.map((p) => [Math.floor(p.ts / 86400), p])).values()].sort((a, b) => a.ts - b.ts)
-  return byDay.slice(1).map((p, i) => ({ ts: p.ts, apy: realizedApy(byDay[i].rate, p.rate, (p.ts - byDay[i].ts) / 86400) }))
+  return byDay
+    .slice(1)
+    .map((p, i) => ({ ts: p.ts, apy: realizedApy(byDay[i].rate, p.rate, (p.ts - byDay[i].ts) / 86400) }))
 }
 
 export function niceTicks(max) {
@@ -174,7 +221,8 @@ export function niceTicks(max) {
 }
 
 // APR, not APY: rewards don't compound.
-export const rewardApr = (perSecond, rewardPrice, stakedUsd) => (stakedUsd > 0 ? (perSecond * 31_536_000 * rewardPrice) / stakedUsd * 100 : 0)
+export const rewardApr = (perSecond, rewardPrice, stakedUsd) =>
+  stakedUsd > 0 ? ((perSecond * 31_536_000 * rewardPrice) / stakedUsd) * 100 : 0
 
 // Kamino (liquidation_operations.rs): the LTV above the liquidation LTV, floored at the min bonus, capped at the max
 // bonus and at 1 − LTV (so the loan stays solvent). Loans at ≥99% LTV use the bad-debt bonus instead.
@@ -199,7 +247,11 @@ export function pieSlices(values) {
 // isn't drawn at all.
 const FULL = 2 * Math.PI - 1e-3
 export function arcPath(cx, cy, r, ri, start, end) {
-  if (end - start >= FULL) return arcPath(cx, cy, r, ri, start, start + Math.PI) + arcPath(cx, cy, r, ri, start + Math.PI, start + 2 * Math.PI - 1e-2)
+  if (end - start >= FULL)
+    return (
+      arcPath(cx, cy, r, ri, start, start + Math.PI) +
+      arcPath(cx, cy, r, ri, start + Math.PI, start + 2 * Math.PI - 1e-2)
+    )
   const pt = (rad, a) => `${(cx + rad * Math.sin(a)).toFixed(2)},${(cy - rad * Math.cos(a)).toFixed(2)}`
   const large = end - start > Math.PI ? 1 : 0
   return `M${pt(r, start)}A${r},${r} 0 ${large} 1 ${pt(r, end)}L${pt(ri, end)}A${ri},${ri} 0 ${large} 0 ${pt(ri, start)}Z`

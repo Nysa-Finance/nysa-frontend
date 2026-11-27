@@ -6,11 +6,20 @@ const props = defineProps({ token: Object, history: Object, currentApy: Number }
 
 const recorded = computed(() => props.history?.points ?? [])
 // A reserve's share value is exactly 1 at creation: that anchor makes "since launch" exact for young reserves.
-const withLaunch = computed(() => (props.history?.inception ? [{ ts: props.history.inception, rate: 1 }, ...recorded.value] : recorded.value))
+const withLaunch = computed(() =>
+  props.history?.inception ? [{ ts: props.history.inception, rate: 1 }, ...recorded.value] : recorded.value,
+)
 const w30 = computed(() => windowApy(withLaunch.value, 30))
 const w7 = computed(() => windowApy(recorded.value, 7))
 const days = (d) => `${d < 1 ? d.toFixed(1) : Math.round(d)}d`
-const sub = (w, n) => !w ? 'collecting data' : w.from === props.history?.inception ? `since launch · ${days(w.spanDays)}` : w.full ? `${n}-day window` : `based on ${days(w.spanDays)}`
+const sub = (w, n) =>
+  !w
+    ? 'collecting data'
+    : w.from === props.history?.inception
+      ? `since launch · ${days(w.spanDays)}`
+      : w.full
+        ? `${n}-day window`
+        : `based on ${days(w.spanDays)}`
 const lastTs = computed(() => recorded.value.at(-1)?.ts)
 
 const RANGES = [7, 30]
@@ -18,22 +27,37 @@ const range = ref(30)
 const daily = computed(() => dailyApySeries(recorded.value))
 const series = computed(() => daily.value.filter((p) => p.ts > daily.value.at(-1).ts - range.value * 86400))
 const COLOR = '#EC008C'
-const H = 220, R = 12, T = 10, B = 34
+const H = 220,
+  R = 12,
+  T = 10,
+  B = 34
 const box = ref(null)
 const W = ref(600)
 // The chart only renders once history exists, so (re)attach the width observer whenever it appears.
-const ro = new ResizeObserver(([e]) => { W.value = Math.max(e.contentRect.width, 200) })
-watch(box, (el) => { ro.disconnect(); if (el) ro.observe(el) }, { flush: 'post' })
+const ro = new ResizeObserver(([e]) => {
+  W.value = Math.max(e.contentRect.width, 200)
+})
+watch(
+  box,
+  (el) => {
+    ro.disconnect()
+    if (el) ro.observe(el)
+  },
+  { flush: 'post' },
+)
 onUnmounted(() => ro.disconnect())
 const t0 = computed(() => series.value[0]?.ts ?? 0)
 const t1 = computed(() => series.value.at(-1)?.ts ?? 1)
-const x = (ts) => L.value + (t1.value === t0.value ? 0.5 : (ts - t0.value) / (t1.value - t0.value)) * (W.value - L.value - R)
+const x = (ts) =>
+  L.value + (t1.value === t0.value ? 0.5 : (ts - t0.value) / (t1.value - t0.value)) * (W.value - L.value - R)
 const yAxis = computed(() => niceTicks(Math.max(...series.value.map((p) => p.apy), props.currentApy ?? 0, 0.1)))
 const tickLabel = (t) => `${t.toLocaleString('en-US', { maximumFractionDigits: 2 })}%`
 // sized to the longest axis label, so "8,000%" isn't cut off
 const L = computed(() => Math.max(48, 14 + 6.5 * Math.max(...yAxis.value.ticks.map((t) => tickLabel(t).length))))
 const y = (v) => T + (1 - v / yAxis.value.top) * (H - T - B)
-const path = computed(() => series.value.map((p, i) => `${i ? 'L' : 'M'}${x(p.ts).toFixed(1)},${y(p.apy).toFixed(1)}`).join(''))
+const path = computed(() =>
+  series.value.map((p, i) => `${i ? 'L' : 'M'}${x(p.ts).toFixed(1)},${y(p.apy).toFixed(1)}`).join(''),
+)
 const date = (ts) => new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 const xTicks = computed(() => {
   const out = []
@@ -47,7 +71,10 @@ function selectRange(days) {
 }
 function onMove(e) {
   const px = e.clientX - box.value.getBoundingClientRect().left
-  hover.value = series.value.reduce((best, p) => (!best || Math.abs(x(p.ts) - px) < Math.abs(x(best.ts) - px) ? p : best), null)
+  hover.value = series.value.reduce(
+    (best, p) => (!best || Math.abs(x(p.ts) - px) < Math.abs(x(best.ts) - px) ? p : best),
+    null,
+  )
 }
 </script>
 
@@ -74,7 +101,15 @@ function onMove(e) {
     <div class="legend">
       <span><i class="line" :style="{ background: COLOR }" />Daily realized APY · {{ token.name }}</span>
       <div class="n-seg range" role="group" aria-label="Chart range">
-        <button v-for="d in RANGES" :key="d" :class="{ on: range === d }" :aria-pressed="range === d" @click="selectRange(d)">{{ d }}D</button>
+        <button
+          v-for="d in RANGES"
+          :key="d"
+          :class="{ on: range === d }"
+          :aria-pressed="range === d"
+          @click="selectRange(d)"
+        >
+          {{ d }}D
+        </button>
       </div>
     </div>
     <div v-if="series.length" ref="box" class="canvas" @pointermove="onMove" @pointerleave="hover = null">
@@ -84,7 +119,15 @@ function onMove(e) {
             <line :x1="L" :x2="W - R" :y1="y(t)" :y2="y(t)" stroke="#1a1a1a" />
             <text :x="L - 8" :y="y(t) + 4" text-anchor="end">{{ tickLabel(t) }}</text>
           </template>
-          <text v-for="p in xTicks" :key="'x' + p.ts" :x="x(p.ts)" :y="H - B + 16" :text-anchor="x(p.ts) > W - R - 30 ? 'end' : x(p.ts) < L.value + 30 ? 'start' : 'middle'">{{ date(p.ts) }}</text>
+          <text
+            v-for="p in xTicks"
+            :key="'x' + p.ts"
+            :x="x(p.ts)"
+            :y="H - B + 16"
+            :text-anchor="x(p.ts) > W - R - 30 ? 'end' : x(p.ts) < L.value + 30 ? 'start' : 'middle'"
+          >
+            {{ date(p.ts) }}
+          </text>
         </g>
         <line :x1="L" :x2="W - R" :y1="H - B" :y2="H - B" stroke="#262626" />
         <path :d="path" fill="none" :stroke="COLOR" stroke-width="2" stroke-linejoin="round" />
@@ -96,34 +139,118 @@ function onMove(e) {
       </svg>
       <div v-if="hover" class="tip" :style="{ left: Math.min(x(hover.ts) + 12, W - 160) + 'px' }">
         <div class="tip-t">{{ date(hover.ts) }}</div>
-        <div><i :style="{ background: COLOR }" />Realized APY <b>{{ pct(hover.apy) }}</b></div>
+        <div>
+          <i :style="{ background: COLOR }" />Realized APY <b>{{ pct(hover.apy) }}</b>
+        </div>
       </div>
     </div>
     <div v-else class="n-empty ra-empty">
-      History is being collected: it is recorded twice a day (once between 00:00 and 12:00 UTC, once after), the chart shows one point per day.
+      History is being collected: it is recorded twice a day (once between 00:00 and 12:00 UTC, once after), the chart
+      shows one point per day.
     </div>
   </div>
   <p class="hint">
-    Realized APY is measured from the growth in value of a {{ token.name }} deposit, recorded daily{{ lastTs ? ` · last snapshot ${ago(lastTs)}` : '' }}.
+    Realized APY is measured from the growth in value of a {{ token.name }} deposit, recorded daily{{
+      lastTs ? ` · last snapshot ${ago(lastTs)}` : ''
+    }}.
   </p>
 </template>
 
 <style scoped>
-.ra-stats { grid-template-columns: repeat(3, 1fr); }
-.n-stat .v.sm { font-size: 22px; }
-.ra-chart { margin-top: 18px; border: 1px solid var(--n-line); border-radius: 4px; padding: 18px 20px 14px; background: #000; }
-.legend { display: flex; align-items: center; gap: 20px; font-size: 12px; color: var(--n-text-3); margin-bottom: 14px; }
-.range { margin-left: auto; display: inline-flex; padding: 3px; } /* the small Segmented, for chart ranges */
-.range button { flex: none; padding: 4px 12px; font-size: 12px; }
-.legend span { display: inline-flex; align-items: center; gap: 8px; }
-.line { width: 14px; height: 2px; border-radius: 1px; display: inline-block; }
-.canvas { position: relative; height: 220px; touch-action: pan-y; }
-.canvas svg { display: block; }
-.ra-empty { padding: 36px 12px; }
-.tip { position: absolute; top: 12px; min-width: 150px; pointer-events: none; background: var(--n-bg-2); border: 1px solid var(--n-line-2); border-radius: 4px; padding: 10px; font-size: 12px; color: var(--n-text-2); display: flex; flex-direction: column; gap: 4px; }
-.tip-t { color: #fff; font-weight: 500; }
-.tip i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: -1px; }
-.tip b { color: #fff; font-weight: 500; margin-left: 6px; }
-.hint { margin-top: 12px; color: var(--n-text-4); font-size: 12px; line-height: 1.6; }
-@media (max-width: 860px) { .ra-stats { grid-template-columns: 1fr; } }
+.ra-stats {
+  grid-template-columns: repeat(3, 1fr);
+}
+.n-stat .v.sm {
+  font-size: 22px;
+}
+.ra-chart {
+  margin-top: 18px;
+  border: 1px solid var(--n-line);
+  border-radius: 4px;
+  padding: 18px 20px 14px;
+  background: #000;
+}
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 12px;
+  color: var(--n-text-3);
+  margin-bottom: 14px;
+}
+.range {
+  margin-left: auto;
+  display: inline-flex;
+  padding: 3px;
+} /* the small Segmented, for chart ranges */
+.range button {
+  flex: none;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.line {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  display: inline-block;
+}
+.canvas {
+  position: relative;
+  height: 220px;
+  touch-action: pan-y;
+}
+.canvas svg {
+  display: block;
+}
+.ra-empty {
+  padding: 36px 12px;
+}
+.tip {
+  position: absolute;
+  top: 12px;
+  min-width: 150px;
+  pointer-events: none;
+  background: var(--n-bg-2);
+  border: 1px solid var(--n-line-2);
+  border-radius: 4px;
+  padding: 10px;
+  font-size: 12px;
+  color: var(--n-text-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tip-t {
+  color: #fff;
+  font-weight: 500;
+}
+.tip i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 8px;
+  vertical-align: -1px;
+}
+.tip b {
+  color: #fff;
+  font-weight: 500;
+  margin-left: 6px;
+}
+.hint {
+  margin-top: 12px;
+  color: var(--n-text-4);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 860px) {
+  .ra-stats {
+    grid-template-columns: 1fr;
+  }
+}
 </style>

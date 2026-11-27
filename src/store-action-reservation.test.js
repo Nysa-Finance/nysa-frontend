@@ -24,19 +24,29 @@ let walletPromptCount = 0
 globalThis.fetch = async (path, init = {}) => {
   const requestPath = String(path)
   if (requestPath.startsWith('/api/account/')) {
-    return { ok: true, status: 200, json: async () => ({ balances: {}, balancesBaseUnits: {}, positions: {}, positionsBaseUnits: {}, claimable: {} }) }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ balances: {}, balancesBaseUnits: {}, positions: {}, positionsBaseUnits: {}, claimable: {} }),
+    }
   }
   if (requestPath === '/api/tx' && init.method === 'POST') {
     buildCount++
-    if (buildCount === 1) return await new Promise((resolve) => { resolveFirstBuild = resolve })
-    if (buildCount === 2 || buildCount === 3) return { ok: true, status: 200, json: async () => ({ tx: 'AQ==', minContextSlot: 1, final: true }) }
+    if (buildCount === 1)
+      return await new Promise((resolve) => {
+        resolveFirstBuild = resolve
+      })
+    if (buildCount === 2 || buildCount === 3)
+      return { ok: true, status: 200, json: async () => ({ tx: 'AQ==', minContextSlot: 1, final: true }) }
     return { ok: false, status: 503, json: async () => ({ error: 'unexpected extra action build' }) }
   }
   if (requestPath === `/api/tx/${signature}`) {
     return { ok: true, status: 200, json: async () => ({ status: 'confirmed', slot: 9 }) }
   }
   if (requestPath === `/api/tx/${secondSignature}`) {
-    return await new Promise((resolve) => { resolveSecondConfirmation = resolve })
+    return await new Promise((resolve) => {
+      resolveSecondConfirmation = resolve
+    })
   }
   throw new Error(`Unexpected test fetch: ${requestPath}`)
 }
@@ -51,7 +61,10 @@ const wallet = {
       signAndSendTransaction: async () => {
         walletPromptCount++
         if (walletPromptCount === 1) return [{ signature: signatureBytes }]
-        if (walletPromptCount === 2) return await new Promise((resolve) => { resolveSecondSend = resolve })
+        if (walletPromptCount === 2)
+          return await new Promise((resolve) => {
+            resolveSecondSend = resolve
+          })
         if (walletPromptCount === 3) throw new Error('wallet transport dropped after possible broadcast')
         throw new Error('unexpected extra wallet prompt')
       },
@@ -67,10 +80,16 @@ const token = { token_id: 'svm-usdc' }
 const first = store.sendKaminoAction('deposit', { market, token, amount: '1' })
 const acrossTab = concurrentTab.sendKaminoAction('borrow', { market, token, amount: '1' })
 const sameTab = store.sendKaminoAction('repay', { market, token, amount: '1' })
-const acrossTabRejected = assert.rejects(acrossTab, (error) => error.code === 'PENDING_TRANSACTION',
-  'concurrent tab loses the exclusive persisted reservation before transaction build')
-const sameTabRejected = assert.rejects(sameTab, (error) => error.code === 'PENDING_TRANSACTION',
-  'a concurrent action is rejected while the first action is being built')
+const acrossTabRejected = assert.rejects(
+  acrossTab,
+  (error) => error.code === 'PENDING_TRANSACTION',
+  'concurrent tab loses the exclusive persisted reservation before transaction build',
+)
+const sameTabRejected = assert.rejects(
+  sameTab,
+  (error) => error.code === 'PENDING_TRANSACTION',
+  'a concurrent action is rejected while the first action is being built',
+)
 await new Promise((resolve) => setImmediate(resolve))
 assert.equal(typeof resolveFirstBuild, 'function', 'first action reached its deferred build request')
 await acrossTabRejected
@@ -96,10 +115,16 @@ assert.equal(walletPromptReservation.phase, 'wallet-prompt')
 
 const promptReload = await import('./store.js?action-prompt-reload')
 await promptReload.connectWallet(wallet)
-assert.equal(await promptReload.cancelLendingBuildReservation(), false, 'a wallet-prompt reservation cannot be cancelled as an interrupted build')
-await assert.rejects(promptReload.sendKaminoAction('borrow', { market, token, amount: '3' }),
+assert.equal(
+  await promptReload.cancelLendingBuildReservation(),
+  false,
+  'a wallet-prompt reservation cannot be cancelled as an interrupted build',
+)
+await assert.rejects(
+  promptReload.sendKaminoAction('borrow', { market, token, amount: '3' }),
   (error) => error.code === 'PENDING_TRANSACTION',
-  'a reloaded store cannot overwrite a durable wallet-prompt reservation')
+  'a reloaded store cannot overwrite a durable wallet-prompt reservation',
+)
 assert.equal(buildCount, 2, 'reload does not build over an unresolved wallet prompt')
 assert.equal(walletPromptCount, 2, 'reload does not open a second wallet prompt')
 
@@ -112,20 +137,27 @@ assert.equal(typeof resolveSecondConfirmation, 'function', 'confirmation lookup 
 
 const signatureReload = await import('./store.js?action-signature-reload')
 await signatureReload.connectWallet(wallet)
-assert.equal(signatureReload.state.lendingPending.signature, secondSignature,
-  'a reloaded store hydrates the exact unresolved signature')
-await assert.rejects(signatureReload.sendKaminoAction('borrow', { market, token, amount: '4' }),
+assert.equal(
+  signatureReload.state.lendingPending.signature,
+  secondSignature,
+  'a reloaded store hydrates the exact unresolved signature',
+)
+await assert.rejects(
+  signatureReload.sendKaminoAction('borrow', { market, token, amount: '4' }),
   (error) => error.code === 'PENDING_TRANSACTION',
-  'a reloaded store cannot overwrite a returned unresolved signature')
+  'a reloaded store cannot overwrite a returned unresolved signature',
+)
 assert.equal(buildCount, 2)
 assert.equal(walletPromptCount, 2)
 resolveSecondConfirmation({ ok: true, status: 200, json: async () => ({ status: 'confirmed', slot: 10 }) })
 assert.equal(await secondAction, secondSignature)
 assert.equal(values.has('nysaPendingTx'), false, 'confirmed completion clears the persistent signature')
 
-await assert.rejects(store.sendKaminoAction('deposit', { market, token, amount: '5' }),
+await assert.rejects(
+  store.sendKaminoAction('deposit', { market, token, amount: '5' }),
   (error) => error.code === 'PENDING_TRANSACTION',
-  'an ambiguous wallet send is surfaced as an unresolved action')
+  'an ambiguous wallet send is surfaced as an unresolved action',
+)
 const unknown = JSON.parse(values.get('nysaPendingTx'))
 assert.equal(unknown.status, 'relay-unknown')
 assert.equal(unknown.phase, 'send-outcome-unknown')
@@ -133,10 +165,16 @@ assert.equal(unknown.signature, null)
 
 const unknownReload = await import('./store.js?action-unknown-reload')
 await unknownReload.connectWallet(wallet)
-assert.equal(await unknownReload.cancelLendingBuildReservation(), false, 'an ambiguous send cannot be cancelled as an interrupted build')
-await assert.rejects(unknownReload.sendKaminoAction('borrow', { market, token, amount: '6' }),
+assert.equal(
+  await unknownReload.cancelLendingBuildReservation(),
+  false,
+  'an ambiguous send cannot be cancelled as an interrupted build',
+)
+await assert.rejects(
+  unknownReload.sendKaminoAction('borrow', { market, token, amount: '6' }),
   (error) => error.code === 'PENDING_TRANSACTION',
-  'ambiguous send remains blocked after reload even without a returned signature')
+  'ambiguous send remains blocked after reload even without a returned signature',
+)
 assert.equal(buildCount, 3, 'reload does not rebuild an ambiguous send')
 assert.equal(walletPromptCount, 3, 'reload does not prompt again after an ambiguous send')
 
