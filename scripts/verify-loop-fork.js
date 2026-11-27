@@ -30,7 +30,7 @@ import {
   ObligationTypeTag,
   PROGRAM_ID,
 } from '@kamino-finance/klend-sdk'
-import { TOKENS, marketById } from '../src/config.js'
+import { TOKENS, marketById } from '../shared/config.js'
 import { ataOf, maxWithdrawFromObligation, obligationType } from '../server/account.js'
 import { loadMarket, reserveOf } from '../server/market.js'
 import { buildSwap, FEE_BPS, inspectFeeTokenAccount } from '../server/swap.js'

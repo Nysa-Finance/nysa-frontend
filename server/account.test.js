@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { maxWithdrawBaseUnits, maxWithdrawFromObligation, readWalletObligations } from './account.js'
 const viaMarket = (market, owner, type) => market.getObligationByWallet(owner, type) // the fakes below serve obligations by method
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, TOKENS } from '../shared/config.js'
 
 assert.equal(
   maxWithdrawBaseUnits({

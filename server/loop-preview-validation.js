@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js'
-import { loopByMarket } from '../src/config.js'
+import { loopByMarket } from '../shared/config.js'
 
 export const LOOP_PREVIEW_MAX_AGE_MS = 150_000 // a preview lives 90s, and its snapshot may be older than the preview
 

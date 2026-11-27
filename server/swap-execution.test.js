@@ -32,7 +32,7 @@ import {
   assertOracleFairOutput,
 } from './swap-execution.js'
 import { createSwapIntentStore, messageMatchesWithLighthouse } from './tx-intent.js'
-import { TOKENS } from '../src/config.js'
+import { TOKENS } from '../shared/config.js'
 import { ataOf } from './account.js'
 import { ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
 

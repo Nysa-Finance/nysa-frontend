@@ -56,7 +56,7 @@ async function componentUrl(name, imports = {}) {
     .content.replace('from "vue"', `from "${import.meta.resolve('vue')}"`)
     .replace("from 'vue'", `from '${import.meta.resolve('vue')}'`)
     .replace("from '../store.js'", `from '${new URL('./store.js', import.meta.url).href}'`)
-    .replace("from '../config.js'", `from '${new URL('./config.js', import.meta.url).href}'`)
+    .replace("from '../../shared/config.js'", `from '${new URL('../shared/config.js', import.meta.url).href}'`)
   for (const [path, url] of Object.entries(imports)) component = component.replace(`from '${path}'`, `from '${url}'`)
   return `data:text/javascript;base64,${Buffer.from(component).toString('base64')}`
 }

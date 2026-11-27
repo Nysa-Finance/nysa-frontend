@@ -44,8 +44,8 @@ const { refreshMarket, getVault, getSnapshot } = await import('../../server/mark
 const { buildTx, txStatus } = await import('../../server/tx.js')
 const { vaultClient } = await import('../../server/vault.js')
 const { getAccount } = await import('../../server/account.js')
-const { TOKENS, VAULTS } = await import('../../src/config.js')
-const { underLimit } = await import('../../src/logic.js')
+const { TOKENS, VAULTS } = await import('../../shared/config.js')
+const { underLimit } = await import('../../shared/finance.js')
 const USDY = TOKENS['svm-usdy'], USDC = TOKENS['svm-usdc'], MARKET = 'sol-usdy-usdc', VAULT = VAULTS[0].id
 
 // Oracle prices stop updating in a fork: give each reserve a long max price age, or Kamino refuses the stale prices.

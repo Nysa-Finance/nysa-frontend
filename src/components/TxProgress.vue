@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted } from 'vue'
 import { state } from '../store.js'
-import { txUrl } from '../config.js'
+import { txUrl } from '../../shared/config.js'
 const props = defineProps({ tx: Object, handoff: Boolean })
 const emit = defineEmits(['dismiss', 'cancel'])
 defineOptions({ inheritAttrs: false })

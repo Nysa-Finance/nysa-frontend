@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { borrowRateAt, supplyRateAt, pct, niceTicks } from '../logic.js'
+import { borrowRateAt, supplyRateAt } from '../../shared/finance.js'
+import { pct } from '../../shared/format.js'
+import { niceTicks } from '../../shared/chart.js'
 
 const props = defineProps({ irm: Object, utilization: Number })
 const BORROW = '#EC008C'

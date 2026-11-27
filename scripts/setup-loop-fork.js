@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { chmod, readFile, rename, writeFile } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { address, createKeyPairSignerFromBytes, getAddressEncoder } from '@solana/kit'
-import { TOKENS } from '../src/config.js'
+import { TOKENS } from '../shared/config.js'
 import { ataOf } from '../server/account.js'
 
 const DEFAULT_RPC = 'http://127.0.0.1:8899'

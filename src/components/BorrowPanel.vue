@@ -1,19 +1,8 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, riskOf, sendKaminoAction, useTx } from '../store.js'
-import {
-  pct,
-  amt,
-  usdFull,
-  num,
-  cleanAmount,
-  borrowCapacity,
-  weightedLtv,
-  floorTo,
-  ceilTo,
-  repayPlan,
-  underLimit,
-} from '../logic.js'
+import { pct, amt, usdFull, num, cleanAmount } from '../../shared/format.js'
+import { borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan, underLimit } from '../../shared/finance.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({

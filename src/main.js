@@ -3,7 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import { startAnalytics } from './analytics.js'
 import { applySeo } from './seo.js'
 import App from './App.vue'
-import { LOOPS, VAULTS } from './config.js'
+import { LOOPS, VAULTS } from '../shared/config.js'
 // Fonts from our own origin (no Google Fonts request): only the weights the UI uses, latin subset.
 import '@fontsource/poppins/latin-300.css'
 import '@fontsource/poppins/latin-400.css'

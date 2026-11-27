@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { TOKENS } from '../src/config.js'
+import { TOKENS } from '../shared/config.js'
 import { buildSwap, createKeylessRateLimiter, inspectFeeTokenAccount } from './swap.js'
 import { getAddressEncoder, address } from '@solana/kit'
 

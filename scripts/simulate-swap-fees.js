@@ -2,7 +2,7 @@ import Decimal from 'decimal.js'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { calculateSwapFeeBaseUnits, formatBaseUnits, parseBaseUnits } from '../src/swap-fees.js'
+import { calculateSwapFeeBaseUnits, formatBaseUnits, parseBaseUnits } from '../shared/swap-fees.js'
 
 const SOURCES = new Set(['standalone', 'loop'])
 const OUTCOMES = new Set(['completed', 'failed', 'rejected'])

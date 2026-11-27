@@ -2,8 +2,9 @@
 import Boost from './Boost.vue'
 import { ref, computed, watch } from 'vue'
 import { state, sendVaultAction, useTx, vaultApyNote as apyNote } from '../store.js'
-import { tok } from '../config.js'
-import { pct, amt, num, cleanAmount, floorTo, coversAll } from '../logic.js'
+import { tok } from '../../shared/config.js'
+import { pct, amt, num, cleanAmount } from '../../shared/format.js'
+import { floorTo, coversAll } from '../../shared/finance.js'
 import TxProgress from './TxProgress.vue'
 
 const props = defineProps({ vault: Object, live: Object, initialTab: String })

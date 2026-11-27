@@ -1,6 +1,6 @@
 <script setup>
 import { state } from '../store.js'
-import { short } from '../logic.js'
+import { short } from '../../shared/format.js'
 </script>
 
 <template>

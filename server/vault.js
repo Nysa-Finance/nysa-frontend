@@ -8,7 +8,7 @@ import {
 } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
 import Decimal from 'decimal.js'
-import { LIVE, MARKETS, OTHER_MARKETS, VAULTS, TOKENS } from '../src/config.js'
+import { LIVE, MARKETS, OTHER_MARKETS, VAULTS, TOKENS } from '../shared/config.js'
 import { rpc, NONE } from './rpc.js'
 
 const require = createRequire(import.meta.url)

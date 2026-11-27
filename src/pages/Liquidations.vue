@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state, reserveOf, priceOf, riskOf, bonusText, loadAnalytics, loadLiquidations } from '../store.js'
-import { LIVE, TOKENS, tok, marketById, explorer, txUrl } from '../config.js'
-import { pct, amt, usd, short, hfText, hfColor } from '../logic.js'
+import { LIVE, TOKENS, tok, marketById, explorer, txUrl } from '../../shared/config.js'
+import { pct, amt, usd, short, hfText, hfColor } from '../../shared/format.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import Section from '../components/Section.vue'
 import LiquidateModal from '../components/LiquidateModal.vue'

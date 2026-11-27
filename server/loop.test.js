@@ -11,7 +11,7 @@ import {
   PROGRAM_ID,
   UserMetadata,
 } from '@kamino-finance/klend-sdk'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, TOKENS } from '../shared/config.js'
 import {
   buildLoopMetadataSetupBundle,
   buildLoopPreview,

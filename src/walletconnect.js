@@ -1,7 +1,7 @@
 // Reown's AppKit modal only shows the pairing (QR code, wallet list); the connection itself is ours (manualWCControl),
 // shaped like a Wallet Standard wallet. Signed in the wallet app, sent by our backend. Loaded only when picked.
 import { getBase58Encoder } from '@solana/kit'
-import { WALLETCONNECT_PROJECT_ID } from './config.js'
+import { WALLETCONNECT_PROJECT_ID } from '../shared/config.js'
 import { withSignature, fromBase64, toBase64 } from './wallets.js'
 
 const WC_NAME = 'WalletConnect'

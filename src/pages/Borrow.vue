@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { state, reserveOf } from '../store.js'
-import { LIVE, tok } from '../config.js'
-import { usd, pct } from '../logic.js'
+import { LIVE, tok } from '../../shared/config.js'
+import { usd, pct } from '../../shared/format.js'
 import TokenIcon from '../components/TokenIcon.vue'
 
 const router = useRouter()

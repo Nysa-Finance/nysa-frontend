@@ -1,6 +1,6 @@
 import { AccountRole, address, fetchEncodedAccount, getBase58Decoder } from '@solana/kit'
-import { MARKETS, TOKENS, swapTokens } from '../src/config.js'
-import { calculateSwapFeeBaseUnits } from '../src/swap-fees.js'
+import { MARKETS, TOKENS, swapTokens } from '../shared/config.js'
+import { calculateSwapFeeBaseUnits } from '../shared/swap-fees.js'
 import { APPROVED_PROGRAMS, evaluateProgramPolicy, ROUTE_PROGRAM_IDS_BY_LABEL } from './program-policy.js'
 import { AccountState, getTokenDecoder } from '@solana-program/token'
 import { TOKEN_PROGRAMS } from './account.js'

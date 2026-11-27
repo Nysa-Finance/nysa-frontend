@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { state, reserveOf, loadAnalytics, loadPoints } from '../store.js'
-import { LIVE, TOKENS, VAULTS, tokensOf, marketById, explorer } from '../config.js'
-import { usd, pct, amt, compact, short, ago, dur, hfText, hfColor } from '../logic.js'
+import { LIVE, TOKENS, VAULTS, tokensOf, marketById, explorer } from '../../shared/config.js'
+import { usd, pct, amt, compact, short, ago, dur, hfText, hfColor } from '../../shared/format.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import Section from '../components/Section.vue'
 import FarmPointsModal from '../components/FarmPointsModal.vue'

@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { acceptTos } from '../store.js'
-import { TOS_URL } from '../config.js'
+import { TOS_URL } from '../../shared/config.js'
 const agreed = ref(false)
 </script>
 

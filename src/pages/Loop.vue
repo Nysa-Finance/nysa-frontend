@@ -2,9 +2,19 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sendLoopAction, sendLoopSetup, state, priceOf, useTx } from '../store.js'
-import { LOOP_ENABLED, LOOPS, TOKENS, loopById, loopByMarket, loopMarket, swapTokens, tok } from '../config.js'
-import { amt, pct, usd, usdFull, num, floorTo, hfText, cleanAmount } from '../logic.js'
-import { formatBaseUnits } from '../swap-fees.js'
+import {
+  LOOP_ENABLED,
+  LOOPS,
+  TOKENS,
+  loopById,
+  loopByMarket,
+  loopMarket,
+  swapTokens,
+  tok,
+} from '../../shared/config.js'
+import { amt, pct, usd, usdFull, num, hfText, cleanAmount } from '../../shared/format.js'
+import { floorTo } from '../../shared/finance.js'
+import { formatBaseUnits } from '../../shared/swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
 import { selectedLoopCloseReadiness } from '../loop-positions.js'
 import TokenIcon from '../components/TokenIcon.vue'

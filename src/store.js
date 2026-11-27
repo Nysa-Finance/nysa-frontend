@@ -18,8 +18,10 @@ import {
   resumeConfirmedSetupContinuation,
   startVisibleReconciliationLoop,
 } from './pending-reconciliation.js'
-import { TOKENS, tok, tokensOf, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
-import { parsePoints, pct, liquidationBonusRange } from './logic.js'
+import { TOKENS, tok, tokensOf, vaultById, WALLETCONNECT_PROJECT_ID } from '../shared/config.js'
+import { parsePoints } from '../shared/points.js'
+import { pct } from '../shared/format.js'
+import { liquidationBonusRange } from '../shared/finance.js'
 import { loopPositionFullyClosed } from './loop-positions.js'
 import { event, skipNextPageview } from './analytics.js'
 import {

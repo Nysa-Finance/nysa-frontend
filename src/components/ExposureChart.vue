@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { tok, explorer } from '../config.js'
-import { pct, usd, short, pieSlices, arcPath } from '../logic.js'
+import { tok, explorer } from '../../shared/config.js'
+import { pct, usd, short } from '../../shared/format.js'
+import { pieSlices, arcPath } from '../../shared/chart.js'
 import TokenIcon from './TokenIcon.vue'
 
 const props = defineProps({ vault: Object, price: Number })

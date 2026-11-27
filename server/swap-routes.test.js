@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, TOKENS } from '../shared/config.js'
 import {
   createPublicSwapQuote,
   parseSwapQuoteRequest,

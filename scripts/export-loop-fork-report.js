@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { TOKENS } from '../src/config.js'
+import { TOKENS } from '../shared/config.js'
 
 const DEFAULT_RPC = 'http://127.0.0.1:8899'
 const DEFAULT_OUTPUT = 'docs/local-loop-fork-wallet-report.json'

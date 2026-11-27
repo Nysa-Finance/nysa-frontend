@@ -1,8 +1,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted } from 'vue'
 import { state, loadPoints, myPoints } from '../store.js'
-import { explorer } from '../config.js'
-import { short, ago } from '../logic.js'
+import { explorer } from '../../shared/config.js'
+import { short, ago } from '../../shared/format.js'
 
 const emit = defineEmits(['close'])
 const board = computed(() => state.points.board)
