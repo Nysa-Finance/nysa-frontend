@@ -27,16 +27,19 @@ async function firstTxTime(addr) {
   return oldest ? Number(oldest.blockTime) : null
 }
 
-export async function readMarkets(history, {
-  indexReader = freshIndex,
-  ledgerReader = () => getCurrentLedgerInstant(rpc),
-  markets: configuredMarkets = MARKETS, // loop-only markets too: their collateral's price history is the loop's yield
-  vaults: configuredVaults = VAULTS,
-  marketLoader = (marketConfig) => loadMarket(rpc, marketConfig),
-  firstTxTimeReader = firstTxTime,
-  vaultDayReader = readVaultDay,
-  summarize = indexedPositionSummary,
-} = {}) {
+export async function readMarkets(
+  history,
+  {
+    indexReader = freshIndex,
+    ledgerReader = () => getCurrentLedgerInstant(rpc),
+    markets: configuredMarkets = MARKETS, // loop-only markets too: their collateral's price history is the loop's yield
+    vaults: configuredVaults = VAULTS,
+    marketLoader = (marketConfig) => loadMarket(rpc, marketConfig),
+    firstTxTimeReader = firstTxTime,
+    vaultDayReader = readVaultDay,
+    summarize = indexedPositionSummary,
+  } = {},
+) {
   const balances = new Map()
   const index = await indexReader()
   const now = await ledgerReader()
@@ -61,7 +64,10 @@ export async function readMarkets(history, {
       if (!r) continue
       // Keyed by reserve (a token has one per market). History recorded under the token id, from when there was one
       // market, moves to that market's reserve the first time this runs.
-      if (history.tokens[t.token_id]) { history.tokens[reserve] = history.tokens[t.token_id]; delete history.tokens[t.token_id] }
+      if (history.tokens[t.token_id]) {
+        history.tokens[reserve] = history.tokens[t.token_id]
+        delete history.tokens[t.token_id]
+      }
       const h = (history.tokens[reserve] ??= { inception: null, points: [] })
       if (!due(h)) continue
       h.inception ??= await firstTxTimeReader(r.address) // share value starts at exactly 1 when a reserve is created
@@ -100,5 +106,10 @@ export async function runSnapshot() {
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  runSnapshot().then((r) => console.log('[snapshot] done', r)).catch((e) => { console.error('[snapshot] failed', e); process.exit(1) })
+  runSnapshot()
+    .then((r) => console.log('[snapshot] done', r))
+    .catch((e) => {
+      console.error('[snapshot] failed', e)
+      process.exit(1)
+    })
 }

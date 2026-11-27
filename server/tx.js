@@ -1,24 +1,59 @@
 // The server never holds keys: it builds and simulates, the wallet signs. First-time setup (Kamino user accounts) or an
 // oversized transaction comes back in two steps: the setup first, then, asked again, the action (`final: true`).
 import Decimal from 'decimal.js'
+import {
+  COMPUTE_BUDGET_PROGRAM_ADDRESS,
+  getSetComputeUnitLimitInstruction,
+  getSetComputeUnitPriceInstruction,
+} from '@solana-program/compute-budget'
 import { pointFlashRepayAtBorrow } from './loop-composition.js'
 import { KaminoAction, KaminoVault, U64_MAX, PROGRAM_ID, obligationFarmStatePda } from '@kamino-finance/klend-sdk'
 import {
-  address, createNoopSigner, pipe, createTransactionMessage, setTransactionMessageFeePayer,
-  setTransactionMessageLifetimeUsingBlockhash, appendTransactionMessageInstructions,
-  compressTransactionMessageUsingAddressLookupTables, compileTransaction, getTransactionEncoder,
-  getBase64EncodedWireTransaction, getTransactionDecoder, fetchEncodedAccounts,
+  address,
+  createNoopSigner,
+  pipe,
+  createTransactionMessage,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+  appendTransactionMessageInstructions,
+  compressTransactionMessageUsingAddressLookupTables,
+  compileTransaction,
+  getTransactionEncoder,
+  getBase64EncodedWireTransaction,
+  getTransactionDecoder,
+  fetchEncodedAccounts,
+  TRANSACTION_SIZE_LIMIT,
 } from '@solana/kit'
 import { createRequire } from 'node:module'
 import { LIVE, marketById, vaultById, tokensOf, tok } from '../src/config.js'
 import { floorTo } from '../src/logic.js'
 import { rpc, NONE } from './rpc.js'
-import { getLive, getVault, reserveOf, farms, refreshSoon, refreshMarketForExecution, obligationByWallet } from './market.js'
+import {
+  getLive,
+  getVault,
+  reserveOf,
+  farms,
+  refreshSoon,
+  refreshMarketForExecution,
+  obligationByWallet,
+} from './market.js'
 import { vaultClient } from './vault.js'
-import { obligationType, pendingRewards, ataOf, vaultShares, maxWithdrawFromObligation, maxOf } from './account.js'
+import {
+  obligationType,
+  pendingRewards,
+  ataOf,
+  vaultShares,
+  maxWithdrawFromObligation,
+  maxOf,
+  tokenAccountAmount,
+} from './account.js'
 import { noteBuilt, noteRelayed, relayRefusal, confirmedHere } from './relay.js'
 import { confirmedTokenDeltas } from './token-deltas.js'
-import { assertRawWithdrawalWithinAllowance, requestedTokenBaseUnits, requestedWithdrawalBaseUnits } from './withdrawal.js'
+import {
+  assertRawWithdrawalWithinAllowance,
+  requestedTokenBaseUnits,
+  requestedWithdrawalBaseUnits,
+} from './withdrawal.js'
 import { relaySignedTransaction } from './send-safety.js'
 import { obligationPair } from './positions.js'
 import { chainError } from './errors.js'
@@ -26,14 +61,31 @@ import { chainError } from './errors.js'
 const require = createRequire(import.meta.url)
 const { decodeUserState } = require('@kamino-finance/farms-sdk')
 
-const MAX_TX_BYTES = 1232
 const SPLIT_ABOVE = 1100 // leave wallet headroom (Phantom adds a guard instruction)
-const safeSlotNumber = (value) => typeof value === 'bigint'
-  ? value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null
-  : Number.isSafeInteger(value) && value >= 0 ? value : null
-const SEPARABLE = /^(CreateUserAta(?!SOL)|CreateLiquidityUserAta|CreateCollateralUserAta|CreateAdditionalUserTokenAta|CreateAta|createAtasIxs|createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
+const safeSlotNumber = (value) =>
+  typeof value === 'bigint'
+    ? value <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number(value)
+      : null
+    : Number.isSafeInteger(value) && value >= 0
+      ? value
+      : null
+const SEPARABLE =
+  /^(CreateUserAta(?!SOL)|CreateLiquidityUserAta|CreateCollateralUserAta|CreateAdditionalUserTokenAta|CreateAta|createAtasIxs|createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
 const BOOTSTRAP = /^(createUserLutIx|initUserMetadata|InitObligation(?!ForFarm))/
-export const KINDS = ['deposit', 'withdraw', 'borrow', 'repay', 'claim', 'liquidate', 'vault-deposit', 'vault-withdraw', 'loop-open', 'loop-close', 'loop-setup']
+export const KINDS = [
+  'deposit',
+  'withdraw',
+  'borrow',
+  'repay',
+  'claim',
+  'liquidate',
+  'vault-deposit',
+  'vault-withdraw',
+  'loop-open',
+  'loop-close',
+  'loop-setup',
+]
 const BUILDERS = {
   deposit: (p) => KaminoAction.buildDepositTxns(p),
   withdraw: (p) => KaminoAction.buildWithdrawTxns(p),
@@ -45,46 +97,72 @@ const BUILDERS = {
 const lutCache = new Map()
 async function fetchLuts(luts) {
   const out = {}
-  const missing = (luts ?? []).filter((l) => { const c = lutCache.get(String(l)); return !c || Date.now() - c.at > 600_000 })
+  const missing = (luts ?? []).filter((l) => {
+    const c = lutCache.get(String(l))
+    return !c || Date.now() - c.at > 600_000
+  })
   if (missing.length) {
     const { value } = await rpc.getMultipleAccounts(missing, { encoding: 'jsonParsed', commitment: 'confirmed' }).send()
-    value.forEach((acc, i) => lutCache.set(String(missing[i]), { at: Date.now(), addresses: acc?.data?.parsed?.info?.addresses?.map(address) ?? [] }))
+    value.forEach((acc, i) =>
+      lutCache.set(String(missing[i]), {
+        at: Date.now(),
+        addresses: acc?.data?.parsed?.info?.addresses?.map(address) ?? [],
+      }),
+    )
   }
-  for (const l of luts ?? []) { const a = lutCache.get(String(l)).addresses; if (a.length) out[l] = a }
+  for (const l of luts ?? []) {
+    const a = lutCache.get(String(l)).addresses
+    if (a.length) out[l] = a
+  }
   return out
 }
 
 // Without a priority fee, wallets set their own compute limit, some to exactly what their simulation used, and a borrow
 // that needs a little more at execution fails ("exceeded CUs meter"). Ours always has a margin and a priority fee.
-const COMPUTE_BUDGET = 'ComputeBudget111111111111111111111111111111'
 const MAX_CU = 1_400_000 // Solana's per-transaction maximum: the first simulation never runs out
 const cuWithMargin = (used) => Math.min(MAX_CU, Math.ceil(used * 1.3) + 20_000)
-const budgetIx = (data) => ({ programAddress: address(COMPUTE_BUDGET), accounts: [], data })
-function cuLimitIx(units) { const d = new Uint8Array(5); d[0] = 2; new DataView(d.buffer).setUint32(1, units, true); return budgetIx(d) }
-function cuPriceIx(microLamports) { const d = new Uint8Array(9); d[0] = 3; new DataView(d.buffer).setBigUint64(1, BigInt(microLamports), true); return budgetIx(d) }
 
 // 75th percentile of recent fees on our reserves, clamped (300k CU at 10,000 = 0.000003 SOL).
-const PRIORITY_MIN = 10_000, PRIORITY_MAX = 1_000_000
+const PRIORITY_MIN = 10_000,
+  PRIORITY_MAX = 1_000_000
 let fee = { at: 0, value: PRIORITY_MIN }
 async function priorityFee() {
   if (Date.now() - fee.at < 30_000) return fee.value
   try {
-    const recent = await rpc.getRecentPrioritizationFees(LIVE.flatMap((m) => Object.values(m.reserves).map(address))).send()
-    const paid = recent.map((f) => Number(f.prioritizationFee)).filter((f) => f > 0).sort((a, b) => a - b)
-    fee = { at: Date.now(), value: Math.min(PRIORITY_MAX, Math.max(PRIORITY_MIN, paid[Math.floor(paid.length * 0.75)] ?? 0)) }
-  } catch (e) { console.warn('[tx] priority fee', e?.message); fee = { at: Date.now(), value: fee.value } }
+    const recent = await rpc
+      .getRecentPrioritizationFees(LIVE.flatMap((m) => Object.values(m.reserves).map(address)))
+      .send()
+    const paid = recent
+      .map((f) => Number(f.prioritizationFee))
+      .filter((f) => f > 0)
+      .sort((a, b) => a - b)
+    fee = {
+      at: Date.now(),
+      value: Math.min(PRIORITY_MAX, Math.max(PRIORITY_MIN, paid[Math.floor(paid.length * 0.75)] ?? 0)),
+    }
+  } catch (e) {
+    console.warn('[tx] priority fee', e?.message)
+    fee = { at: Date.now(), value: fee.value }
+  }
   return fee.value
 }
 
 // klend-sdk adds its own compute-budget instruction: ours replaces it.
 async function compile(owner, ixs, luts, units = MAX_CU) {
-  const body = ixs.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET)
-  const [{ context, value: blockhash }, price] = await Promise.all([rpc.getLatestBlockhash({ commitment: 'confirmed' }).send(), priorityFee()])
+  const body = ixs.filter((ix) => String(ix.programAddress) !== COMPUTE_BUDGET_PROGRAM_ADDRESS)
+  const [{ context, value: blockhash }, price] = await Promise.all([
+    rpc.getLatestBlockhash({ commitment: 'confirmed' }).send(),
+    priorityFee(),
+  ])
+  const budget = [
+    getSetComputeUnitLimitInstruction({ units }),
+    getSetComputeUnitPriceInstruction({ microLamports: price }),
+  ]
   const msg = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayer(owner, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(blockhash, m),
-    (m) => appendTransactionMessageInstructions(pointFlashRepayAtBorrow([cuLimitIx(units), cuPriceIx(price), ...body]), m),
+    (m) => appendTransactionMessageInstructions(pointFlashRepayAtBorrow([...budget, ...body]), m),
     (m) => (Object.keys(luts).length ? compressTransactionMessageUsingAddressLookupTables(m, luts) : m),
   )
   const tx = compileTransaction(msg)
@@ -99,19 +177,23 @@ async function compile(owner, ixs, luts, units = MAX_CU) {
 }
 
 export async function compileAtomicTransaction({ wallet, instructions, lookupTables = [] } = {}) {
-  if (typeof wallet !== 'string' || !Array.isArray(instructions) || !instructions.length || !Array.isArray(lookupTables)) {
+  if (
+    typeof wallet !== 'string' ||
+    !Array.isArray(instructions) ||
+    !instructions.length ||
+    !Array.isArray(lookupTables)
+  ) {
     throw new UserError('Invalid atomic transaction inputs.')
   }
-  const addresses = lookupTables.map((table) => typeof table === 'string' ? table : String(table?.address ?? ''))
+  const addresses = lookupTables.map((table) => (typeof table === 'string' ? table : String(table?.address ?? '')))
   if (addresses.some((table) => !table)) throw new UserError('Atomic transaction has an invalid lookup-table address.')
   const compiled = await compile(address(wallet), instructions, await fetchLuts([...new Set(addresses)]))
-  if (compiled.size > MAX_TX_BYTES) throw new UserError(`Atomic transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
+  if (compiled.size > TRANSACTION_SIZE_LIMIT)
+    throw new UserError(
+      `Atomic transaction is ${compiled.size} bytes, over Solana's ${TRANSACTION_SIZE_LIMIT}-byte limit`,
+    )
   return compiled
 }
-
-const tokenAccountRawAmount = (data) => data instanceof Uint8Array && data.length >= 72
-  ? new DataView(data.buffer, data.byteOffset, data.byteLength).getBigUint64(64, true)
-  : 0n
 
 export async function simulateAtomicTransaction({ compiled, accounts = [], tokenAccounts = [] } = {}) {
   if (!rpc || typeof compiled?.tx !== 'string' || !Array.isArray(accounts) || !Array.isArray(tokenAccounts)) {
@@ -121,21 +203,28 @@ export async function simulateAtomicTransaction({ compiled, accounts = [], token
   if (tracked.length > 100) throw new UserError('Atomic transaction tracks too many simulation accounts.')
   const addresses = tracked.map(address)
   const before = addresses.length ? await fetchEncodedAccounts(rpc, addresses, { commitment: 'confirmed' }) : []
-  const { value } = await rpc.simulateTransaction(compiled.tx, {
-    encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true,
-    ...(addresses.length ? { accounts: { addresses, encoding: 'base64' } } : {}),
-  }).send()
+  const { value } = await rpc
+    .simulateTransaction(compiled.tx, {
+      encoding: 'base64',
+      sigVerify: false,
+      commitment: 'confirmed',
+      replaceRecentBlockhash: true,
+      ...(addresses.length ? { accounts: { addresses, encoding: 'base64' } } : {}),
+    })
+    .send()
   if (value.err) simulationError(value.logs ?? [], value.err)
-  const accountData = new Map(tracked.map((key, index) => {
-    const encoded = value.accounts?.[index]?.data?.[0]
-    return [key, typeof encoded === 'string' ? Uint8Array.from(Buffer.from(encoded, 'base64')) : null]
-  }))
+  const accountData = new Map(
+    tracked.map((key, index) => {
+      const encoded = value.accounts?.[index]?.data?.[0]
+      return [key, typeof encoded === 'string' ? Uint8Array.from(Buffer.from(encoded, 'base64')) : null]
+    }),
+  )
   const accountOwners = new Map(tracked.map((key, index) => [key, value.accounts?.[index]?.owner ?? null]))
   const tokenDeltas = tokenAccounts.map((item) => {
     const key = String(item.account)
     const index = tracked.indexOf(key)
-    const prior = before[index]?.exists ? tokenAccountRawAmount(before[index].data) : 0n
-    const after = tokenAccountRawAmount(accountData.get(key))
+    const prior = before[index]?.exists ? tokenAccountAmount(before[index].data) : 0n
+    const after = tokenAccountAmount(accountData.get(key))
     return { account: key, mint: String(item.mint), deltaBaseUnits: String(after - prior) }
   })
   return { ok: true, accountData, accountOwners, tokenDeltas }
@@ -145,8 +234,16 @@ const LIQ_SLIPPAGE = 0.01 // minimum collateral payout, against the simulation
 
 // Simulated first, so a failing transaction shows a readable error instead of a wallet warning, and is never sent.
 async function simulated(compiled) {
-  if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
-  const { value } = await rpc.simulateTransaction(compiled.tx, { encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true }).send()
+  if (compiled.size > TRANSACTION_SIZE_LIMIT)
+    throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${TRANSACTION_SIZE_LIMIT}-byte limit`)
+  const { value } = await rpc
+    .simulateTransaction(compiled.tx, {
+      encoding: 'base64',
+      sigVerify: false,
+      commitment: 'confirmed',
+      replaceRecentBlockhash: true,
+    })
+    .send()
   if (value.err) simulationError(value.logs ?? [], value.err)
   const used = Number(value.unitsConsumed ?? 0)
   const { withLimit, ...tuned } = used > 0 ? await compiled.withLimit(cuWithMargin(used)) : compiled
@@ -162,11 +259,17 @@ function simulationError(logs, err) {
 }
 
 async function simulatedBalances(compiled, accounts) {
-  if (compiled.size > MAX_TX_BYTES) throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${MAX_TX_BYTES}-byte limit`)
-  const { value } = await rpc.simulateTransaction(compiled.tx, {
-    encoding: 'base64', sigVerify: false, commitment: 'confirmed', replaceRecentBlockhash: true,
-    accounts: { addresses: accounts, encoding: 'base64' },
-  }).send()
+  if (compiled.size > TRANSACTION_SIZE_LIMIT)
+    throw new UserError(`Transaction is ${compiled.size} bytes, over Solana's ${TRANSACTION_SIZE_LIMIT}-byte limit`)
+  const { value } = await rpc
+    .simulateTransaction(compiled.tx, {
+      encoding: 'base64',
+      sigVerify: false,
+      commitment: 'confirmed',
+      replaceRecentBlockhash: true,
+      accounts: { addresses: accounts, encoding: 'base64' },
+    })
+    .send()
   if (value.err) simulationError(value.logs ?? [], value.err)
   return value.accounts.map((a) => (a ? Buffer.from(a.data[0], 'base64').readBigUInt64LE(64) : 0n))
 }
@@ -199,20 +302,37 @@ async function lending(kind, owner, m, t, amount, all, amountBaseUnits) {
       decimals: reserve.stats.decimals,
     })
     let requested
-    try { requested = all ? maxWithdraw : requestedWithdrawalBaseUnits({ amountBaseUnits, amount, decimals: reserve.stats.decimals }) }
-    catch (error) { throw new UserError(error.message || 'Invalid withdrawal amount.') }
-    try { base = assertRawWithdrawalWithinAllowance(requested, maxWithdraw) }
-    catch (error) { throw new UserError(error.message) }
+    try {
+      requested = all
+        ? maxWithdraw
+        : requestedWithdrawalBaseUnits({ amountBaseUnits, amount, decimals: reserve.stats.decimals })
+    } catch (error) {
+      throw new UserError(error.message || 'Invalid withdrawal amount.')
+    }
+    try {
+      base = assertRawWithdrawalWithinAllowance(requested, maxWithdraw)
+    } catch (error) {
+      throw new UserError(error.message)
+    }
   } else {
     if (all) base = U64_MAX
     else if (kind === 'deposit' && amountBaseUnits != null) {
-      try { base = requestedTokenBaseUnits({ amountBaseUnits, decimals: reserve.stats.decimals }) }
-      catch (error) { throw new UserError(error.message || 'Invalid deposit amount.') }
+      try {
+        base = requestedTokenBaseUnits({ amountBaseUnits, decimals: reserve.stats.decimals })
+      } catch (error) {
+        throw new UserError(error.message || 'Invalid deposit amount.')
+      }
     } else base = new Decimal(String(amount)).mul(new Decimal(10).pow(reserve.stats.decimals)).floor().toFixed()
   }
   const axn = await BUILDERS[kind]({
-    kaminoMarket: market, amount: base, reserveAddress: reserve.address, owner: createNoopSigner(owner),
-    obligation: ob ?? obligationType(), useV2Ixs: true, scopeRefreshConfig: undefined, currentLedgerInstant: now,
+    kaminoMarket: market,
+    amount: base,
+    reserveAddress: reserve.address,
+    owner: createNoopSigner(owner),
+    obligation: ob ?? obligationType(),
+    useV2Ixs: true,
+    scopeRefreshConfig: undefined,
+    currentLedgerInstant: now,
     // The per-user lookup table only serves Kamino leverage flows; skipping it keeps first-time setup to plain
     // ATA + metadata + obligation init (fewer programs for wallet simulators, less rent for the user).
     initUserMetadata: { skipInitialization: false, skipLutCreation: true },
@@ -232,12 +352,25 @@ async function claim(owner, m) {
   const ob = await obligationByWallet(market, owner, obligationType(), now)
   if (!ob) throw new UserError('No Kamino position found for this wallet in this market')
   const farmAddrs = [...farmStates.keys()]
-  const accounts = await fetchEncodedAccounts(rpc, await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress))))
-  const pending = pendingRewards(farmStates, farmAddrs.map((f, i) => [f, accounts[i].exists ? decodeUserState(accounts[i]).data : null]))
+  const accounts = await fetchEncodedAccounts(
+    rpc,
+    await Promise.all(farmAddrs.map((f) => obligationFarmStatePda(address(f), ob.obligationAddress))),
+  )
+  const pending = pendingRewards(
+    farmStates,
+    farmAddrs.map((f, i) => [f, accounts[i].exists ? decodeUserState(accounts[i]).data : null]),
+  )
   if (!pending.length) throw new UserError('No rewards to claim yet')
   const ixs = []
   for (const p of pending) {
-    const [atas, harvest] = await farms.claimForUserForFarmRewardIx(createNoopSigner(owner), address(p.farm), address(p.mint), true, p.index, [ob.obligationAddress])
+    const [atas, harvest] = await farms.claimForUserForFarmRewardIx(
+      createNoopSigner(owner),
+      address(p.farm),
+      address(p.mint),
+      true,
+      p.index,
+      [ob.obligationAddress],
+    )
     ixs.push(...atas.map(([, ix]) => ix), ...harvest)
   }
   return { ...(await simulated(await compile(owner, ixs, {}))), final: true }
@@ -260,16 +393,27 @@ export async function liquidationInfo(m, borrower) {
 function liquidationLimits(market, ob, repay, debt, coll) {
   const pos = ob?.getBorrowByReserve(repay.address)
   if (!pos || pos.amount.lte(0)) throw new UserError('This wallet has no open loan in this market')
-  const s = ob.refreshedStats, ms = market.state
-  const ltv = s.loanToValue.toNumber(), liqLtv = s.liquidationLtv.toNumber()
-  const debtUsd = pos.marketValueRefreshed.toNumber(), borrowed = pos.amount.toNumber() / 10 ** debt.decimals
+  const s = ob.refreshedStats,
+    ms = market.state
+  const ltv = s.loanToValue.toNumber(),
+    liqLtv = s.liquidationLtv.toNumber()
+  const debtUsd = pos.marketValueRefreshed.toNumber(),
+    borrowed = pos.amount.toNumber() / 10 ** debt.decimals
   const closeFactor = ltv * 100 > ms.insolvencyRiskUnhealthyLtvPct ? 1 : ms.liquidationMaxDebtCloseFactorPct / 100
-  const maxUsd = Math.min(s.userTotalBorrow.toNumber() * closeFactor, debtUsd, Number(ms.maxLiquidatableDebtMarketValueAtOnce))
+  const maxUsd = Math.min(
+    s.userTotalBorrow.toNumber() * closeFactor,
+    debtUsd,
+    Number(ms.maxLiquidatableDebtMarketValueAtOnce),
+  )
   const fullOnly = debtUsd < Number(ms.minFullLiquidationValueThreshold)
   return {
     liquidatable: ltv >= liqLtv && liqLtv > 0,
     hf: ltv > 0 ? liqLtv / ltv : null,
-    debt: borrowed, debtToken: debt.name, collToken: coll.name, debtId: debt.token_id, collId: coll.token_id,
+    debt: borrowed,
+    debtToken: debt.name,
+    collToken: coll.name,
+    debtId: debt.token_id,
+    collId: coll.token_id,
     maxRepay: fullOnly ? borrowed : borrowed * (debtUsd > 0 ? maxUsd / debtUsd : 0),
     fullOnly,
   }
@@ -280,25 +424,43 @@ async function liquidate(liquidator, m, borrower, amount, preview) {
   const { market, now } = getLive(m)
   const ob = await obligationByWallet(market, address(borrower), obligationType(), now)
   const { debt, coll } = pairOf(m, ob)
-  const repay = reserveOf(market, debt), withdraw = reserveOf(market, coll)
-  if (!ob?.getBorrowByReserve(repay.address)?.amount.gt(0)) throw new UserError('This wallet has no open loan in this market')
+  const repay = reserveOf(market, debt),
+    withdraw = reserveOf(market, coll)
+  if (!ob?.getBorrowByReserve(repay.address)?.amount.gt(0))
+    throw new UserError('This wallet has no open loan in this market')
   const base = new Decimal(amount).mul(new Decimal(10).pow(debt.decimals)).floor().toFixed()
   const make = async (min) => {
     const axn = await KaminoAction.buildLiquidateTxns({
-      kaminoMarket: market, amount: base, minCollateralReceiveAmount: String(min),
-      repayReserveAddress: repay.address, withdrawReserveAddress: withdraw.address,
-      liquidator: createNoopSigner(liquidator), obligationOwner: address(borrower), obligation: ob,
-      useV2Ixs: true, currentLedgerInstant: now, initUserMetadata: { skipInitialization: true, skipLutCreation: true },
+      kaminoMarket: market,
+      amount: base,
+      minCollateralReceiveAmount: String(min),
+      repayReserveAddress: repay.address,
+      withdrawReserveAddress: withdraw.address,
+      liquidator: createNoopSigner(liquidator),
+      obligationOwner: address(borrower),
+      obligation: ob,
+      useV2Ixs: true,
+      currentLedgerInstant: now,
+      initUserMetadata: { skipInitialization: true, skipLutCreation: true },
     })
     return compile(liquidator, KaminoAction.actionToIxs(axn), await fetchLuts(axn.luts))
   }
-  const atas = await Promise.all([ataOf(liquidator, address(debt.mint), repay.getLiquidityTokenProgram()), ataOf(liquidator, address(coll.mint), withdraw.getLiquidityTokenProgram())])
+  const atas = await Promise.all([
+    ataOf(liquidator, address(debt.mint), repay.getLiquidityTokenProgram()),
+    ataOf(liquidator, address(coll.mint), withdraw.getLiquidityTokenProgram()),
+  ])
   const accounts = await fetchEncodedAccounts(rpc, atas, { commitment: 'confirmed' }) // same commitment as the simulation
   const before = accounts.map((a) => (a.exists ? Buffer.from(a.data).readBigUInt64LE(64) : 0n))
   const after = await simulatedBalances(await make(0), atas)
-  const paid = before[0] - after[0], received = after[1] - before[1]
+  const paid = before[0] - after[0],
+    received = after[1] - before[1]
   if (received <= 0n) throw new UserError('This liquidation would not pay out any collateral')
-  const quote = { repaid: Number(paid) / 10 ** debt.decimals, received: Number(received) / 10 ** coll.decimals, debtToken: debt.name, collToken: coll.name }
+  const quote = {
+    repaid: Number(paid) / 10 ** debt.decimals,
+    received: Number(received) / 10 ** coll.decimals,
+    debtToken: debt.name,
+    collToken: coll.name,
+  }
   if (preview) return { quote }
   const min = (received * BigInt(Math.round((1 - LIQ_SLIPPAGE) * 1e4))) / 10_000n
   return { ...(await simulated(await make(min))), final: true, quote }
@@ -322,8 +484,12 @@ async function offTarget(state, reserves, now) {
   // The program refuses an invest into a reserve within minInvestDelaySlots of its last one (InvestTooSoon).
   const lastInvest = new Map(state.vaultAllocationStrategy.map((x) => [String(x.reserve), Number(x.lastInvestSlot)]))
   const readyIn = (a) => Math.max(0, lastInvest.get(String(a)) + Number(state.minInvestDelaySlots) - Number(now.slot)) // slots
-  return gapsOffTarget([...reserves.keys()], target.targetReservesAllocation, holdings.investedInReserves, Number(holdings.totalAUMIncludingFees))
-    .map((x) => ({ ...x, readyIn: readyIn(x.a) }))
+  return gapsOffTarget(
+    [...reserves.keys()],
+    target.targetReservesAllocation,
+    holdings.investedInReserves,
+    Number(holdings.totalAUMIncludingFees),
+  ).map((x) => ({ ...x, readyIn: readyIn(x.a) }))
 }
 export function gapsOffTarget(addresses, target, invested, total) {
   return addresses
@@ -340,25 +506,59 @@ async function vaultAction(kind, owner, v, amount, all) {
   const shareDp = Number(state.sharesMintDecimals)
   if (kind === 'vault-deposit') {
     // As the program prices it: share value including vested rewards, minus the crank funds taken from the deposit.
-    const minShares = vaultClient.estimateSharesFromTokens(state, new Decimal(amount), now, reserves, VAULT_SLIPPAGE * 10_000).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
-    const d = await vaultClient.depositIxs(signer, kv, new Decimal(amount), reserves, null, null, undefined, undefined, minShares)
+    const minShares = vaultClient
+      .estimateSharesFromTokens(state, new Decimal(amount), now, reserves, VAULT_SLIPPAGE * 10_000)
+      .toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
+    const d = await vaultClient.depositIxs(
+      signer,
+      kv,
+      new Decimal(amount),
+      reserves,
+      null,
+      null,
+      undefined,
+      undefined,
+      minShares,
+    )
     const deposit = [...d.depositIxs, ...d.stakeInFarmIfNeededIxs]
     // Invest right away so the deposit earns at once, into the reserve furthest under its target only: every reserve
     // doesn't fit in one transaction. `invest` sizes it on-chain after the deposit (investAllReservesIxs sizes from the
     // state before, and fails), and the SDK is shown the vault after the deposit, or one on target would get no invest.
     const after = Object.assign(Object.create(Object.getPrototypeOf(state)), state, {
-      tokenAvailable: state.tokenAvailable.add(new state.tokenAvailable.constructor(new Decimal(amount).mul(10 ** Number(state.tokenMintDecimals)).floor().toFixed())), // BN, as decoded
+      tokenAvailable: state.tokenAvailable.add(
+        new state.tokenAvailable.constructor(
+          new Decimal(amount)
+            .mul(10 ** Number(state.tokenMintDecimals))
+            .floor()
+            .toFixed(),
+        ),
+      ), // BN, as decoded
     })
     const kvAfter = KaminoVault.loadWithClientAndState(vaultClient, kv.address, after)
     const invest = []
     try {
       const under = (await offTarget(after, reserves, now)).filter((x) => x.gap > 0 && !x.readyIn).at(-1)
-      if (under) invest.push(...await vaultClient.investSingleReserveIxs(signer, kvAfter, { address: under.a, state: reserves.get(under.a).state }, reserves))
-    } catch (e) { console.warn('[vault] invest ixs', e?.message); invest.length = 0 }
+      if (under)
+        invest.push(
+          ...(await vaultClient.investSingleReserveIxs(
+            signer,
+            kvAfter,
+            { address: under.a, state: reserves.get(under.a).state },
+            reserves,
+          )),
+        )
+    } catch (e) {
+      console.warn('[vault] invest ixs', e?.message)
+      invest.length = 0
+    }
     if (invest.length) {
       const both = await compile(owner, [...deposit, ...invest], luts)
       if (both.size <= SPLIT_ABOVE) {
-        try { return { ...(await simulated(both)), final: true, invested: true } } catch (e) { console.warn('[vault] deposit + invest failed to simulate, deposit only:', e?.message) }
+        try {
+          return { ...(await simulated(both)), final: true, invested: true }
+        } catch (e) {
+          console.warn('[vault] deposit + invest failed to simulate, deposit only:', e?.message)
+        }
       }
     }
     return { ...(await simulated(await compile(owner, deposit, luts))), final: true, invested: false }
@@ -367,19 +567,51 @@ async function vaultAction(kind, owner, v, amount, all) {
   const { wallet, staked } = (await vaultShares(live, [String(owner)], { commitment: 'confirmed' })).get(String(owner))
   const held = new Decimal(wallet).add(staked).toDecimalPlaces(shareDp, Decimal.ROUND_DOWN)
   if (held.lte(0)) throw new UserError('You have no shares in this vault')
-  const wanted = all ? held : Decimal.min(held, new Decimal(amount).div(perShare.toString()).toDecimalPlaces(shareDp, Decimal.ROUND_UP))
-  const w = await vaultClient.withdrawIxs(signer, kv, wanted, now, reserves, staked > 0 ? farm?.state ?? null : null, null)
-  return { ...(await simulated(await compile(owner, [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs], luts))), final: true }
+  const wanted = all
+    ? held
+    : Decimal.min(held, new Decimal(amount).div(perShare.toString()).toDecimalPlaces(shareDp, Decimal.ROUND_UP))
+  const w = await vaultClient.withdrawIxs(
+    signer,
+    kv,
+    wanted,
+    now,
+    reserves,
+    staked > 0 ? (farm?.state ?? null) : null,
+    null,
+  )
+  return {
+    ...(await simulated(
+      await compile(owner, [...w.unstakeFromFarmIfNeededIxs, ...w.withdrawIxs, ...w.postWithdrawIxs], luts),
+    )),
+    final: true,
+  }
 }
 
-async function build({ kind, wallet, market: marketId, token: tokenId, amount, amountBaseUnits, all, borrower, preview, vault: vaultId }) {
+async function build({
+  kind,
+  wallet,
+  market: marketId,
+  token: tokenId,
+  amount,
+  amountBaseUnits,
+  all,
+  borrower,
+  preview,
+  vault: vaultId,
+}) {
   if (kind === 'loop-open' || kind === 'loop-close') {
-    throw new UserError('Loop transaction building is unavailable until atomic route, fee, fork and wallet evidence passes.')
+    throw new UserError(
+      'Loop transaction building is unavailable until atomic route, fee, fork and wallet evidence passes.',
+    )
   }
   const owner = address(wallet)
   const validAmount = (value) => {
-    try { const decimal = new Decimal(String(value)); return decimal.isFinite() && decimal.gt(0) }
-    catch { return false }
+    try {
+      const decimal = new Decimal(String(value))
+      return decimal.isFinite() && decimal.gt(0)
+    } catch {
+      return false
+    }
   }
   if (kind.startsWith('vault-')) {
     const v = vaultById(vaultId)
@@ -397,61 +629,106 @@ async function build({ kind, wallet, market: marketId, token: tokenId, amount, a
   }
   const t = tokensOf(m).find((x) => x.token_id === tokenId)
   if (!t) throw new UserError('Unknown token for this market')
-  if (!all && !(kind === 'withdraw' && amountBaseUnits != null)
-    && !(kind === 'deposit' && amountBaseUnits != null) && !validAmount(amount)) throw new UserError('Invalid amount')
+  if (
+    !all &&
+    !(kind === 'withdraw' && amountBaseUnits != null) &&
+    !(kind === 'deposit' && amountBaseUnits != null) &&
+    !validAmount(amount)
+  )
+    throw new UserError('Invalid amount')
   if (kind === 'withdraw') await refreshMarketForExecution()
   return lending(kind, owner, m, t, amount, !!all, amountBaseUnits)
 }
 
 // Deeplink wallets (Phantom/Solflare on iOS) sign but don't send: relayed only when the transaction is that wallet's
 // own, with screened signers and allowed programs (relay.js).
-export async function sendSigned({ tx, wallet, approvedProgramIds = [], intentStore, intentId, requireIntent = false }) {
+export async function sendSigned({
+  tx,
+  wallet,
+  approvedProgramIds = [],
+  intentStore,
+  intentId,
+  requireIntent = false,
+}) {
   return relaySignedTransaction({
     tx,
     wallet,
-    refuse: (signed, owner) => relayRefusal(signed, owner, { approvedProgramIds, intentStore, intentId, requireIntent }),
+    refuse: (signed, owner) =>
+      relayRefusal(signed, owner, { approvedProgramIds, intentStore, intentId, requireIntent }),
     send: async (signed) => {
-      try { return await rpc.sendTransaction(signed, { encoding: 'base64', preflightCommitment: 'confirmed' }).send() }
-      catch (error) { console.error('[tx] send outcome unknown', error); throw error }
+      try {
+        return await rpc.sendTransaction(signed, { encoding: 'base64', preflightCommitment: 'confirmed' }).send()
+      } catch (error) {
+        console.error('[tx] send outcome unknown', error)
+        throw error
+      }
     },
     onSuccess: noteRelayed,
   })
 }
 
-export async function resolveTransactionStatus(signature, {
-  getSignatureStatuses,
-  getTransaction,
-  onConfirmed = async () => {},
-} = {}) {
-  if (typeof signature !== 'string' || !signature
-    || typeof getSignatureStatuses !== 'function' || typeof getTransaction !== 'function' || typeof onConfirmed !== 'function') {
+export async function resolveTransactionStatus(
+  signature,
+  { getSignatureStatuses, getTransaction, onConfirmed = async () => {} } = {},
+) {
+  if (
+    typeof signature !== 'string' ||
+    !signature ||
+    typeof getSignatureStatuses !== 'function' ||
+    typeof getTransaction !== 'function' ||
+    typeof onConfirmed !== 'function'
+  ) {
     throw new TypeError('Transaction status reconciliation requires a signature and RPC functions.')
   }
   const recent = await getSignatureStatuses([signature])
   let s = recent?.value?.[0] ?? null
   if (!s) {
     let historical
-    try { historical = await getSignatureStatuses([signature], { searchTransactionHistory: true }) }
-    catch { return { status: 'pending' } }
+    try {
+      historical = await getSignatureStatuses([signature], { searchTransactionHistory: true })
+    } catch {
+      return { status: 'pending' }
+    }
     s = historical?.value?.[0] ?? null
   }
   if (!s) return { status: 'pending' }
   if (s.err) {
     // The logs name the failing program, so the user sees why (slippage, liquidity, ...) instead of a raw code.
     let logs = []
-    try { logs = (await getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 }))?.meta?.logMessages ?? [] }
-    catch { /* the raw error below still reports the failure */ }
-    return { status: 'failed', error: chainError(logs, s.err) ?? JSON.stringify(s.err, (_, v) => (typeof v === 'bigint' ? String(v) : v)) }
+    try {
+      logs =
+        (
+          await getTransaction(signature, {
+            commitment: 'confirmed',
+            encoding: 'json',
+            maxSupportedTransactionVersion: 1,
+          })
+        )?.meta?.logMessages ?? []
+    } catch {
+      /* the raw error below still reports the failure */
+    }
+    return {
+      status: 'failed',
+      error: chainError(logs, s.err) ?? JSON.stringify(s.err, (_, v) => (typeof v === 'bigint' ? String(v) : v)),
+    }
   }
   if (s.confirmationStatus === 'confirmed' || s.confirmationStatus === 'finalized') {
-    Promise.resolve().then(() => onConfirmed(signature)).catch((e) => console.error('[tx] confirmation lookup failed', e?.message))
+    Promise.resolve()
+      .then(() => onConfirmed(signature))
+      .catch((e) => console.error('[tx] confirmation lookup failed', e?.message))
     let tokenDeltas = null
     let transactionSlot = null
     try {
-      const transaction = await getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 })
+      const transaction = await getTransaction(signature, {
+        commitment: 'confirmed',
+        encoding: 'json',
+        maxSupportedTransactionVersion: 1,
+      })
       if (transaction?.meta) tokenDeltas = confirmedTokenDeltas(transaction.meta)
       transactionSlot = safeSlotNumber(transaction?.slot)
-    } catch { /* confirmation remains visible; token-derived follow-up stays disabled until the transaction is readable */ }
+    } catch {
+      /* confirmation remains visible; token-derived follow-up stays disabled until the transaction is readable */
+    }
     return { status: 'confirmed', slot: safeSlotNumber(s.slot), transactionSlot, tokenDeltas }
   }
   return { status: 'pending' }
@@ -463,12 +740,21 @@ export async function txStatus(signature) {
   return resolveTransactionStatus(signature, {
     getSignatureStatuses: (signatures, config) => rpc.getSignatureStatuses(signatures, config).send(),
     getTransaction: (sig, config) => rpc.getTransaction(sig, config).send(),
-    onConfirmed: async (sig) => { if (await confirmedHere(sig, landed)) refreshSoon() },
+    onConfirmed: async (sig) => {
+      if (await confirmedHere(sig, landed)) refreshSoon()
+    },
   })
 }
 
 async function landed(signature) {
   // Version 1 is Solana's newer transaction format; asking for 0 would make the lookup fail on those.
-  const tx = await rpc.getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 }).send()
-  return tx && { feePayer: String(tx.transaction.message.accountKeys[0]), blockTime: tx.blockTime == null ? null : Number(tx.blockTime) }
+  const tx = await rpc
+    .getTransaction(signature, { commitment: 'confirmed', encoding: 'json', maxSupportedTransactionVersion: 1 })
+    .send()
+  return (
+    tx && {
+      feePayer: String(tx.transaction.message.accountKeys[0]),
+      blockTime: tx.blockTime == null ? null : Number(tx.blockTime),
+    }
+  )
 }

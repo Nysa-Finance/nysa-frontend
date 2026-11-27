@@ -7,20 +7,26 @@ const U64_MAX = (1n << 64n) - 1n
 
 export class SwapRouteError extends Error {}
 
-const positiveBaseUnits = (value) => typeof value === 'string' && /^\d+$/.test(value) && BigInt(value) > 0n && BigInt(value) <= U64_MAX
-const marketIsActive = (market) => !!market && market.visible !== false && LIVE.some((candidate) => candidate.id === market.id)
+const positiveBaseUnits = (value) =>
+  typeof value === 'string' && /^\d+$/.test(value) && BigInt(value) > 0n && BigInt(value) <= U64_MAX
+const marketIsActive = (market) =>
+  !!market && market.visible !== false && LIVE.some((candidate) => candidate.id === market.id)
 
 export function parseSwapQuoteRequest(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new SwapRouteError('Invalid swap quote request.')
   if (typeof body.wallet !== 'string' || !isAddress(body.wallet)) throw new SwapRouteError('Invalid wallet address.')
-  const pair = LIVE.some((market) => market.pairs?.some(({ collateral, liability }) => {
-    const mints = [TOKENS[collateral]?.mint, TOKENS[liability]?.mint]
-    return mints.includes(body.inputMint) && mints.includes(body.outputMint) && body.inputMint !== body.outputMint
-  }))
+  const pair = LIVE.some((market) =>
+    market.pairs?.some(({ collateral, liability }) => {
+      const mints = [TOKENS[collateral]?.mint, TOKENS[liability]?.mint]
+      return mints.includes(body.inputMint) && mints.includes(body.outputMint) && body.inputMint !== body.outputMint
+    }),
+  )
   if (!pair) throw new SwapRouteError('Unsupported swap pair.')
-  if (!positiveBaseUnits(body.amountBaseUnits)) throw new SwapRouteError('Swap amount must be a positive integer in token base units.')
+  if (!positiveBaseUnits(body.amountBaseUnits))
+    throw new SwapRouteError('Swap amount must be a positive integer in token base units.')
   const slippageBps = body.slippageBps ?? 50
-  if (!Number.isSafeInteger(slippageBps) || slippageBps < 0 || slippageBps > 50) throw new SwapRouteError('Slippage exceeds Nysa’s 50-bps limit.')
+  if (!Number.isSafeInteger(slippageBps) || slippageBps < 0 || slippageBps > 50)
+    throw new SwapRouteError('Slippage exceeds Nysa’s 50-bps limit.')
   return {
     wallet: body.wallet,
     inputMint: body.inputMint,
@@ -33,13 +39,24 @@ export function parseSwapQuoteRequest(body) {
 // either direction; the first market when no pair is given
 export function marketForPair(inputMint, outputMint) {
   if (!inputMint && !outputMint) return LIVE[0]
-  return LIVE.find((m) => m.pairs.some(({ collateral, liability }) => {
-    const mints = [TOKENS[collateral].mint, TOKENS[liability].mint]
-    return mints.includes(inputMint) && mints.includes(outputMint) && inputMint !== outputMint
-  })) ?? null
+  return (
+    LIVE.find((m) =>
+      m.pairs.some(({ collateral, liability }) => {
+        const mints = [TOKENS[collateral].mint, TOKENS[liability].mint]
+        return mints.includes(inputMint) && mints.includes(outputMint) && inputMint !== outputMint
+      }),
+    ) ?? null
+  )
 }
 
-export function swapPairAvailability({ market, vaults = {}, snapshotUpdatedAt = 0, inputMint, outputMint, now = Date.now() } = {}) {
+export function swapPairAvailability({
+  market,
+  vaults = {},
+  snapshotUpdatedAt = 0,
+  inputMint,
+  outputMint,
+  now = Date.now(),
+} = {}) {
   const reasons = []
   const active = marketIsActive(market)
   if (!active) reasons.push({ code: 'market-inactive', message: 'The Nysa market is not active.' })
@@ -47,19 +64,37 @@ export function swapPairAvailability({ market, vaults = {}, snapshotUpdatedAt = 
     const mints = [TOKENS[collateral]?.mint, TOKENS[liability]?.mint]
     return mints.includes(inputMint) && mints.includes(outputMint) && inputMint !== outputMint
   })
-  if (!pair) reasons.push({ code: 'pair-not-allowlisted', message: 'The selected mint pair is not enabled by an active Nysa market.' })
+  if (!pair)
+    reasons.push({
+      code: 'pair-not-allowlisted',
+      message: 'The selected mint pair is not enabled by an active Nysa market.',
+    })
   if (pair && active) {
     const collateral = TOKENS[pair.collateral]
     const liability = TOKENS[pair.liability]
-    const allocated = Object.values(vaults ?? {}).some((vault) => (vault?.allocations ?? []).some((allocation) =>
-      allocation.market === market.kaminoMarket
-        && allocation.reserve === market.reserves?.[liability.token_id]
-        && (allocation.collateral ?? []).includes(collateral.token_id)
-        && Number.isFinite(allocation.invested)
-        && allocation.invested > 0))
-    if (!allocated) reasons.push({ code: 'no-actual-allocation', message: 'No Nysa vault has a nonzero actual allocation to this collateral market.' })
+    const allocated = Object.values(vaults ?? {}).some((vault) =>
+      (vault?.allocations ?? []).some(
+        (allocation) =>
+          allocation.market === market.kaminoMarket &&
+          allocation.reserve === market.reserves?.[liability.token_id] &&
+          (allocation.collateral ?? []).includes(collateral.token_id) &&
+          Number.isFinite(allocation.invested) &&
+          allocation.invested > 0,
+      ),
+    )
+    if (!allocated)
+      reasons.push({
+        code: 'no-actual-allocation',
+        message: 'No Nysa vault has a nonzero actual allocation to this collateral market.',
+      })
   }
-  if (!Number.isFinite(snapshotUpdatedAt) || snapshotUpdatedAt <= 0 || !Number.isFinite(now) || now < snapshotUpdatedAt || now - snapshotUpdatedAt > 60_000) {
+  if (
+    !Number.isFinite(snapshotUpdatedAt) ||
+    snapshotUpdatedAt <= 0 ||
+    !Number.isFinite(now) ||
+    now < snapshotUpdatedAt ||
+    now - snapshotUpdatedAt > 60_000
+  ) {
     reasons.push({ code: 'market-data-stale', message: 'Fresh market allocation data is unavailable.' })
   }
   return { available: reasons.length === 0, reasons }
@@ -80,20 +115,47 @@ function publicRoutePlan(routePlan) {
 
 // Quote facts only: provider instructions, lookup tables and unsigned transactions stay server-side.
 export function publicSwapQuote(built, { now = Date.now } = {}) {
-  if (!built || typeof built !== 'object' || !Number.isFinite(built.quoteAt)) throw new SwapRouteError('Swap provider returned an invalid quote.')
+  if (!built || typeof built !== 'object' || !Number.isFinite(built.quoteAt))
+    throw new SwapRouteError('Swap provider returned an invalid quote.')
   const currentTime = now()
   if (!Number.isFinite(currentTime)) throw new SwapRouteError('Invalid quote clock.')
   const expiresAt = built.quoteAt + SWAP_QUOTE_MAX_AGE_MS
   const quoteFresh = currentTime >= built.quoteAt && currentTime < expiresAt
-  const programPolicy = built.programPolicy ?? { approved: false, unreviewed: [{ programId: null, reason: 'Program review is unavailable.' }] }
+  const programPolicy = built.programPolicy ?? {
+    approved: false,
+    unreviewed: [{ programId: null, reason: 'Program review is unavailable.' }],
+  }
   const unavailableReasons = [
-    ...(!programPolicy.approved ? (programPolicy.unreviewed ?? []).map(({ programId, routeLabel, reason }) => ({
-      code: 'program-unreviewed', programId, routeLabel, message: reason,
-    })) : []),
-    ...(!built.feeAccountMintVerified ? [{ code: 'fee-account-unverified', message: 'Fee-account mint and authority have not been verified.' }] : []),
-    ...(!built.feeBalanceDeltaVerified ? [{ code: 'fee-delta-unverified', message: 'Atomic fee balance delta has not been verified by transaction simulation.' }] : []),
-    ...(!built.executable ? [{ code: 'execution-not-approved', message: 'This quote is for review only; transaction execution is not approved.' }] : []),
-    ...(!quoteFresh ? [{ code: 'quote-expired', message: 'Quote is older than the 15-second transaction freshness limit.' }] : []),
+    ...(!programPolicy.approved
+      ? (programPolicy.unreviewed ?? []).map(({ programId, routeLabel, reason }) => ({
+          code: 'program-unreviewed',
+          programId,
+          routeLabel,
+          message: reason,
+        }))
+      : []),
+    ...(!built.feeAccountMintVerified
+      ? [{ code: 'fee-account-unverified', message: 'Fee-account mint and authority have not been verified.' }]
+      : []),
+    ...(!built.feeBalanceDeltaVerified
+      ? [
+          {
+            code: 'fee-delta-unverified',
+            message: 'Atomic fee balance delta has not been verified by transaction simulation.',
+          },
+        ]
+      : []),
+    ...(!built.executable
+      ? [
+          {
+            code: 'execution-not-approved',
+            message: 'This quote is for review only; transaction execution is not approved.',
+          },
+        ]
+      : []),
+    ...(!quoteFresh
+      ? [{ code: 'quote-expired', message: 'Quote is older than the 15-second transaction freshness limit.' }]
+      : []),
   ]
   return {
     provider: built.provider,
@@ -120,12 +182,10 @@ export function publicSwapQuote(built, { now = Date.now } = {}) {
   }
 }
 
-export async function createPublicSwapQuote(body, {
-  buildSwapFn = buildSwap,
-  feeAccountResolver = configuredFeeAccountForMint,
-  now = Date.now,
-  signal,
-} = {}) {
+export async function createPublicSwapQuote(
+  body,
+  { buildSwapFn = buildSwap, feeAccountResolver = configuredFeeAccountForMint, now = Date.now, signal } = {},
+) {
   const request = parseSwapQuoteRequest(body)
   const feeAccount = feeAccountResolver(request.outputMint)
   if ((FEE_BPS && !feeAccount?.account) || feeAccount?.mint !== request.outputMint) {
@@ -154,10 +214,23 @@ export function swapReadiness({
   marketAvailabilityReasons = [],
 } = {}) {
   const unavailableReasons = [
-    ...(!providerConfigured ? [{ code: 'provider-unconfigured', message: 'Production swap-provider configuration is missing.' }] : []),
-    ...(!feeAccountsConfigured ? [{ code: 'fee-accounts-unconfigured', message: 'Verified fee accounts for every swap token are required.' }] : []),
-    ...(!walletEnabled ? [{ code: 'swap-wallet-not-enabled', message: 'Swap is not available for this wallet yet.' }] : []),
-    ...(!marketDataAvailable ? [{ code: 'market-allocation-missing', message: 'No fresh nonzero allocation is available for the supported collateral market.' }] : []),
+    ...(!providerConfigured
+      ? [{ code: 'provider-unconfigured', message: 'Production swap-provider configuration is missing.' }]
+      : []),
+    ...(!feeAccountsConfigured
+      ? [{ code: 'fee-accounts-unconfigured', message: 'Verified fee accounts for every swap token are required.' }]
+      : []),
+    ...(!walletEnabled
+      ? [{ code: 'swap-wallet-not-enabled', message: 'Swap is not available for this wallet yet.' }]
+      : []),
+    ...(!marketDataAvailable
+      ? [
+          {
+            code: 'market-allocation-missing',
+            message: 'No fresh nonzero allocation is available for the supported collateral market.',
+          },
+        ]
+      : []),
     ...(marketAvailabilityReasons ?? []),
   ]
   return {

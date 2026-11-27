@@ -3,14 +3,27 @@ import { mock } from 'node:test'
 import { createLatestReadPublisher, createRefresher } from './refresh.js'
 
 mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 })
-const EVERY = 60_000, SOON = 2_000, GAP = 10_000
+const EVERY = 60_000,
+  SOON = 2_000,
+  GAP = 10_000
 const flush = () => new Promise((r) => setImmediate(r))
 async function advance(ms, each = () => {}) {
-  for (let t = 0; t < ms; t += 100) { each(t); mock.timers.tick(100); await flush() }
+  for (let t = 0; t < ms; t += 100) {
+    each(t)
+    mock.timers.tick(100)
+    await flush()
+  }
 }
 function make(readMs = 500) {
-  const t0 = Date.now(), reads = []
-  const r = createRefresher(() => { reads.push(Date.now() - t0); return new Promise((ok) => setTimeout(ok, readMs)) }, { every: EVERY, soon: SOON, minGap: GAP })
+  const t0 = Date.now(),
+    reads = []
+  const r = createRefresher(
+    () => {
+      reads.push(Date.now() - t0)
+      return new Promise((ok) => setTimeout(ok, readMs))
+    },
+    { every: EVERY, soon: SOON, minGap: GAP },
+  )
   return { r, reads }
 }
 const gaps = (xs) => xs.slice(1).map((x, i) => x - xs[i])
@@ -19,8 +32,18 @@ const gaps = (xs) => xs.slice(1).map((x, i) => x - xs[i])
   const published = []
   const ordered = createLatestReadPublisher((value) => published.push(value))
   let finishOld, finishNew
-  const older = ordered(() => new Promise((resolve) => { finishOld = resolve }))
-  const newer = ordered(() => new Promise((resolve) => { finishNew = resolve }))
+  const older = ordered(
+    () =>
+      new Promise((resolve) => {
+        finishOld = resolve
+      }),
+  )
+  const newer = ordered(
+    () =>
+      new Promise((resolve) => {
+        finishNew = resolve
+      }),
+  )
   finishNew('fresh')
   await newer
   finishOld('stale')

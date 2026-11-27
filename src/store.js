@@ -2,14 +2,37 @@
 import { reactive, markRaw } from 'vue'
 import { getWallets } from '@wallet-standard/app'
 import { getBase58Decoder } from '@solana/kit'
-import { confirmedSwapAmountFromTransaction, pendingSwapChainOutcome, persistSignedSwapBeforeRelay } from './swap-recovery.js'
-import { assertCanStartLendingAction, canResumeSetupRecovery, cancelConfirmedSetupRecovery, classifyPendingTransaction, markSetupTransactionConfirmed, pendingTransactionMatches, recoverConfirmedSetupTransaction, resumeConfirmedSetupContinuation, startVisibleReconciliationLoop } from './pending-reconciliation.js'
+import {
+  confirmedSwapAmountFromTransaction,
+  pendingSwapChainOutcome,
+  persistSignedSwapBeforeRelay,
+} from './swap-recovery.js'
+import {
+  assertCanStartLendingAction,
+  canResumeSetupRecovery,
+  cancelConfirmedSetupRecovery,
+  classifyPendingTransaction,
+  markSetupTransactionConfirmed,
+  pendingTransactionMatches,
+  recoverConfirmedSetupTransaction,
+  resumeConfirmedSetupContinuation,
+  startVisibleReconciliationLoop,
+} from './pending-reconciliation.js'
 import { TOKENS, tok, tokensOf, vaultById, WALLETCONNECT_PROJECT_ID } from './config.js'
 import { parsePoints, pct, liquidationBonusRange } from './logic.js'
 import { loopPositionFullyClosed } from './loop-positions.js'
 import { event, skipNextPageview } from './analytics.js'
 import {
-  fromBase64, isIOS, DEEPLINK_WALLETS, MWA_NAME, registerMobileWalletAdapter, deeplinkSession, connectUrl, signUrl, readDeeplinkReturn, clearDeeplinkSession,
+  fromBase64,
+  isIOS,
+  DEEPLINK_WALLETS,
+  MWA_NAME,
+  registerMobileWalletAdapter,
+  deeplinkSession,
+  connectUrl,
+  signUrl,
+  readDeeplinkReturn,
+  clearDeeplinkSession,
 } from './wallets.js'
 import { createWalletConnectWallet } from './walletconnect.js'
 
@@ -27,7 +50,11 @@ const ACTION_TERMINAL_PREFIX = 'nysaActionTerminal.'
 const SWAP_TERMINAL_PREFIX = 'nysaSwapTerminal.'
 
 const safe = (fn, fallback = null) => {
-  try { return fn() } catch { return fallback }
+  try {
+    return fn()
+  } catch {
+    return fallback
+  }
 }
 
 let activeLendingActionReservation = null
@@ -53,7 +80,9 @@ function withActionReservationLock(callback, required = true) {
 }
 
 function actionReservationLockUnavailable() {
-  const error = new Error('Safe cross-tab transaction locking is unavailable. Use a secure browser with Web Locks enabled.')
+  const error = new Error(
+    'Safe cross-tab transaction locking is unavailable. Use a secure browser with Web Locks enabled.',
+  )
   error.code = 'ACTION_RESERVATION_LOCK_UNAVAILABLE'
   return error
 }
@@ -69,10 +98,15 @@ function canCancelBuildReservation(pending) {
   const expiresAt = Number.isSafeInteger(pending?.leaseExpiresAt)
     ? pending.leaseExpiresAt
     : createdAt + ACTION_BUILD_LEASE_MS
-  return (!requiresPendingActionLock(pending) || hasActionReservationLock()) && !activeLendingActionReservation
-    && pending?.status === 'preparing' && pending.phase === 'building'
-    && !pending.signature
-    && Number.isSafeInteger(expiresAt) && Date.now() >= expiresAt
+  return (
+    (!requiresPendingActionLock(pending) || hasActionReservationLock()) &&
+    !activeLendingActionReservation &&
+    pending?.status === 'preparing' &&
+    pending.phase === 'building' &&
+    !pending.signature &&
+    Number.isSafeInteger(expiresAt) &&
+    Date.now() >= expiresAt
+  )
 }
 
 export const state = reactive({
@@ -118,12 +152,24 @@ export const state = reactive({
 // Wallet objects stay outside Vue reactivity (they hold private fields).
 let wallet = null
 let account = null
-const usable = (w) => w.chains.includes(CHAIN) && 'standard:connect' in w.features && 'solana:signAndSendTransaction' in w.features
-const sendSigned = async (tx) => (await api('/api/tx/send', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ tx, wallet: account.address }) })).signature
+const usable = (w) =>
+  w.chains.includes(CHAIN) && 'standard:connect' in w.features && 'solana:signAndSendTransaction' in w.features
+const sendSigned = async (tx) =>
+  (
+    await api('/api/tx/send', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tx, wallet: account.address }),
+    })
+  ).signature
 const walletConnect = WALLETCONNECT_PROJECT_ID ? markRaw(createWalletConnectWallet(sendSigned)) : null
 function scanWallets() {
   const ws = getWallets().get().filter(usable)
-  state.wallets = [...ws.filter((w) => w.name === 'Phantom'), ...ws.filter((w) => w.name !== 'Phantom'), ...(walletConnect ? [walletConnect] : [])].map(markRaw)
+  state.wallets = [
+    ...ws.filter((w) => w.name === 'Phantom'),
+    ...ws.filter((w) => w.name !== 'Phantom'),
+    ...(walletConnect ? [walletConnect] : []),
+  ].map(markRaw)
 }
 
 // iOS Safari has no wallet extensions: Phantom and Solflare are reached through their deeplink protocol.
@@ -142,16 +188,22 @@ export const rewardAprOf = (m, id) => state.rewards[m.id]?.[id]?.apr ?? 0
 export const boostNote = (m, id, supplyApy) =>
   `${pct(supplyApy)} deposit APY + ${pct(rewardAprOf(m, id))} ${state.rewards[m.id]?.[id]?.rewards.map((x) => x.symbol).join(' + ')} rewards APR`
 
-export const vaultApyNote = (v) => `${pct(v.supplyApy)} deposit APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
+export const vaultApyNote = (v) =>
+  `${pct(v.supplyApy)} deposit APY + ${pct(v.rewardsApy)} ${v.rewards?.symbol ?? ''} rewards APY, auto-compounded`
 
 // Governance changes risk parameters (Market Updates), so the live on-chain values win over config.js.
 export function riskOf(m, pair) {
-  const c = reserveOf(m, pair.collateral), l = reserveOf(m, pair.liability)
+  const c = reserveOf(m, pair.collateral),
+    l = reserveOf(m, pair.liability)
   return {
     ...pair,
     ...(c && { maxLtv: c.maxLtv, liqLtv: c.liqLtv, supplyCap: c.supplyCap }),
     // Kamino takes the larger min and max bonus of the two reserves.
-    ...(c && l && { maxDiscount: Math.max(c.maxDiscount, l.maxDiscount), minDiscount: Math.max(c.minDiscount ?? 0, l.minDiscount ?? 0) }),
+    ...(c &&
+      l && {
+        maxDiscount: Math.max(c.maxDiscount, l.maxDiscount),
+        minDiscount: Math.max(c.minDiscount ?? 0, l.minDiscount ?? 0),
+      }),
     ...(l && { borrowCap: l.borrowCap }),
   }
 }
@@ -163,12 +215,16 @@ export function bonusText(m, pair) {
   const p = (v) => `${+v.toFixed(2)}%`
   return low === high ? p(high) : `${p(low)}–${p(high)}`
 }
-export const irmOf = (m, id) => (m.loans.includes(id) ? reserveOf(m, id)?.irm ?? null : null)
+export const irmOf = (m, id) => (m.loans.includes(id) ? (reserveOf(m, id)?.irm ?? null) : null)
 
 export function rowOf(m, id) {
   const r = reserveOf(m, id)
   if (!r) return null
-  return { reserve: r, walletBalance: state.balances[id] ?? 0, ...(state.positions[m.id]?.[id] ?? { supplied: 0, borrowed: 0, maxWithdraw: 0 }) }
+  return {
+    reserve: r,
+    walletBalance: state.balances[id] ?? 0,
+    ...(state.positions[m.id]?.[id] ?? { supplied: 0, borrowed: 0, maxWithdraw: 0 }),
+  }
 }
 
 const MARKET_POLL_MS = 30_000
@@ -193,7 +249,10 @@ async function pollMarket() {
     if (!res.ok) throw new Error(`Server responded ${res.status}`)
     showMarket(await res.json())
   } catch {
-    if (!state.loaded) { state.loading = false; state.error = 'the server is not reachable' }
+    if (!state.loaded) {
+      state.loading = false
+      state.error = 'the server is not reachable'
+    }
   }
 }
 function startPolling() {
@@ -230,7 +289,12 @@ async function api(path, init) {
   const body = await res.json().catch(() => ({}))
   if (res.status === 403 && body.blocked) refuseWallet()
   if (!res.ok) {
-    const error = new Error(body.error ?? (UNREACHABLE.includes(res.status) ? 'Nysa\'s server is not reachable right now, please try again in a few seconds.' : `Server responded ${res.status}`))
+    const error = new Error(
+      body.error ??
+        (UNREACHABLE.includes(res.status)
+          ? "Nysa's server is not reachable right now, please try again in a few seconds."
+          : `Server responded ${res.status}`),
+    )
     error.status = res.status
     throw error
   }
@@ -289,7 +353,11 @@ async function loadSwapVisibility() {
   const addr = state.address
   const r = await api(`/api/swap-readiness${addr ? `?wallet=${addr}` : ''}`).catch(() => null)
   if (Number.isSafeInteger(r?.feeBps)) state.feeBps = r.feeBps
-  if (state.address === addr) { state.swapVisible = r?.visible === true; state.loopVisible = r?.loopVisible === true; state.loopBeta = r?.loopBeta === true }
+  if (state.address === addr) {
+    state.swapVisible = r?.visible === true
+    state.loopVisible = r?.loopVisible === true
+    state.loopBeta = r?.loopBeta === true
+  }
 }
 
 async function connectWith(w, silent) {
@@ -305,7 +373,14 @@ async function connectWith(w, silent) {
 
 export async function connectWallet(w) {
   await connectWith(w, false)
-  event('Wallet connected', w.name === MWA_NAME ? { wallet: 'Wallet app', via: 'android-app' } : w.walletconnect ? { wallet: 'WalletConnect', via: 'walletconnect' } : { wallet: w.name, via: 'extension' })
+  event(
+    'Wallet connected',
+    w.name === MWA_NAME
+      ? { wallet: 'Wallet app', via: 'android-app' }
+      : w.walletconnect
+        ? { wallet: 'WalletConnect', via: 'walletconnect' }
+        : { wallet: w.name, via: 'extension' },
+  )
   state.connectOpen = false
 }
 
@@ -314,7 +389,11 @@ export const connectDeeplink = (name) => location.assign(connectUrl(name))
 
 export async function disconnect() {
   if (wallet?.deeplink) clearDeeplinkSession()
-  try { await wallet?.features?.['standard:disconnect']?.disconnect() } catch { /* wallet already gone */ }
+  try {
+    await wallet?.features?.['standard:disconnect']?.disconnect()
+  } catch {
+    /* wallet already gone */
+  }
   setAccount(null, null)
   safe(() => localStorage.removeItem(WALLET_KEY))
 }
@@ -326,9 +405,12 @@ async function eagerConnect() {
   const name = safe(() => localStorage.getItem(WALLET_KEY))
   const w = name && state.wallets.find((x) => x.name === name)
   if (!w) return
-  try { await connectWith(w, true) } catch { /* no longer authorised */ }
+  try {
+    await connectWith(w, true)
+  } catch {
+    /* no longer authorised */
+  }
 }
-
 
 async function confirmed(signature) {
   const until = Date.now() + CONFIRM_TIMEOUT_MS
@@ -341,13 +423,32 @@ async function confirmed(signature) {
   throw new Error(`Transaction ${signature} was not confirmed within ${CONFIRM_TIMEOUT_MS / 1000}s`)
 }
 
-const buildTx = (params) => api('/api/tx', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...params, wallet: params.wallet ?? account.address }) })
+const buildTx = (params) =>
+  api('/api/tx', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...params, wallet: params.wallet ?? account.address }),
+  })
 
-const ACTION_LABELS = { deposit: 'Deposit', withdraw: 'Withdraw', borrow: 'Borrow', repay: 'Repay', claim: 'Claim rewards', liquidate: 'Liquidate', 'vault-deposit': 'Deposit', 'vault-withdraw': 'Withdraw', 'loop-open': 'Open loop', 'loop-close': 'Full close', 'loop-setup': 'Initialize Kamino metadata' }
-const labelOf = (p) => `${ACTION_LABELS[p.kind]}${p.vault ? ` ${vaultById(p.vault)?.name ?? ''}` : p.token ? ` ${tok(p.token).name}` : ''}`
+const ACTION_LABELS = {
+  deposit: 'Deposit',
+  withdraw: 'Withdraw',
+  borrow: 'Borrow',
+  repay: 'Repay',
+  claim: 'Claim rewards',
+  liquidate: 'Liquidate',
+  'vault-deposit': 'Deposit',
+  'vault-withdraw': 'Withdraw',
+  'loop-open': 'Open loop',
+  'loop-close': 'Full close',
+  'loop-setup': 'Initialize Kamino metadata',
+}
+const labelOf = (p) =>
+  `${ACTION_LABELS[p.kind]}${p.vault ? ` ${vaultById(p.vault)?.name ?? ''}` : p.token ? ` ${tok(p.token).name}` : ''}`
 function trackSuccess(p) {
   if (p.kind === 'claim') event('Rewards claimed', { market: p.market })
-  else if (p.kind.startsWith('vault-')) event(p.kind === 'vault-deposit' ? 'Vault deposit' : 'Vault withdraw', { vault: p.vault })
+  else if (p.kind.startsWith('vault-'))
+    event(p.kind === 'vault-deposit' ? 'Vault deposit' : 'Vault withdraw', { vault: p.vault })
   else if (p.kind === 'liquidate') event('Liquidation', { market: p.market })
   else if (p.token) event(p.kind[0].toUpperCase() + p.kind.slice(1), { token: tok(p.token).name })
 }
@@ -372,19 +473,35 @@ function persistedSwapPending() {
 function swapTerminalFor(pending) {
   if (typeof pending?.reservationId !== 'string' || !pending.signature) return null
   const terminal = safe(() => JSON.parse(localStorage.getItem(`${SWAP_TERMINAL_PREFIX}${pending.reservationId}`)))
-  if (terminal?.reservationId !== pending.reservationId || terminal.signature !== pending.signature
-    || terminal.wallet !== pending.wallet) return null
+  if (
+    terminal?.reservationId !== pending.reservationId ||
+    terminal.signature !== pending.signature ||
+    terminal.wallet !== pending.wallet
+  )
+    return null
   return terminal
 }
 
 function rememberSwapTerminal(pending, outcome) {
-  if (typeof pending?.reservationId !== 'string' || !pending.signature || !pending.wallet
-    || typeof pending.signedTransactionBase64 !== 'string') return
-  localStorage.setItem(`${SWAP_TERMINAL_PREFIX}${pending.reservationId}`, JSON.stringify({
-    reservationId: pending.reservationId, signature: pending.signature, wallet: pending.wallet,
-    status: outcome.status, error: outcome.error ?? null, amountBaseUnits: outcome.amountBaseUnits ?? null,
-    completedAt: Date.now(),
-  }))
+  if (
+    typeof pending?.reservationId !== 'string' ||
+    !pending.signature ||
+    !pending.wallet ||
+    typeof pending.signedTransactionBase64 !== 'string'
+  )
+    return
+  localStorage.setItem(
+    `${SWAP_TERMINAL_PREFIX}${pending.reservationId}`,
+    JSON.stringify({
+      reservationId: pending.reservationId,
+      signature: pending.signature,
+      wallet: pending.wallet,
+      status: outcome.status,
+      error: outcome.error ?? null,
+      amountBaseUnits: outcome.amountBaseUnits ?? null,
+      completedAt: Date.now(),
+    }),
+  )
 }
 
 function writeSwapPending(pending, allowInitial = false) {
@@ -393,8 +510,10 @@ function writeSwapPending(pending, allowInitial = false) {
     throw pendingActionError('A different swap reservation is pending. Reconcile it before continuing.')
   }
   if (!current) {
-    const relayStatusCanUseTerminal = pending?.status === 'submitted' || pending?.status === 'rejected'
-      || (pending?.status === 'relay-unknown' && pending.relayErrorCode === 'RELAY_TRANSPORT_UNKNOWN')
+    const relayStatusCanUseTerminal =
+      pending?.status === 'submitted' ||
+      pending?.status === 'rejected' ||
+      (pending?.status === 'relay-unknown' && pending.relayErrorCode === 'RELAY_TRANSPORT_UNKNOWN')
     const terminal = relayStatusCanUseTerminal ? swapTerminalFor(pending) : null
     if (terminal) return { ...pending, terminalOutcome: terminal }
     if (!allowInitial || !['wallet-prompt', 'awaiting-signature'].includes(pending?.status)) {
@@ -416,8 +535,12 @@ function persistSwapPending(pending) {
 function clearSwapPending(reservationId, signature = null, terminalOutcome = null) {
   return withActionReservationLock(() => {
     const current = persistedSwapPending()
-    if (!current || (reservationId && current.reservationId !== reservationId)
-      || (signature && current.signature !== signature)) return false
+    if (
+      !current ||
+      (reservationId && current.reservationId !== reservationId) ||
+      (signature && current.signature !== signature)
+    )
+      return false
     if (terminalOutcome) rememberSwapTerminal(current, terminalOutcome)
     safe(() => localStorage.removeItem(SWAP_PENDING_KEY))
     state.swapPending = null
@@ -433,15 +556,20 @@ function settleSwapPending(pending, terminalOutcome) {
       if (terminal) return terminal
       throw pendingActionError('The swap reservation was cleared without a matching terminal signature.')
     }
-    if (current.reservationId !== pending.reservationId || current.wallet !== pending.wallet
-      || current.signature !== pending.signature) {
+    if (
+      current.reservationId !== pending.reservationId ||
+      current.wallet !== pending.wallet ||
+      current.signature !== pending.signature
+    ) {
       throw pendingActionError('A different swap reservation or signature is now pending.')
     }
     rememberSwapTerminal(current, terminalOutcome)
     safe(() => localStorage.removeItem(SWAP_PENDING_KEY))
     state.swapPending = null
     return {
-      reservationId: current.reservationId, wallet: current.wallet, ...terminalOutcome,
+      reservationId: current.reservationId,
+      wallet: current.wallet,
+      ...terminalOutcome,
     }
   }, true)
 }
@@ -478,9 +606,18 @@ function startActionBuildLease(id) {
     try {
       const renewed = await withPendingActionLock(() => {
         const pending = persistedLendingPending()
-        if (pending?.reservationId !== id || pending.status !== 'preparing' || pending.phase !== 'building'
-          || !Number.isSafeInteger(pending.leaseExpiresAt) || pending.leaseExpiresAt <= Date.now()) return false
-        persistLendingPending({ ...pending, leaseExpiresAt: Math.max(Date.now() + ACTION_BUILD_LEASE_MS, pending.leaseExpiresAt + 1) })
+        if (
+          pending?.reservationId !== id ||
+          pending.status !== 'preparing' ||
+          pending.phase !== 'building' ||
+          !Number.isSafeInteger(pending.leaseExpiresAt) ||
+          pending.leaseExpiresAt <= Date.now()
+        )
+          return false
+        persistLendingPending({
+          ...pending,
+          leaseExpiresAt: Math.max(Date.now() + ACTION_BUILD_LEASE_MS, pending.leaseExpiresAt + 1),
+        })
         return true
       })
       if (!renewed) {
@@ -517,7 +654,9 @@ function clearLendingPending(signature = null, id = null, expected = null) {
   return withPendingActionLock(() => clearPendingUnderLock(id, signature, expected))
 }
 
-function pendingActionError(message = 'Another action may still be pending. Reconcile it before starting another action.') {
+function pendingActionError(
+  message = 'Another action may still be pending. Reconcile it before starting another action.',
+) {
   const error = new Error(message)
   error.code = 'PENDING_TRANSACTION'
   return error
@@ -526,26 +665,51 @@ function pendingActionError(message = 'Another action may still be pending. Reco
 function actionTerminalFor(pending) {
   if (typeof pending?.reservationId !== 'string' || !pending.signature) return null
   const terminal = safe(() => JSON.parse(localStorage.getItem(`${ACTION_TERMINAL_PREFIX}${pending.reservationId}`)))
-  if (terminal?.reservationId !== pending.reservationId || terminal.signature !== pending.signature
-    || terminal.wallet !== pending.wallet) return null
+  if (
+    terminal?.reservationId !== pending.reservationId ||
+    terminal.signature !== pending.signature ||
+    terminal.wallet !== pending.wallet
+  )
+    return null
   return terminal
 }
 
 function rememberActionTerminal(pending, status, error = null) {
-  if (typeof pending?.reservationId !== 'string' || !pending.signature || !pending.wallet
-    || typeof pending.signedTransactionBase64 !== 'string') return
-  localStorage.setItem(`${ACTION_TERMINAL_PREFIX}${pending.reservationId}`, JSON.stringify({
-    reservationId: pending.reservationId, signature: pending.signature, wallet: pending.wallet,
-    status, error: error ?? null, completedAt: Date.now(),
-  }))
+  if (
+    typeof pending?.reservationId !== 'string' ||
+    !pending.signature ||
+    !pending.wallet ||
+    typeof pending.signedTransactionBase64 !== 'string'
+  )
+    return
+  localStorage.setItem(
+    `${ACTION_TERMINAL_PREFIX}${pending.reservationId}`,
+    JSON.stringify({
+      reservationId: pending.reservationId,
+      signature: pending.signature,
+      wallet: pending.wallet,
+      status,
+      error: error ?? null,
+      completedAt: Date.now(),
+    }),
+  )
 }
 
 function applyActionTerminalToHandoff(pending, terminal) {
   const label = labelOf(pending.params)
   if (terminal.status === 'confirmed') state.handoff = { status: 'success', label, signature: terminal.signature }
-  else if (terminal.status === 'failed') state.handoff = { status: 'error', label, error: `Transaction failed on-chain: ${terminal.error ?? 'Unknown chain error.'}` }
+  else if (terminal.status === 'failed')
+    state.handoff = {
+      status: 'error',
+      label,
+      error: `Transaction failed on-chain: ${terminal.error ?? 'Unknown chain error.'}`,
+    }
   else if (terminal.status === 'setup-confirmed') {
-    state.handoff = { status: 'error', label, error: 'Account setup confirmed. Choose Resume to sign the requested action, or Cancel to stop.' }
+    state.handoff = {
+      status: 'error',
+      label,
+      error: 'Account setup confirmed. Choose Resume to sign the requested action, or Cancel to stop.',
+    }
   }
 }
 
@@ -560,20 +724,27 @@ function settleLendingPending(pending, status, error = null) {
 
 function reservationId() {
   lendingActionReservationSequence++
-  const nonce = safe(() => crypto.randomUUID(), `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`)
+  const nonce = safe(
+    () => crypto.randomUUID(),
+    `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`,
+  )
   return `${Date.now().toString(36)}-${lendingActionReservationSequence.toString(36)}-${nonce}`
 }
 
 function writeActionReservationUnderLock(id, values = {}) {
   const pending = persistedLendingPending()
-  if (pending?.reservationId !== id) throw pendingActionError('The action reservation changed. Reconcile the current transaction before continuing.')
-  if (values.status === 'wallet-prompt'
-    && (pending.status !== 'preparing' || pending.phase !== 'building')) {
+  if (pending?.reservationId !== id)
+    throw pendingActionError('The action reservation changed. Reconcile the current transaction before continuing.')
+  if (values.status === 'wallet-prompt' && (pending.status !== 'preparing' || pending.phase !== 'building')) {
     throw pendingActionError('The build reservation is no longer eligible for wallet signing.')
   }
-  if (values.status === 'preparing'
-    && !(pending.status === 'preparing' && pending.phase === 'building'
-      || pending.status === 'submitted' && pending.final === false)) {
+  if (
+    values.status === 'preparing' &&
+    !(
+      (pending.status === 'preparing' && pending.phase === 'building') ||
+      (pending.status === 'submitted' && pending.final === false)
+    )
+  ) {
     throw pendingActionError('The action reservation cannot return to build state.')
   }
   if (values.status === 'submitted' && pending.status !== 'wallet-prompt') {
@@ -602,8 +773,10 @@ function persistActionPending(id, pending) {
   return withPendingActionLock(() => {
     const current = persistedLendingPending()
     if (current?.reservationId !== id || pending?.reservationId !== id) {
-      const relayStatusCanUseTerminal = pending?.status === 'submitted' || pending?.status === 'rejected'
-        || (pending?.status === 'relay-unknown' && pending.relayErrorCode === 'RELAY_TRANSPORT_UNKNOWN')
+      const relayStatusCanUseTerminal =
+        pending?.status === 'submitted' ||
+        pending?.status === 'rejected' ||
+        (pending?.status === 'relay-unknown' && pending.relayErrorCode === 'RELAY_TRANSPORT_UNKNOWN')
       const terminal = relayStatusCanUseTerminal ? actionTerminalFor(pending) : null
       if (current?.reservationId !== id && pending?.reservationId === id && terminal) {
         applyActionTerminalToHandoff(pending, terminal)
@@ -646,11 +819,22 @@ async function promoteActionReservationToWalletPrompt(id, values = {}) {
 
 function clearPendingUnderLock(id = null, signature = null, expected = null) {
   const pending = persistedLendingPending()
-  if (!pending || (id && pending.reservationId !== id) || (signature && pending.signature !== signature)
-    || (!id && !signature && !expected)) return false
-  if (expected && (pending.status !== expected.status || pending.wallet !== expected.wallet
-    || pending.final !== expected.final || JSON.stringify(pending.params) !== JSON.stringify(expected.params)
-    || pending.reservationId !== expected.reservationId)) return false
+  if (
+    !pending ||
+    (id && pending.reservationId !== id) ||
+    (signature && pending.signature !== signature) ||
+    (!id && !signature && !expected)
+  )
+    return false
+  if (
+    expected &&
+    (pending.status !== expected.status ||
+      pending.wallet !== expected.wallet ||
+      pending.final !== expected.final ||
+      JSON.stringify(pending.params) !== JSON.stringify(expected.params) ||
+      pending.reservationId !== expected.reservationId)
+  )
+    return false
   safe(() => localStorage.removeItem(PENDING_KEY))
   state.lendingPending = null
   state.lendingBuildCancelable = false
@@ -670,7 +854,8 @@ export async function cancelLendingBuildReservation() {
     state.handoff = {
       status: 'error',
       label: labelOf(pending.params ?? { kind: pending.kind }),
-      error: 'The transaction build was interrupted before wallet signing. No transaction was sent. You can retry the action.',
+      error:
+        'The transaction build was interrupted before wallet signing. No transaction was sent. You can retry the action.',
     }
     return true
   })
@@ -680,7 +865,9 @@ export async function cancelLendingBuildReservation() {
 const walletUnauthorized = (error) => error?.code === 4100 || /not been authorized/i.test(error?.message ?? '')
 
 async function reauthorized(request) {
-  try { return await request() } catch (error) {
+  try {
+    return await request()
+  } catch (error) {
     if (!walletUnauthorized(error) || wallet?.deeplink) throw error
     await connectWith(wallet, false)
     return request()
@@ -688,8 +875,14 @@ async function reauthorized(request) {
 }
 
 function definiteWalletRejection(error) {
-  return error?.code === 4001 || error?.code === 'ACTION_REJECTED' || walletUnauthorized(error)
-    || /user rejected|user denied|rejected by (?:the )?user|transaction rejected|cancelled|canceled/i.test(error?.message ?? '')
+  return (
+    error?.code === 4001 ||
+    error?.code === 'ACTION_REJECTED' ||
+    walletUnauthorized(error) ||
+    /user rejected|user denied|rejected by (?:the )?user|transaction rejected|cancelled|canceled/i.test(
+      error?.message ?? '',
+    )
+  )
 }
 
 function preserveUnknownWalletSend(id, error) {
@@ -714,9 +907,14 @@ const swapAge = (pending) => Date.now() - Number.parseInt(String(pending?.reserv
 
 async function settleSwapChainOutcome(signature, pending) {
   const chain = await api(`/api/tx/${signature}`)
-  let classified = pendingSwapChainOutcome({ ...pending, signature }, {
-    ...chain, wallet: pending.wallet, outputMint: pending.outputMint,
-  })
+  let classified = pendingSwapChainOutcome(
+    { ...pending, signature },
+    {
+      ...chain,
+      wallet: pending.wallet,
+      outputMint: pending.outputMint,
+    },
+  )
   // The swap's blockhash expires about 90 s after the build, so a signature the chain still doesn't know can never land.
   if (classified.status === 'pending' && swapAge(pending) > 3 * 60_000) {
     classified = { status: 'failed', signature, error: 'The transaction expired before landing. No funds moved.' }
@@ -725,7 +923,8 @@ async function settleSwapChainOutcome(signature, pending) {
   const terminal = await settleSwapPending(pending, classified)
   const outcome = { ...pending, ...terminal }
   const symbol = (mint) => Object.values(TOKENS).find((t) => t.mint === mint)?.name
-  if (classified.status === 'confirmed') event('Swap', { from: symbol(pending.inputMint), to: symbol(pending.outputMint) })
+  if (classified.status === 'confirmed')
+    event('Swap', { from: symbol(pending.inputMint), to: symbol(pending.outputMint) })
   else event('Transaction failed', { action: 'swap', reason: 'error' })
   state.swapPending = null
   saveSwapOutcome(outcome)
@@ -737,19 +936,22 @@ function applySwapTerminalToHandoff(pending, terminal) {
   const outcome = { ...pending, ...terminal }
   state.swapPending = null
   saveSwapOutcome(outcome)
-  state.handoff = terminal.status === 'confirmed'
-    ? { status: 'success', label: 'Swap', signature: terminal.signature }
-    : { status: 'error', label: 'Swap', error: `Swap failed on-chain: ${terminal.error ?? 'Unknown chain error.'}` }
+  state.handoff =
+    terminal.status === 'confirmed'
+      ? { status: 'success', label: 'Swap', signature: terminal.signature }
+      : { status: 'error', label: 'Swap', error: `Swap failed on-chain: ${terminal.error ?? 'Unknown chain error.'}` }
   return outcome
 }
 
 async function confirmedSwapOutcome(signature, pending) {
-  try { await confirmed(signature) }
-  catch (error) {
+  try {
+    await confirmed(signature)
+  } catch (error) {
     if (!/failed on-chain/i.test(error.message)) throw error
   }
   const outcome = await settleSwapChainOutcome(signature, pending)
-  if (outcome.status === 'pending') throw new Error('Swap signature is still pending. Do not rebuild until its outcome is reconciled.')
+  if (outcome.status === 'pending')
+    throw new Error('Swap signature is still pending. Do not rebuild until its outcome is reconciled.')
   if (outcome.status === 'failed') throw new Error(`Swap failed on-chain: ${outcome.error}`)
   return outcome
 }
@@ -758,8 +960,10 @@ export async function signAndSendSwap({ built, request, outputTokenId, flow, flo
   if (!hasActionReservationLock()) throw actionReservationLockUnavailable()
   if (!wallet || !account || !state.address) throw new Error('Connect a Solana wallet to continue.')
   const signerAddress = account.address
-  if (!built?.tx || !built.intentId || built.expiresAt <= Date.now()) throw new Error('The swap build expired. Build it again before signing.')
-  if (state.address !== request.wallet || signerAddress !== request.wallet) throw new Error('The connected wallet changed after the quote. Build the swap again.')
+  if (!built?.tx || !built.intentId || built.expiresAt <= Date.now())
+    throw new Error('The swap build expired. Build it again before signing.')
+  if (state.address !== request.wallet || signerAddress !== request.wallet)
+    throw new Error('The connected wallet changed after the quote. Build the swap again.')
   const id = reservationId()
   const pending = {
     reservationId: id,
@@ -773,9 +977,19 @@ export async function signAndSendSwap({ built, request, outputTokenId, flow, flo
     stage: flow === 'withdraw-sell' ? 'sell' : 'swap',
   }
   await withActionReservationLock(() => {
-    if (persistedLendingPending()) throw pendingActionError('A lending action may still be pending. Reconcile it before starting a swap.')
-    if (persistedSwapPending()) throw pendingActionError('A previous swap may still be pending. Reconcile it before starting another swap.')
-    writeSwapPending({ ...pending, intentId: built.intentId, tx: built.tx, status: wallet.deeplink ? 'awaiting-signature' : 'wallet-prompt' }, true)
+    if (persistedLendingPending())
+      throw pendingActionError('A lending action may still be pending. Reconcile it before starting a swap.')
+    if (persistedSwapPending())
+      throw pendingActionError('A previous swap may still be pending. Reconcile it before starting another swap.')
+    writeSwapPending(
+      {
+        ...pending,
+        intentId: built.intentId,
+        tx: built.tx,
+        status: wallet.deeplink ? 'awaiting-signature' : 'wallet-prompt',
+      },
+      true,
+    )
   }, true)
   if (wallet.deeplink) {
     state.handoff = { status: 'ready', label: 'Swap', wallet: wallet.name, url: signUrl(built.tx) }
@@ -788,7 +1002,14 @@ export async function signAndSendSwap({ built, request, outputTokenId, flow, flo
   }
   let signed
   try {
-    signed = await reauthorized(() => sign({ account, chain: CHAIN, transaction: fromBase64(built.tx), options: { preflightCommitment: 'confirmed', minContextSlot: built.minContextSlot ?? undefined } }))
+    signed = await reauthorized(() =>
+      sign({
+        account,
+        chain: CHAIN,
+        transaction: fromBase64(built.tx),
+        options: { preflightCommitment: 'confirmed', minContextSlot: built.minContextSlot ?? undefined },
+      }),
+    )
   } catch (error) {
     await clearSwapPending(id) // signTransaction cannot broadcast the transaction
     event('Transaction failed', { action: 'swap', reason: definiteWalletRejection(error) ? 'rejected' : 'error' })
@@ -807,10 +1028,12 @@ export async function signAndSendSwap({ built, request, outputTokenId, flow, flo
     pending: { ...pending, intentId: built.intentId },
     signedTransaction,
     persist: persistSwapPending,
-    relay: async ({ signedTransaction: bytes }) => api('/api/swap-send', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ tx: base64(bytes), wallet: signerAddress, intentId: built.intentId }),
-    }),
+    relay: async ({ signedTransaction: bytes }) =>
+      api('/api/swap-send', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tx: base64(bytes), wallet: signerAddress, intentId: built.intentId }),
+      }),
   })
   if (relayed.terminalOutcome) {
     const outcome = applySwapTerminalToHandoff(pending, relayed.terminalOutcome)
@@ -825,19 +1048,33 @@ export async function signAndSendSwap({ built, request, outputTokenId, flow, flo
   if (relayed.error) throw relayed.error
   return confirmedSwapOutcome(relayed.pending.signature, relayed.pending)
 }
-async function deeplinkStep(params, { resumeFromSetupSignature = null, reservationId: actionReservationId = null } = {}) {
+async function deeplinkStep(
+  params,
+  { resumeFromSetupSignature = null, reservationId: actionReservationId = null } = {},
+) {
   const built = await buildTx(params)
   const intentExpiresAt = params.loopAction ? built?.expiresAt : built?.intentExpiresAt
   if (!built?.intentId || !Number.isFinite(intentExpiresAt) || intentExpiresAt <= Date.now()) {
     throw new Error('The transaction authorization expired before wallet signing. Build it again.')
   }
-  if (state.address !== params.wallet || account?.address !== params.wallet) throw new Error('The connected wallet changed while the transaction was being prepared.')
-  if (resumeFromSetupSignature && !canResumeSetupRecovery(persistedSetupRecovery(), persistedLendingPending(), resumeFromSetupSignature, actionReservationId)) {
+  if (state.address !== params.wallet || account?.address !== params.wallet)
+    throw new Error('The connected wallet changed while the transaction was being prepared.')
+  if (
+    resumeFromSetupSignature &&
+    !canResumeSetupRecovery(
+      persistedSetupRecovery(),
+      persistedLendingPending(),
+      resumeFromSetupSignature,
+      actionReservationId,
+    )
+  ) {
     throw new Error('Confirmed account setup changed while the action was being prepared.')
   }
   assertCanStartLendingAction(persistedLendingPending(), params, resumeFromSetupSignature, actionReservationId)
   await promoteActionReservationToWalletPrompt(actionReservationId, {
-    final: built.final, status: 'awaiting-signature', phase: 'wallet-prompt',
+    final: built.final,
+    status: 'awaiting-signature',
+    phase: 'wallet-prompt',
     setupRecoverySignature: resumeFromSetupSignature,
     intentId: built.intentId,
   })
@@ -845,7 +1082,12 @@ async function deeplinkStep(params, { resumeFromSetupSignature = null, reservati
     await clearActionReservation(actionReservationId)
     throw new Error('The connected wallet changed before the wallet handoff opened.')
   }
-  state.handoff = { status: 'ready', label: labelOf(params) + (built.final ? '' : ' · account setup (1 of 2)'), wallet: wallet.name, url: signUrl(built.tx) }
+  state.handoff = {
+    status: 'ready',
+    label: labelOf(params) + (built.final ? '' : ' · account setup (1 of 2)'),
+    wallet: wallet.name,
+    url: signUrl(built.tx),
+  }
 }
 export async function cancelHandoff() {
   const lendingPending = persistedLendingPending()
@@ -862,7 +1104,8 @@ export async function cancelHandoff() {
   const pendingSwap = safe(() => JSON.parse(localStorage.getItem(SWAP_PENDING_KEY)))
   if (pendingSwap?.status === 'awaiting-signature') {
     try {
-      if (!await clearSwapPending(pendingSwap.reservationId)) throw pendingActionError('The swap handoff changed before it could be cancelled.')
+      if (!(await clearSwapPending(pendingSwap.reservationId)))
+        throw pendingActionError('The swap handoff changed before it could be cancelled.')
     } catch (error) {
       state.handoff = { status: 'error', label: 'Swap', error: error.message }
       return false
@@ -874,17 +1117,27 @@ export async function cancelHandoff() {
   cancelPending = null
   return true
 }
-export const dismissHandoff = () => { state.handoff = null }
+export const dismissHandoff = () => {
+  state.handoff = null
+}
 
 export async function resumeLendingSetupRecovery() {
   const recovery = persistedSetupRecovery()
   const activePending = persistedLendingPending()
   if (!canResumeSetupRecovery(recovery, activePending, recovery?.signature)) {
-    state.handoff = { status: 'error', label: 'Account setup', error: 'Resolve the current transaction before resuming account setup.' }
+    state.handoff = {
+      status: 'error',
+      label: 'Account setup',
+      error: 'Resolve the current transaction before resuming account setup.',
+    }
     return false
   }
   if (!wallet || !account || state.address !== recovery.wallet || account.address !== recovery.wallet) {
-    state.handoff = { status: 'error', label: labelOf(recovery.params), error: 'Reconnect the wallet that confirmed account setup to continue.' }
+    state.handoff = {
+      status: 'error',
+      label: labelOf(recovery.params),
+      error: 'Reconnect the wallet that confirmed account setup to continue.',
+    }
     return false
   }
   if (state.setupRecoveryBusy) return false
@@ -905,7 +1158,11 @@ export async function resumeLendingSetupRecovery() {
       },
     })
     if (continuation.mode === null) {
-      state.handoff = { status: 'error', label: labelOf(recovery.params), error: 'Reconnect a wallet with transaction signing to resume account setup.' }
+      state.handoff = {
+        status: 'error',
+        label: labelOf(recovery.params),
+        error: 'Reconnect a wallet with transaction signing to resume account setup.',
+      }
       return false
     }
     if (continuation.mode === 'deeplink') return true
@@ -920,7 +1177,11 @@ export async function resumeLendingSetupRecovery() {
       const rejected = /reject|cancel/i.test(error?.message)
       await saveLendingFlowOutcome(recovery.params, rejected ? 'rejected' : 'failed').catch(() => {})
     }
-    state.handoff = { status: 'error', label: labelOf(recovery.params), error: error?.message ?? 'The wallet did not complete the action. You can resume or cancel account setup.' }
+    state.handoff = {
+      status: 'error',
+      label: labelOf(recovery.params),
+      error: error?.message ?? 'The wallet did not complete the action. You can resume or cancel account setup.',
+    }
     return false
   } finally {
     state.setupRecoveryBusy = false
@@ -932,14 +1193,19 @@ export function cancelLendingSetupRecovery() {
   const activePending = persistedLendingPending()
   const cancellation = cancelConfirmedSetupRecovery(recovery, activePending)
   if (!cancellation) {
-    state.handoff = { status: 'error', label: 'Account setup', error: 'A transaction is still unresolved. Reconcile it before cancelling setup recovery.' }
+    state.handoff = {
+      status: 'error',
+      label: 'Account setup',
+      error: 'A transaction is still unresolved. Reconcile it before cancelling setup recovery.',
+    }
     return false
   }
   const currentOutcome = state.swapOutcome
-  const sameFlowOutcome = currentOutcome?.wallet === cancellation.outcome?.wallet
-    && currentOutcome?.flow === cancellation.outcome?.flow
-    && currentOutcome?.stage === cancellation.outcome?.stage
-    && currentOutcome?.market === cancellation.outcome?.market
+  const sameFlowOutcome =
+    currentOutcome?.wallet === cancellation.outcome?.wallet &&
+    currentOutcome?.flow === cancellation.outcome?.flow &&
+    currentOutcome?.stage === cancellation.outcome?.stage &&
+    currentOutcome?.market === cancellation.outcome?.market
   if (cancellation.outcome && (!currentOutcome || sameFlowOutcome || state.address === cancellation.outcome.wallet)) {
     saveSwapOutcome(cancellation.outcome)
   }
@@ -958,8 +1224,13 @@ async function saveLendingFlowOutcome(params, status, signature = null) {
   if (status === 'confirmed' && params.swapFlowStage === 'withdraw') {
     try {
       const transaction = signature ? await api(`/api/tx/${signature}`) : null
-      if (state.address !== walletAddress || account?.address !== walletAddress
-        || params.market !== market || params.token !== token) return
+      if (
+        state.address !== walletAddress ||
+        account?.address !== walletAddress ||
+        params.market !== market ||
+        params.token !== token
+      )
+        return
       amountBaseUnits = confirmedSwapAmountFromTransaction(transaction, walletAddress, tok(params.token).mint)
     } catch {
       finalStatus = 'confirmed-amount-unknown'
@@ -983,7 +1254,7 @@ async function resumeDeeplink(ret) {
   const swapPending = safe(() => JSON.parse(localStorage.getItem(SWAP_PENDING_KEY)))
   if (swapPending?.status === 'awaiting-signature') {
     if (ret.error) {
-      if (!await clearSwapPending(swapPending.reservationId)) return
+      if (!(await clearSwapPending(swapPending.reservationId))) return
       saveSwapOutcome({ ...swapPending, status: 'rejected' })
       event('Transaction failed', { action: 'swap', reason: 'rejected' })
       state.handoff = { status: 'error', label: 'Swap', error: ret.error }
@@ -999,10 +1270,16 @@ async function resumeDeeplink(ret) {
         pending: swapPending,
         signedTransaction: fromBase64(ret.signed),
         persist: persistSwapPending,
-        relay: async ({ signedTransaction }) => api('/api/swap-send', {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ tx: base64(signedTransaction), wallet: state.address, intentId: swapPending.intentId }),
-        }),
+        relay: async ({ signedTransaction }) =>
+          api('/api/swap-send', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              tx: base64(signedTransaction),
+              wallet: state.address,
+              intentId: swapPending.intentId,
+            }),
+          }),
       })
       if (relayed.terminalOutcome) {
         applySwapTerminalToHandoff(swapPending, relayed.terminalOutcome)
@@ -1014,13 +1291,19 @@ async function resumeDeeplink(ret) {
         throw relayed.error
       }
       if (relayed.error) {
-        state.handoff = { status: 'error', label: 'Swap', error: 'Relay outcome is unknown. Keep this page open while Nysa checks the signed transaction before allowing another swap.' }
+        state.handoff = {
+          status: 'error',
+          label: 'Swap',
+          error:
+            'Relay outcome is unknown. Keep this page open while Nysa checks the signed transaction before allowing another swap.',
+        }
         return
       }
       const outcome = await confirmedSwapOutcome(relayed.pending.signature, relayed.pending)
-      state.handoff = outcome.status === 'confirmed'
-        ? { status: 'success', label: 'Swap', signature: relayed.pending.signature }
-        : { status: 'error', label: 'Swap', error: outcome.error }
+      state.handoff =
+        outcome.status === 'confirmed'
+          ? { status: 'success', label: 'Swap', signature: relayed.pending.signature }
+          : { status: 'error', label: 'Swap', error: outcome.error }
       saveSwapOutcome(outcome)
     } catch (error) {
       state.handoff = { status: 'error', label: 'Swap', error: error.message }
@@ -1050,7 +1333,11 @@ async function resumeDeeplink(ret) {
     return
   }
   if (state.address !== pending.wallet || account?.address !== pending.wallet) {
-    state.handoff = { status: 'error', label, error: 'Reconnect the wallet that signed this transaction before Nysa can relay it.' }
+    state.handoff = {
+      status: 'error',
+      label,
+      error: 'Reconnect the wallet that signed this transaction before Nysa can relay it.',
+    }
     return
   }
   state.handoff = { status: 'sending', label }
@@ -1059,10 +1346,12 @@ async function resumeDeeplink(ret) {
       pending,
       signedTransaction: fromBase64(ret.signed),
       persist: (next) => persistActionPending(pending.reservationId, next),
-      relay: async ({ signedTransaction }) => api(params.loopAction ? '/api/loop-send' : '/api/tx/send', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ tx: base64(signedTransaction), wallet: pending.wallet, intentId: pending.intentId }),
-      }),
+      relay: async ({ signedTransaction }) =>
+        api(params.loopAction ? '/api/loop-send' : '/api/tx/send', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tx: base64(signedTransaction), wallet: pending.wallet, intentId: pending.intentId }),
+        }),
     })
     if (state.address !== pending.wallet || account?.address !== pending.wallet) return
     if (relayed.terminalOutcome) {
@@ -1073,11 +1362,20 @@ async function resumeDeeplink(ret) {
       const cleared = await clearLendingPending(relayed.pending.signature, relayed.pending.reservationId)
       if (!cleared) return
       if (params?.swapFlow) await saveLendingFlowOutcome(params, 'rejected', relayed.pending.signature).catch(() => {})
-      state.handoff = { status: 'error', label, error: relayed.error?.message ?? 'The transaction was refused before relay.' }
+      state.handoff = {
+        status: 'error',
+        label,
+        error: relayed.error?.message ?? 'The transaction was refused before relay.',
+      }
       return
     }
     if (relayed.error) {
-      state.handoff = { status: 'error', label, error: 'Relay outcome is unknown. Keep this page open while Nysa checks the signed transaction before allowing another action.' }
+      state.handoff = {
+        status: 'error',
+        label,
+        error:
+          'Relay outcome is unknown. Keep this page open while Nysa checks the signed transaction before allowing another action.',
+      }
       return
     }
     await reconcilePendingLendingFlow()
@@ -1091,40 +1389,70 @@ async function reconcilePendingSwap() {
   if (reconcilingSwap) return
   const pending = safe(() => JSON.parse(localStorage.getItem(SWAP_PENDING_KEY)))
   // Never signed (the page reloaded while the wallet prompt was open): the server refuses its 15 s intent, so it can't land.
-  if (pending && !pending.signature && ['wallet-prompt', 'awaiting-signature'].includes(pending.status) && swapAge(pending) > 60_000) {
+  if (
+    pending &&
+    !pending.signature &&
+    ['wallet-prompt', 'awaiting-signature'].includes(pending.status) &&
+    swapAge(pending) > 60_000
+  ) {
     await clearSwapPending(pending.reservationId)
     return
   }
-  if (!['submitted', 'signed-pending', 'relay-unknown'].includes(pending?.status) || !pending.signature || state.address !== pending.wallet) return
+  if (
+    !['submitted', 'signed-pending', 'relay-unknown'].includes(pending?.status) ||
+    !pending.signature ||
+    state.address !== pending.wallet
+  )
+    return
   state.swapPending = pending
   reconcilingSwap = true
   try {
     const outcome = await settleSwapChainOutcome(pending.signature, pending)
-    if (outcome.status === 'failed') state.handoff = { status: 'error', label: 'Swap', error: `Swap failed on-chain: ${outcome.error}` }
-    else if (outcome.status === 'confirmed') state.handoff = { status: 'success', label: 'Swap', signature: pending.signature }
-  } catch (error) { console.warn('[swap] pending reconciliation unavailable', error?.message) }
-  finally { reconcilingSwap = false }
+    if (outcome.status === 'failed')
+      state.handoff = { status: 'error', label: 'Swap', error: `Swap failed on-chain: ${outcome.error}` }
+    else if (outcome.status === 'confirmed')
+      state.handoff = { status: 'success', label: 'Swap', signature: pending.signature }
+  } catch (error) {
+    console.warn('[swap] pending reconciliation unavailable', error?.message)
+  } finally {
+    reconcilingSwap = false
+  }
 }
 
 async function reconcilePendingLendingFlow() {
   // The action running in this page confirms its own transaction and shows its own result; this is for one left over.
   if (reconcilingLending || state.lendingActionBusy) return
   const pending = persistedLendingPending()
-  if (!['signed-pending', 'submitted', 'relay-unknown', 'setup-confirmed'].includes(pending?.status)
-    || !pending.signature || state.address !== pending.wallet || account?.address !== pending.wallet) return
+  if (
+    !['signed-pending', 'submitted', 'relay-unknown', 'setup-confirmed'].includes(pending?.status) ||
+    !pending.signature ||
+    state.address !== pending.wallet ||
+    account?.address !== pending.wallet
+  )
+    return
   reconcilingLending = true
   try {
-    const chain = pending.status === 'setup-confirmed' ? { status: 'confirmed' } : await api(`/api/tx/${pending.signature}`)
+    const chain =
+      pending.status === 'setup-confirmed' ? { status: 'confirmed' } : await api(`/api/tx/${pending.signature}`)
     const current = persistedLendingPending()
-    if (!pendingTransactionMatches(pending, current, state.address)
-      || account?.address !== pending.wallet || current?.market !== pending.market || current?.kind !== pending.kind) return
+    if (
+      !pendingTransactionMatches(pending, current, state.address) ||
+      account?.address !== pending.wallet ||
+      current?.market !== pending.market ||
+      current?.kind !== pending.kind
+    )
+      return
     const outcome = classifyPendingTransaction(pending, chain)
     if (outcome.status === 'pending') return
     if (outcome.status === 'failed') {
       const cleared = await settleLendingPending(pending, 'failed', outcome.error)
       if (!cleared) return
       if (pending.params?.swapFlow) await saveLendingFlowOutcome(pending.params, 'failed', pending.signature)
-      state.handoff = { status: 'error', label: labelOf(pending.params), error: `Transaction failed on-chain: ${outcome.error}` }
+      state.handoff = {
+        status: 'error',
+        label: labelOf(pending.params),
+        error: `Transaction failed on-chain: ${outcome.error}`,
+      }
       return
     }
     if (outcome.status === 'setup-confirmed') {
@@ -1132,15 +1460,30 @@ async function reconcilePendingLendingFlow() {
       const cleared = await settleLendingPending(pending, 'setup-confirmed')
       if (!cleared) return
       persistSetupRecovery(recovery)
-      state.handoff = { status: 'error', label: labelOf(pending.params), error: 'Account setup confirmed. Choose Resume to sign the requested action, or Cancel to stop.' }
+      state.handoff = {
+        status: 'error',
+        label: labelOf(pending.params),
+        error: 'Account setup confirmed. Choose Resume to sign the requested action, or Cancel to stop.',
+      }
       return
     }
     if (pending.params?.loopAction && pending.kind === 'loop-close') {
       const accountSnapshot = await loadAccount(true)
-      if (!accountSnapshot || !loopPositionFullyClosed(accountSnapshot.loopPositions, pending.params.positionId, accountSnapshot.loopPositionReadStatus, pending.params.market)) {
+      if (
+        !accountSnapshot ||
+        !loopPositionFullyClosed(
+          accountSnapshot.loopPositions,
+          pending.params.positionId,
+          accountSnapshot.loopPositionReadStatus,
+          pending.params.market,
+        )
+      ) {
         state.handoff = {
-          status: 'error', label: labelOf(pending.params), signature: pending.signature,
-          error: 'The close signature is confirmed, but the selected position still has debt or collateral. Nysa will keep reconciling it before allowing another action.',
+          status: 'error',
+          label: labelOf(pending.params),
+          signature: pending.signature,
+          error:
+            'The close signature is confirmed, but the selected position still has debt or collateral. Nysa will keep reconciling it before allowing another action.',
         }
         return
       }
@@ -1156,34 +1499,55 @@ async function reconcilePendingLendingFlow() {
   } catch (error) {
     const stillRecorded = persistedLendingPending()
     if (stillRecorded) {
-      state.handoff = { status: 'error', label: labelOf(pending.params), error: 'The transaction may still be pending. Nysa will keep checking its signature before another action is allowed.' }
+      state.handoff = {
+        status: 'error',
+        label: labelOf(pending.params),
+        error:
+          'The transaction may still be pending. Nysa will keep checking its signature before another action is allowed.',
+      }
     }
     console.warn('[lending flow] pending reconciliation unavailable', error?.message)
+  } finally {
+    reconcilingLending = false
   }
-  finally { reconcilingLending = false }
 }
 
 // Only once Surfpool proves the signature absent and its blockhash expired.
 export async function reconcileLocalPendingAction() {
   const pending = persistedLendingPending()
-  if (!pending || !['signed-pending', 'submitted', 'relay-unknown'].includes(pending.status)
-    || typeof pending.signedTransactionBase64 !== 'string' || !pending.signature || !pending.wallet) return false
+  if (
+    !pending ||
+    !['signed-pending', 'submitted', 'relay-unknown'].includes(pending.status) ||
+    typeof pending.signedTransactionBase64 !== 'string' ||
+    !pending.signature ||
+    !pending.wallet
+  )
+    return false
   const result = await api('/api/tx/reconcile-local', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ wallet: pending.wallet, signature: pending.signature, tx: pending.signedTransactionBase64 }),
   })
   if (result.status === 'pending') {
-    state.handoff = { status: 'error', label: labelOf(pending.params), signature: pending.signature,
-      error: 'Surfpool still considers this signed transaction valid. Nysa will keep reconciling it.' }
+    state.handoff = {
+      status: 'error',
+      label: labelOf(pending.params),
+      signature: pending.signature,
+      error: 'Surfpool still considers this signed transaction valid. Nysa will keep reconciling it.',
+    }
     return false
   }
   if (result.status === 'confirmed') {
     await reconcilePendingLendingFlow()
     return true
   }
-  if (result.status !== 'failed' || !await settleLendingPending(pending, 'failed', result.error)) return false
-  state.handoff = { status: 'error', label: labelOf(pending.params), signature: pending.signature,
-    error: `Local transaction dropped safely: ${result.error}` }
+  if (result.status !== 'failed' || !(await settleLendingPending(pending, 'failed', result.error))) return false
+  state.handoff = {
+    status: 'error',
+    label: labelOf(pending.params),
+    signature: pending.signature,
+    error: `Local transaction dropped safely: ${result.error}`,
+  }
   await loadAccount(true)
   return true
 }
@@ -1191,16 +1555,28 @@ export async function reconcileLocalPendingAction() {
 async function reconcileConfirmedFlowAmount() {
   if (reconcilingFlowAmount) return
   const pending = state.swapOutcome
-  if (pending?.status !== 'confirmed-amount-unknown' || pending.stage !== 'withdraw'
-    || !pending.signature || state.address !== pending.wallet) return
+  if (
+    pending?.status !== 'confirmed-amount-unknown' ||
+    pending.stage !== 'withdraw' ||
+    !pending.signature ||
+    state.address !== pending.wallet
+  )
+    return
   reconcilingFlowAmount = true
   try {
     const transaction = await api(`/api/tx/${pending.signature}`)
-    const amountBaseUnits = confirmedSwapAmountFromTransaction(transaction, pending.wallet, tok(pending.token ?? 'svm-usdy').mint)
+    const amountBaseUnits = confirmedSwapAmountFromTransaction(
+      transaction,
+      pending.wallet,
+      tok(pending.token ?? 'svm-usdy').mint,
+    )
     if (state.address !== pending.wallet || state.swapOutcome?.signature !== pending.signature) return
     saveSwapOutcome({ ...pending, status: 'confirmed', amountBaseUnits })
-  } catch (error) { console.warn('[swap flow] confirmed amount reconciliation unavailable', error?.message) }
-  finally { reconcilingFlowAmount = false }
+  } catch (error) {
+    console.warn('[swap flow] confirmed amount reconciliation unavailable', error?.message)
+  } finally {
+    reconcilingFlowAmount = false
+  }
 }
 
 async function reconcileActivePendingTransactions() {
@@ -1211,7 +1587,10 @@ async function reconcileActivePendingTransactions() {
 }
 
 // First-time setup comes back as a separate transaction (final: false): send it, wait, then ask for the action.
-async function runAction(params, { resumeFromSetupSignature = null, handoffOnly = false, verifyConfirmed = null } = {}) {
+async function runAction(
+  params,
+  { resumeFromSetupSignature = null, handoffOnly = false, verifyConfirmed = null } = {},
+) {
   if (activeLendingActionReservation) throw pendingActionError()
   const id = reservationId()
   activeLendingActionReservation = { reservationId: id, params }
@@ -1220,7 +1599,10 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
   let owner
   try {
     if (!wallet || !account) throw new Error('Connect a Solana wallet to continue.')
-    if (state.sol === 0) throw new Error('This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.')
+    if (state.sol === 0)
+      throw new Error(
+        'This wallet needs a little SOL for Solana network fees and new account rent: add about 0.01 SOL (0.05 before a first supply or borrow) and try again.',
+      )
     if (state.setupRecoveryBusy && !resumeFromSetupSignature) {
       throw pendingActionError('An account setup action is being resumed. Finish or cancel that action first.')
     }
@@ -1228,10 +1610,20 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
     params = { ...params, wallet: owner }
     let resumeSignature = resumeFromSetupSignature
     const reservation = {
-      reservationId: id, createdAt: Date.now(), leaseExpiresAt: Date.now() + ACTION_BUILD_LEASE_MS,
-      wallet: owner, params, final: null, market: params.market, kind: params.kind,
-      flow: params.swapFlow ?? null, stage: params.swapFlowStage ?? null,
-      signature: null, status: 'preparing', phase: 'building', setupRecoverySignature: resumeSignature,
+      reservationId: id,
+      createdAt: Date.now(),
+      leaseExpiresAt: Date.now() + ACTION_BUILD_LEASE_MS,
+      wallet: owner,
+      params,
+      final: null,
+      market: params.market,
+      kind: params.kind,
+      flow: params.swapFlow ?? null,
+      stage: params.swapFlowStage ?? null,
+      signature: null,
+      status: 'preparing',
+      phase: 'building',
+      setupRecoverySignature: resumeSignature,
     }
     await withActionReservationLock(() => {
       assertNoPendingSwapAction()
@@ -1252,29 +1644,43 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
       // The page leaves for the wallet app from the handoff card; this promise only settles if the user cancels.
       await deeplinkStep(params, { resumeFromSetupSignature: resumeSignature, reservationId: id })
       if (handoffOnly) return null
-      return await new Promise((_, reject) => { cancelPending = reject })
+      return await new Promise((_, reject) => {
+        cancelPending = reject
+      })
     }
 
     let minSlot = 0
     for (let step = 0; step < 3; step++) {
-      await updateActionReservation(id, { status: 'preparing', phase: 'building', setupRecoverySignature: resumeSignature })
+      await updateActionReservation(id, {
+        status: 'preparing',
+        phase: 'building',
+        setupRecoverySignature: resumeSignature,
+      })
       const built = await buildTx(params)
       const intentExpiresAt = params.loopAction ? built?.expiresAt : built?.intentExpiresAt
-      if ((params.loopAction || (params.swapFlow && params.swapFlowStage))
-        && (!built?.intentId || !Number.isFinite(intentExpiresAt) || intentExpiresAt <= Date.now())) {
+      if (
+        (params.loopAction || (params.swapFlow && params.swapFlowStage)) &&
+        (!built?.intentId || !Number.isFinite(intentExpiresAt) || intentExpiresAt <= Date.now())
+      ) {
         throw new Error('The transaction authorization expired before wallet signing. Build it again.')
       }
-      if (state.address !== owner || account?.address !== owner) throw new Error('The connected wallet changed while the transaction was being prepared.')
-      if (resumeSignature && !canResumeSetupRecovery(persistedSetupRecovery(), persistedLendingPending(), resumeSignature, id)) {
+      if (state.address !== owner || account?.address !== owner)
+        throw new Error('The connected wallet changed while the transaction was being prepared.')
+      if (
+        resumeSignature &&
+        !canResumeSetupRecovery(persistedSetupRecovery(), persistedLendingPending(), resumeSignature, id)
+      ) {
         throw pendingActionError('Confirmed account setup changed while the action was being prepared.')
       }
       assertCanStartLendingAction(persistedLendingPending(), params, resumeSignature, id)
       // Flows (exact build intent) and, on a local fork, every action: the wallet would send it to mainnet, not the fork.
       if (params.loopAction || (params.swapFlow && params.swapFlowStage) || state.localFork) {
         const sign = wallet.features['solana:signTransaction']?.signTransaction
-        if (typeof sign !== 'function') throw new Error('This wallet cannot safely sign a recoverable Nysa flow transaction.')
+        if (typeof sign !== 'function')
+          throw new Error('This wallet cannot safely sign a recoverable Nysa flow transaction.')
         await promoteActionReservationToWalletPrompt(id, {
-          phase: 'wallet-sign', final: built.final,
+          phase: 'wallet-sign',
+          final: built.final,
           intentId: built.intentId,
         })
         if (state.address !== owner || account?.address !== owner) {
@@ -1283,7 +1689,12 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
         }
         let signed
         try {
-          signed = await sign({ account, chain: CHAIN, transaction: fromBase64(built.tx), options: { preflightCommitment: 'confirmed', minContextSlot: Math.max(built.minContextSlot ?? 0, minSlot) } })
+          signed = await sign({
+            account,
+            chain: CHAIN,
+            transaction: fromBase64(built.tx),
+            options: { preflightCommitment: 'confirmed', minContextSlot: Math.max(built.minContextSlot ?? 0, minSlot) },
+          })
         } catch (error) {
           await clearActionReservation(id) // signTransaction cannot broadcast the transaction
           throw error
@@ -1297,26 +1708,39 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
           await clearActionReservation(id)
           throw new Error('The connected wallet changed while the transaction was being signed.')
         }
-        if (resumeSignature && !canResumeSetupRecovery(persistedSetupRecovery(), persistedLendingPending(), resumeSignature, id)) {
+        if (
+          resumeSignature &&
+          !canResumeSetupRecovery(persistedSetupRecovery(), persistedLendingPending(), resumeSignature, id)
+        ) {
           await clearActionReservation(id)
           throw pendingActionError('Confirmed account setup changed while the action was being signed.')
         }
         assertCanStartLendingAction(persistedLendingPending(), params, resumeSignature, id)
         const pending = {
-          ...reservation, wallet: owner, params, final: built.final, market: params.market, kind: params.kind,
-          flow: params.swapFlow, stage: params.swapFlowStage, setupRecoverySignature: resumeSignature,
+          ...reservation,
+          wallet: owner,
+          params,
+          final: built.final,
+          market: params.market,
+          kind: params.kind,
+          flow: params.swapFlow,
+          stage: params.swapFlowStage,
+          setupRecoverySignature: resumeSignature,
           intentId: built.intentId,
         }
         const relayed = await persistSignedSwapBeforeRelay({
           pending,
           signedTransaction,
           persist: (next) => persistActionPending(id, next),
-          relay: async ({ signedTransaction: bytes }) => api(params.loopAction ? '/api/loop-send' : '/api/tx/send', {
-            method: 'POST', headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ tx: base64(bytes), wallet: owner, intentId: built.intentId }),
-          }),
+          relay: async ({ signedTransaction: bytes }) =>
+            api(params.loopAction ? '/api/loop-send' : '/api/tx/send', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ tx: base64(bytes), wallet: owner, intentId: built.intentId }),
+            }),
         })
-        if (state.address !== owner || account?.address !== owner) throw new Error('The connected wallet changed while the transaction was being relayed.')
+        if (state.address !== owner || account?.address !== owner)
+          throw new Error('The connected wallet changed while the transaction was being relayed.')
         if (relayed.pending.status === 'rejected') {
           await clearActionReservation(id)
           const error = new Error(relayed.error?.message ?? 'The transaction was refused before relay.')
@@ -1324,20 +1748,31 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
           error.status = relayed.error?.status ?? 400
           throw error
         }
-        if (relayed.error) throw pendingActionError('Relay outcome is unknown. Reconcile the signed transaction before retrying.')
-        try { minSlot = await confirmed(relayed.pending.signature) }
-        catch (error) {
+        if (relayed.error)
+          throw pendingActionError('Relay outcome is unknown. Reconcile the signed transaction before retrying.')
+        try {
+          minSlot = await confirmed(relayed.pending.signature)
+        } catch (error) {
           if (/failed on-chain/i.test(error.message)) await clearActionReservation(id)
           throw error
         }
-        if (state.address !== owner || account?.address !== owner) throw new Error('The connected wallet changed while the transaction was confirming.')
+        if (state.address !== owner || account?.address !== owner)
+          throw new Error('The connected wallet changed while the transaction was confirming.')
         if (built.final) {
-          if (typeof verifyConfirmed === 'function' && await verifyConfirmed({ signature: relayed.pending.signature }) !== true) {
+          if (
+            typeof verifyConfirmed === 'function' &&
+            (await verifyConfirmed({ signature: relayed.pending.signature })) !== true
+          ) {
             state.handoff = {
-              status: 'error', label: labelOf(params), signature: relayed.pending.signature,
-              error: 'The transaction is confirmed, but its final position state is not verified. Nysa will keep reconciling before allowing another action.',
+              status: 'error',
+              label: labelOf(params),
+              signature: relayed.pending.signature,
+              error:
+                'The transaction is confirmed, but its final position state is not verified. Nysa will keep reconciling before allowing another action.',
             }
-            throw pendingActionError('The transaction is confirmed, but the selected loop position has not verified a full close. Reconcile it before retrying.')
+            throw pendingActionError(
+              'The transaction is confirmed, but the selected loop position has not verified a full close. Reconcile it before retrying.',
+            )
           }
           await clearActionReservation(id)
           if (resumeSignature) clearSetupRecovery(resumeSignature)
@@ -1345,7 +1780,13 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
         }
         resumeSignature = relayed.pending.signature
         persistSetupRecovery(markSetupTransactionConfirmed(relayed.pending))
-        await updateActionReservation(id, { signature: null, final: null, status: 'preparing', phase: 'building', setupRecoverySignature: resumeSignature })
+        await updateActionReservation(id, {
+          signature: null,
+          final: null,
+          status: 'preparing',
+          phase: 'building',
+          setupRecoverySignature: resumeSignature,
+        })
         continue
       }
 
@@ -1359,10 +1800,14 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
       }
       let sent
       try {
-        sent = await reauthorized(() => send({
-          account, chain: CHAIN, transaction: fromBase64(built.tx),
-          options: { preflightCommitment: 'confirmed', minContextSlot: Math.max(built.minContextSlot, minSlot) },
-        }))
+        sent = await reauthorized(() =>
+          send({
+            account,
+            chain: CHAIN,
+            transaction: fromBase64(built.tx),
+            options: { preflightCommitment: 'confirmed', minContextSlot: Math.max(built.minContextSlot, minSlot) },
+          }),
+        )
       } catch (error) {
         if (definiteWalletRejection(error)) await clearActionReservation(id)
         else {
@@ -1372,23 +1817,37 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
         throw error
       }
       let sig
-      try { sig = getBase58Decoder().decode(sent?.[0]?.signature) }
-      catch (error) {
+      try {
+        sig = getBase58Decoder().decode(sent?.[0]?.signature)
+      } catch (error) {
         await preserveUnknownWalletSend(id, error)
-        throw pendingActionError('Wallet returned no usable signature. Send outcome is unknown; reconcile before retrying.')
+        throw pendingActionError(
+          'Wallet returned no usable signature. Send outcome is unknown; reconcile before retrying.',
+        )
       }
       const pending = await updateActionReservation(id, {
-        wallet: owner, params, final: built.final, market: params.market, kind: params.kind,
-        flow: params.swapFlow ?? null, stage: params.swapFlowStage ?? null,
-        signature: sig, status: 'submitted', phase: 'submitted', setupRecoverySignature: resumeSignature,
+        wallet: owner,
+        params,
+        final: built.final,
+        market: params.market,
+        kind: params.kind,
+        flow: params.swapFlow ?? null,
+        stage: params.swapFlowStage ?? null,
+        signature: sig,
+        status: 'submitted',
+        phase: 'submitted',
+        setupRecoverySignature: resumeSignature,
       })
-      if (state.address !== owner || account?.address !== owner) throw new Error('The connected wallet changed after sending; the signature is saved for reconciliation.')
-      try { minSlot = await confirmed(sig) }
-      catch (error) {
+      if (state.address !== owner || account?.address !== owner)
+        throw new Error('The connected wallet changed after sending; the signature is saved for reconciliation.')
+      try {
+        minSlot = await confirmed(sig)
+      } catch (error) {
         if (/failed on-chain/i.test(error.message)) await clearActionReservation(id)
         throw error
       }
-      if (state.address !== owner || account?.address !== owner) throw new Error('The connected wallet changed while the transaction was confirming.')
+      if (state.address !== owner || account?.address !== owner)
+        throw new Error('The connected wallet changed while the transaction was confirming.')
       if (built.final) {
         await clearActionReservation(id)
         if (resumeSignature) clearSetupRecovery(resumeSignature)
@@ -1396,14 +1855,22 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
       }
       resumeSignature = sig
       persistSetupRecovery(markSetupTransactionConfirmed(pending))
-      await updateActionReservation(id, { signature: null, final: null, status: 'preparing', phase: 'building', setupRecoverySignature: resumeSignature })
+      await updateActionReservation(id, {
+        signature: null,
+        final: null,
+        status: 'preparing',
+        phase: 'building',
+        setupRecoverySignature: resumeSignature,
+      })
     }
     throw new Error('Account setup did not complete, please try again')
   } catch (error) {
     const pending = persistedLendingPending()
-    if (pending?.reservationId === id
-      && ((pending.status === 'preparing' && pending.phase === 'building')
-        || (pending.status === 'wallet-prompt' && pending.phase === 'wallet-sign'))) {
+    if (
+      pending?.reservationId === id &&
+      ((pending.status === 'preparing' && pending.phase === 'building') ||
+        (pending.status === 'wallet-prompt' && pending.phase === 'wallet-sign'))
+    ) {
       await clearActionReservation(id) // no economic transaction was sent on this path
     }
     throw error
@@ -1415,9 +1882,24 @@ async function runAction(params, { resumeFromSetupSignature = null, handoffOnly 
   }
 }
 
-export async function sendKaminoAction(kind, { market, token, amount, amountBaseUnits, all, swapFlow, swapFlowStage, flowAmountBaseUnits, beforeBalanceBaseUnits }) {
+export async function sendKaminoAction(
+  kind,
+  { market, token, amount, amountBaseUnits, all, swapFlow, swapFlowStage, flowAmountBaseUnits, beforeBalanceBaseUnits },
+) {
   const walletAddress = account?.address
-  const params = { wallet: walletAddress, kind, market: market.id, token: token.token_id, amount, amountBaseUnits, all, swapFlow, swapFlowStage, flowAmountBaseUnits, beforeBalanceBaseUnits }
+  const params = {
+    wallet: walletAddress,
+    kind,
+    market: market.id,
+    token: token.token_id,
+    amount,
+    amountBaseUnits,
+    all,
+    swapFlow,
+    swapFlowStage,
+    flowAmountBaseUnits,
+    beforeBalanceBaseUnits,
+  }
   try {
     const sig = await runAction(params)
     trackSuccess(params)
@@ -1426,9 +1908,13 @@ export async function sendKaminoAction(kind, { market, token, amount, amountBase
   } catch (e) {
     if (e?.code === 'PENDING_TRANSACTION' || e?.code === 'ACTION_RESERVATION_LOCK_UNAVAILABLE') throw e
     const pending = persistedLendingPending()
-    const stillPending = pending?.wallet === walletAddress && pending?.params?.swapFlow === swapFlow
-      && pending?.params?.swapFlowStage === swapFlowStage
-      && ['preparing', 'wallet-prompt', 'awaiting-signature', 'signed-pending', 'submitted', 'relay-unknown'].includes(pending.status)
+    const stillPending =
+      pending?.wallet === walletAddress &&
+      pending?.params?.swapFlow === swapFlow &&
+      pending?.params?.swapFlowStage === swapFlowStage &&
+      ['preparing', 'wallet-prompt', 'awaiting-signature', 'signed-pending', 'submitted', 'relay-unknown'].includes(
+        pending.status,
+      )
     if (params.swapFlow && !stillPending) {
       const rejected = e?.code === 'TRANSACTION_REJECTED' || /reject|cancel/i.test(e?.message)
       await saveLendingFlowOutcome(params, rejected ? 'rejected' : 'failed').catch(() => {})
@@ -1438,23 +1924,50 @@ export async function sendKaminoAction(kind, { market, token, amount, amountBase
   }
 }
 
-export async function sendLoopAction(kind, { market, amount, leverage, previewId, acknowledgementKey, positionId } = {}) {
+export async function sendLoopAction(
+  kind,
+  { market, amount, leverage, previewId, acknowledgementKey, positionId } = {},
+) {
   if (!['loop-open', 'loop-close'].includes(kind)) throw new Error('Unsupported loop action.')
   const walletAddress = account?.address
-  const params = { wallet: walletAddress, kind, market, amount, leverage, previewId, acknowledgementKey, positionId, loopAction: true }
+  const params = {
+    wallet: walletAddress,
+    kind,
+    market,
+    amount,
+    leverage,
+    previewId,
+    acknowledgementKey,
+    positionId,
+    loopAction: true,
+  }
   try {
     const signature = await runAction(params, {
-      verifyConfirmed: kind === 'loop-close' ? async () => {
-        const accountSnapshot = await loadAccount(true)
-        return !!accountSnapshot && loopPositionFullyClosed(accountSnapshot.loopPositions, positionId, accountSnapshot.loopPositionReadStatus, market)
-      } : null,
+      verifyConfirmed:
+        kind === 'loop-close'
+          ? async () => {
+              const accountSnapshot = await loadAccount(true)
+              return (
+                !!accountSnapshot &&
+                loopPositionFullyClosed(
+                  accountSnapshot.loopPositions,
+                  positionId,
+                  accountSnapshot.loopPositionReadStatus,
+                  market,
+                )
+              )
+            }
+          : null,
     })
     event(kind === 'loop-open' ? 'Multiply loop opened' : 'Multiply loop fully closed', { market })
     await loadAccount(true)
     return signature
   } catch (error) {
     if (error?.code === 'PENDING_TRANSACTION' || error?.code === 'ACTION_RESERVATION_LOCK_UNAVAILABLE') throw error
-    event('Transaction failed', { action: kind, reason: /reject|cancel/i.test(error?.message ?? '') ? 'rejected' : 'error' })
+    event('Transaction failed', {
+      action: kind,
+      reason: /reject|cancel/i.test(error?.message ?? '') ? 'rejected' : 'error',
+    })
     throw error
   }
 }
@@ -1469,7 +1982,9 @@ export async function sendLoopSetup({ market } = {}) {
     return signature
   } catch (error) {
     if (error?.code === 'PENDING_TRANSACTION' || error?.code === 'ACTION_RESERVATION_LOCK_UNAVAILABLE') throw error
-    event('Kamino metadata setup failed', { reason: /reject|cancel/i.test(error?.message ?? '') ? 'rejected' : 'error' })
+    event('Kamino metadata setup failed', {
+      reason: /reject|cancel/i.test(error?.message ?? '') ? 'rejected' : 'error',
+    })
     throw error
   }
 }
@@ -1480,7 +1995,10 @@ async function act(params) {
     trackSuccess(params)
     return sig
   } catch (e) {
-    event('Transaction failed', { action: params.kind, reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error' })
+    event('Transaction failed', {
+      action: params.kind,
+      reason: /reject|cancel/i.test(e?.message) ? 'rejected' : 'error',
+    })
     throw e
   }
 }
@@ -1497,14 +2015,30 @@ export const liquidate = (market, borrower, amount) => act({ kind: 'liquidate', 
 let pointsReq = null
 export function loadPoints() {
   pointsReq ??= fetch('/api/points', { headers: { accept: 'text/csv' } })
-    .then((res) => { if (!res.ok) throw new Error(`Points source responded ${res.status}`); return res.text() })
-    .then((csv) => { state.points.board = parsePoints(csv); state.points.error = null })
-    .catch((e) => { state.points.error = e.message || 'Could not load Farm Points.'; pointsReq = null })
+    .then((res) => {
+      if (!res.ok) throw new Error(`Points source responded ${res.status}`)
+      return res.text()
+    })
+    .then((csv) => {
+      state.points.board = parsePoints(csv)
+      state.points.error = null
+    })
+    .catch((e) => {
+      state.points.error = e.message || 'Could not load Farm Points.'
+      pointsReq = null
+    })
   return pointsReq
 }
 export const myPoints = () => state.points.board?.rows.find((r) => r.address === state.address) ?? null
 
-const once = (path) => { let req = null; return () => (req ??= api(path).catch((e) => { req = null; throw e })) }
+const once = (path) => {
+  let req = null
+  return () =>
+    (req ??= api(path).catch((e) => {
+      req = null
+      throw e
+    }))
+}
 export const loadApyHistory = once('/api/apy-history')
 export const loadMarketUpdates = once('/api/market-updates')
 
@@ -1522,15 +2056,18 @@ export function start() {
   loadSwapVisibility()
   const ret = readDeeplinkReturn()
   if (ret) skipNextPageview()
-  if (ret?.action === 'connect' && ret.error) state.handoff = { status: 'error', label: 'Connect wallet', error: ret.error }
+  if (ret?.action === 'connect' && ret.error)
+    state.handoff = { status: 'error', label: 'Connect wallet', error: ret.error }
   else if (ret?.action === 'connect') {
     setAccount(deeplinkWallet(ret.wallet), { address: ret.address })
     event('Wallet connected', { wallet: ret.wallet, via: 'ios-app' })
   }
-  eagerConnect().then(async () => {
-    if (ret?.action === 'sign') await resumeDeeplink(ret)
-    await reconcileActivePendingTransactions()
-  }).catch((error) => console.warn('[wallet] reconnect failed', error?.message))
+  eagerConnect()
+    .then(async () => {
+      if (ret?.action === 'sign') await resumeDeeplink(ret)
+      await reconcileActivePendingTransactions()
+    })
+    .catch((error) => console.warn('[wallet] reconnect failed', error?.message))
   setInterval(() => document.visibilityState === 'visible' && loadAccount(), ACCOUNT_REFRESH_MS)
   stopActiveReconciliation = startVisibleReconciliationLoop({
     reconcile: reconcileActivePendingTransactions,
@@ -1551,15 +2088,22 @@ export function useTx() {
     reset: () => Object.assign(tx, { status: 'idle', steps: [], i: 0, error: null, signature: null, note: null }),
     async run(steps) {
       if (tx.status === 'running') return false
-      Object.assign(tx, { status: 'running', steps: steps.map((s) => s.label), i: 0, error: null, signature: null, note: null })
+      Object.assign(tx, {
+        status: 'running',
+        steps: steps.map((s) => s.label),
+        i: 0,
+        error: null,
+        signature: null,
+        note: null,
+      })
       for (const [i, s] of steps.entries()) {
         tx.i = i
         try {
           const sig = await s.run()
           if (typeof sig === 'string') tx.signature = sig
         } catch (e) {
-          if (e?.message === 'Transaction cancelled') return (tx.status = 'idle', false) // the user's own Cancel on the wallet sheet
-          tx.error = `${s.label} — ${/reject/i.test(e?.message) ? 'Transaction rejected in your wallet.' : e?.message ?? 'Transaction failed'}`
+          if (e?.message === 'Transaction cancelled') return ((tx.status = 'idle'), false) // the user's own Cancel on the wallet sheet
+          tx.error = `${s.label} — ${/reject/i.test(e?.message) ? 'Transaction rejected in your wallet.' : (e?.message ?? 'Transaction failed')}`
           tx.status = 'error'
           loadAccount(true)
           return false

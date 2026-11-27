@@ -10,7 +10,7 @@ import { FEE_BPS, feeAccountEnv } from './swap.js'
 
 const addrDecoder = getAddressDecoder()
 
-const publicAddress = (value) => typeof value === 'string' && isAddress(value) ? value : null
+const publicAddress = (value) => (typeof value === 'string' && isAddress(value) ? value : null)
 
 // Fee receivers are public configuration; this metadata performs no chain reads and never returns RPC settings.
 export function getFeeReceiverMetadata({ env = process.env, rpcUrl = RPC_URL } = {}) {
@@ -19,11 +19,20 @@ export function getFeeReceiverMetadata({ env = process.env, rpcUrl = RPC_URL } =
     network: local ? 'surfpool-local' : isLoopbackRpc(rpcUrl) ? 'unknown' : 'mainnet',
     feeBps: FEE_BPS,
     treasuryAuthority: publicAddress(env.SWAP_FEE_TREASURY_AUTHORITY),
-    accounts: swapTokens.map((t) => ({ tokenId: t.token_id, mint: t.mint, address: publicAddress(env[feeAccountEnv(t)]) })),
+    accounts: swapTokens.map((t) => ({
+      tokenId: t.token_id,
+      mint: t.mint,
+      address: publicAddress(env[feeAccountEnv(t)]),
+    })),
   }
 }
 
-export async function readPositions({ indexReader = freshIndex, markets = LIVE, marketReader = getLive, summarize = indexedPositionSummary } = {}) {
+export async function readPositions({
+  indexReader = freshIndex,
+  markets = LIVE,
+  marketReader = getLive,
+  summarize = indexedPositionSummary,
+} = {}) {
   const index = await indexReader()
   const out = []
   for (const m of markets) {
@@ -50,9 +59,15 @@ export async function readPositions({ indexReader = freshIndex, markets = LIVE, 
 // which catches shares moved to another wallet. Alchemy refuses a getProgramAccounts scan of the Token program.
 async function readHolders(v, index) {
   const live = getVault(v.id)
-  const largest = (await rpc.getTokenLargestAccounts(live.state.sharesMint).send()).value
-    .filter((a) => Number(a.amount) > 0 && String(a.address) !== String(live.farm?.state.farmVault)) // farm's own account: counted per staker
-  const accounts = largest.length ? await fetchEncodedAccounts(rpc, largest.map((a) => a.address)) : []
+  const largest = (await rpc.getTokenLargestAccounts(live.state.sharesMint).send()).value.filter(
+    (a) => Number(a.amount) > 0 && String(a.address) !== String(live.farm?.state.farmVault),
+  ) // farm's own account: counted per staker
+  const accounts = largest.length
+    ? await fetchEncodedAccounts(
+        rpc,
+        largest.map((a) => a.address),
+      )
+    : []
   const owners = new Set(index.vaultUsers?.[v.address] ?? [])
   for (const a of accounts) if (a.exists) owners.add(addrDecoder.decode(a.data.subarray(32, 64)))
   return [...(await vaultShares(live, [...owners])).entries()]
@@ -62,15 +77,21 @@ async function readHolders(v, index) {
 }
 
 function cachedFor(ms, read) {
-  let cached = null, cachedAt = 0
+  let cached = null,
+    cachedAt = 0
   const get = () => {
     if (!cached || Date.now() - cachedAt > ms) {
       cachedAt = Date.now()
-      cached = read().catch((e) => { cached = null; throw e })
+      cached = read().catch((e) => {
+        cached = null
+        throw e
+      })
     }
     return cached
   }
-  get.clear = () => { cached = null }
+  get.clear = () => {
+    cached = null
+  }
   return get
 }
 export const getPositions = cachedFor(60_000, readPositions)

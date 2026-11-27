@@ -8,13 +8,19 @@ const decimal = (value) => {
   try {
     const parsed = new Decimal(String(value))
     return parsed.isFinite() ? parsed : null
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical)
   if (!value || typeof value !== 'object') return value
-  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]))
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .map((key) => [key, canonical(value[key])]),
+  )
 }
 
 function carryTimestamp(value) {
@@ -26,20 +32,33 @@ function carryTimestamp(value) {
 // sources stay the same, it moves by at most 0.25 percentage points, its acknowledgement need is unchanged and both
 // reads stay fresh.
 const RATE_FIELDS = ['collateralSupplyAprPct', 'collateralNativeApyPct', 'liabilityBorrowAprPct']
-const sources = (assumptions) => assumptions && Object.fromEntries(Object.entries(assumptions).filter(([key]) => !RATE_FIELDS.includes(key)))
+const sources = (assumptions) =>
+  assumptions && Object.fromEntries(Object.entries(assumptions).filter(([key]) => !RATE_FIELDS.includes(key)))
 export function loopCarryStillCurrent(previewCarry, currentCarry, now = Date.now()) {
   if (!previewCarry || !currentCarry || !Number.isFinite(now)) return false
-  const previewPct = decimal(previewCarry.estimatedCarryPct), currentPct = decimal(currentCarry.estimatedCarryPct)
-  if (JSON.stringify(canonical(sources(previewCarry.assumptions ?? null))) !== JSON.stringify(canonical(sources(currentCarry.assumptions ?? null)))
-    || !previewPct || !currentPct || previewPct.minus(currentPct).abs().gt(0.25)
-    || (previewCarry.requiresAcknowledgement === true) !== (currentCarry.requiresAcknowledgement === true)) return false
+  const previewPct = decimal(previewCarry.estimatedCarryPct),
+    currentPct = decimal(currentCarry.estimatedCarryPct)
+  if (
+    JSON.stringify(canonical(sources(previewCarry.assumptions ?? null))) !==
+      JSON.stringify(canonical(sources(currentCarry.assumptions ?? null))) ||
+    !previewPct ||
+    !currentPct ||
+    previewPct.minus(currentPct).abs().gt(0.25) ||
+    (previewCarry.requiresAcknowledgement === true) !== (currentCarry.requiresAcknowledgement === true)
+  )
+    return false
   const previewAt = carryTimestamp(previewCarry.asOf)
   const currentAt = carryTimestamp(currentCarry.asOf)
-  return Number.isFinite(previewAt) && Number.isFinite(currentAt)
-    && previewAt > 0 && currentAt >= previewAt
-    && previewAt <= now && currentAt <= now
-    && now - previewAt <= LOOP_PREVIEW_MAX_AGE_MS
-    && now - currentAt <= LOOP_PREVIEW_MAX_AGE_MS
+  return (
+    Number.isFinite(previewAt) &&
+    Number.isFinite(currentAt) &&
+    previewAt > 0 &&
+    currentAt >= previewAt &&
+    previewAt <= now &&
+    currentAt <= now &&
+    now - previewAt <= LOOP_PREVIEW_MAX_AGE_MS &&
+    now - currentAt <= LOOP_PREVIEW_MAX_AGE_MS
+  )
 }
 
 export function loopMarketRiskFromSnapshot(snapshot, marketId) {
@@ -62,16 +81,26 @@ export function loopMarketRiskFromSnapshot(snapshot, marketId) {
 function validOracle(timestamp, heartbeat, nowSeconds) {
   const ts = decimal(timestamp)
   const age = decimal(heartbeat)
-  return !!ts && !!age && age.gt(0) && Number.isFinite(nowSeconds)
-    && ts.lte(nowSeconds) && new Decimal(nowSeconds).minus(ts).lte(age)
+  return (
+    !!ts &&
+    !!age &&
+    age.gt(0) &&
+    Number.isFinite(nowSeconds) &&
+    ts.lte(nowSeconds) &&
+    new Decimal(nowSeconds).minus(ts).lte(age)
+  )
 }
 
 // Both live reserve oracles must be inside their heartbeats.
 export function loopMarketRiskStillCurrent(previewRisk, currentRisk, nowSeconds) {
   if (!previewRisk || !currentRisk || !Number.isFinite(nowSeconds)) return false
   const identityFields = [
-    'collateralPriceUsd', 'liabilityPriceUsd', 'maxBorrowLtvPct', 'liquidationLtvPct',
-    'collateralOracleHeartbeatSeconds', 'liabilityOracleHeartbeatSeconds',
+    'collateralPriceUsd',
+    'liabilityPriceUsd',
+    'maxBorrowLtvPct',
+    'liquidationLtvPct',
+    'collateralOracleHeartbeatSeconds',
+    'liabilityOracleHeartbeatSeconds',
   ]
   for (const field of identityFields) {
     const previewValue = decimal(previewRisk[field])
@@ -84,8 +113,15 @@ export function loopMarketRiskStillCurrent(previewRisk, currentRisk, nowSeconds)
     } else if (!previewValue.eq(currentValue)) return false
   }
   if (!decimal(currentRisk.collateralPriceUsd)?.gt(0) || !decimal(currentRisk.liabilityPriceUsd)?.gt(0)) return false
-  if (!decimal(currentRisk.maxBorrowLtvPct)?.gt(0) || !decimal(currentRisk.liquidationLtvPct)?.gt(0)
-    || !decimal(currentRisk.maxBorrowLtvPct)?.lte(100) || !decimal(currentRisk.liquidationLtvPct)?.lte(100)) return false
-  return validOracle(currentRisk.collateralOracleTimestamp, currentRisk.collateralOracleHeartbeatSeconds, nowSeconds)
-    && validOracle(currentRisk.liabilityOracleTimestamp, currentRisk.liabilityOracleHeartbeatSeconds, nowSeconds)
+  if (
+    !decimal(currentRisk.maxBorrowLtvPct)?.gt(0) ||
+    !decimal(currentRisk.liquidationLtvPct)?.gt(0) ||
+    !decimal(currentRisk.maxBorrowLtvPct)?.lte(100) ||
+    !decimal(currentRisk.liquidationLtvPct)?.lte(100)
+  )
+    return false
+  return (
+    validOracle(currentRisk.collateralOracleTimestamp, currentRisk.collateralOracleHeartbeatSeconds, nowSeconds) &&
+    validOracle(currentRisk.liabilityOracleTimestamp, currentRisk.liabilityOracleHeartbeatSeconds, nowSeconds)
+  )
 }

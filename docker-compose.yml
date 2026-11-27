@@ -70,7 +70,7 @@ services:
   # --- Plausible Analytics (Community Edition), from github.com/plausible/community-edition ---
   # On the "analytics" network only: the app and Caddy cannot reach it, and it cannot reach them.
   plausible:
-    image: ghcr.io/plausible/community-edition:v3.2.1
+    image: ghcr.io/plausible/community-edition:v3.2.2
     command: sh -c "/entrypoint.sh db createdb && /entrypoint.sh db migrate && /entrypoint.sh run"
     depends_on:
       plausible_db: { condition: service_healthy }

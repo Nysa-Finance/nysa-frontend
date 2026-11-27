@@ -3,9 +3,15 @@ import Decimal from 'decimal.js'
 import { address, createNoopSigner, none, some } from '@solana/kit'
 import { fetchAddressLookupTable } from '@solana-program/address-lookup-table'
 import {
-  getDepositWithLeverageIxs, getDepositWithLeverageSwapInputs,
-  getWithdrawWithLeverageIxs, getWithdrawWithLeverageSwapInputs,
-  getObligationType, KaminoAction, KaminoObligation, PROGRAM_ID, UserMetadata,
+  getDepositWithLeverageIxs,
+  getDepositWithLeverageSwapInputs,
+  getWithdrawWithLeverageIxs,
+  getWithdrawWithLeverageSwapInputs,
+  getObligationType,
+  KaminoAction,
+  KaminoObligation,
+  PROGRAM_ID,
+  UserMetadata,
   ObligationTypeTag,
 } from '@kamino-finance/klend-sdk'
 import { DEFAULT_LOOP_LIMITS, loopExposure, projectedLtvLimitPct } from '../src/loop-policy.js'
@@ -43,7 +49,9 @@ function assertCurrentLoopMarketRisk(previewRisk, fresh) {
   const risk = loopSdkMarketRisk(fresh.collateralReserve, fresh.liabilityReserve)
   const nowSeconds = Number(fresh.currentLedgerInstant?.blockTime)
   if (!loopMarketRiskStillCurrent(previewRisk, risk, nowSeconds)) {
-    throw new LoopPreviewError(`Fresh oracle or market risk assumptions changed or are outside their reserve heartbeat; build a fresh preview. ${JSON.stringify({ preview: previewRisk, current: risk, nowSeconds })}`)
+    throw new LoopPreviewError(
+      `Fresh oracle or market risk assumptions changed or are outside their reserve heartbeat; build a fresh preview. ${JSON.stringify({ preview: previewRisk, current: risk, nowSeconds })}`,
+    )
   }
   return risk
 }
@@ -55,33 +63,54 @@ function withinOneBaseUnit(left, right) {
 }
 
 function loopRoutesMatchWithinRounding(expected, built) {
-  if (!expected || !built || expected.inputMint !== built.inputMint || expected.outputMint !== built.outputMint
-    || expected.feeAccount !== built.feeAccount || expected.feeAccountMint !== built.feeAccountMint
-    || expected.fee?.bps !== built.fee?.bps || expected.fee?.mint !== built.fee?.mint
-    || expected.fee?.amountBaseUnits !== built.fee?.amountBaseUnits || expected.fee?.routeDeltaVerified !== true
-    || built.fee?.routeDeltaVerified !== true || expected.feeAccountMintVerified !== true || built.feeAccountMintVerified !== true
-    || !withinOneBaseUnit(expected.inputAmountBaseUnits, built.inputAmountBaseUnits)
-    || !withinOneBaseUnit(expected.outputAmountBaseUnits, built.outputAmountBaseUnits)
-    || !withinOneBaseUnit(expected.minimumOutputBaseUnits, built.minimumOutputBaseUnits)
-    || !Array.isArray(expected.routePlan) || !Array.isArray(built.routePlan)
-    || expected.routePlan.length !== built.routePlan.length) return false
+  if (
+    !expected ||
+    !built ||
+    expected.inputMint !== built.inputMint ||
+    expected.outputMint !== built.outputMint ||
+    expected.feeAccount !== built.feeAccount ||
+    expected.feeAccountMint !== built.feeAccountMint ||
+    expected.fee?.bps !== built.fee?.bps ||
+    expected.fee?.mint !== built.fee?.mint ||
+    expected.fee?.amountBaseUnits !== built.fee?.amountBaseUnits ||
+    expected.fee?.routeDeltaVerified !== true ||
+    built.fee?.routeDeltaVerified !== true ||
+    expected.feeAccountMintVerified !== true ||
+    built.feeAccountMintVerified !== true ||
+    !withinOneBaseUnit(expected.inputAmountBaseUnits, built.inputAmountBaseUnits) ||
+    !withinOneBaseUnit(expected.outputAmountBaseUnits, built.outputAmountBaseUnits) ||
+    !withinOneBaseUnit(expected.minimumOutputBaseUnits, built.minimumOutputBaseUnits) ||
+    !Array.isArray(expected.routePlan) ||
+    !Array.isArray(built.routePlan) ||
+    expected.routePlan.length !== built.routePlan.length
+  )
+    return false
   return expected.routePlan.every((hop, index) => {
     const actual = built.routePlan[index]
-    return hop.label === actual?.label && hop.ammKey === actual?.ammKey
-      && hop.inputMint === actual?.inputMint && hop.outputMint === actual?.outputMint
-      && hop.percent === actual?.percent
+    return (
+      hop.label === actual?.label &&
+      hop.ammKey === actual?.ammKey &&
+      hop.inputMint === actual?.inputMint &&
+      hop.outputMint === actual?.outputMint &&
+      hop.percent === actual?.percent
+    )
   })
 }
 
 // Kamino's `slippagePct` is in percentage points (0.5 means 50 bps), unlike the router's basis-point field.
 export function sdkSlippagePctFromBps(slippageBps) {
-  if (!Number.isSafeInteger(slippageBps) || slippageBps < 0 || slippageBps > 10_000) throw new LoopPreviewError('Invalid Kamino slippage basis points.')
+  if (!Number.isSafeInteger(slippageBps) || slippageBps < 0 || slippageBps > 10_000)
+    throw new LoopPreviewError('Invalid Kamino slippage basis points.')
   return new Decimal(slippageBps).div(100)
 }
 
 function rawAmount(value) {
   let amount
-  try { amount = new Decimal(value).floor() } catch { throw new LoopPreviewError('Invalid swap amount.') }
+  try {
+    amount = new Decimal(value).floor()
+  } catch {
+    throw new LoopPreviewError('Invalid swap amount.')
+  }
   if (!amount.isFinite() || amount.lte(0) || !amount.isInteger()) throw new LoopPreviewError('Invalid swap amount.')
   return amount.toFixed(0)
 }
@@ -94,8 +123,13 @@ function tokenDecimals(mint, configured) {
 
 function positiveDecimal(value, label, allowZero = false) {
   let parsed
-  try { parsed = new PreciseDecimal(String(value)) } catch { throw new LoopPreviewError(`Invalid ${label}.`) }
-  if (!parsed.isFinite() || (allowZero ? parsed.isNegative() : !parsed.gt(0))) throw new LoopPreviewError(`Invalid ${label}.`)
+  try {
+    parsed = new PreciseDecimal(String(value))
+  } catch {
+    throw new LoopPreviewError(`Invalid ${label}.`)
+  }
+  if (!parsed.isFinite() || (allowZero ? parsed.isNegative() : !parsed.gt(0)))
+    throw new LoopPreviewError(`Invalid ${label}.`)
   return parsed
 }
 
@@ -106,7 +140,11 @@ function decimalText(value) {
 // Kamino's getDepositByReserve/getBorrowByReserve amounts are raw mint base units.
 export function obligationRawAmountBaseUnits(value) {
   let amount
-  try { amount = new PreciseDecimal(String(value)) } catch { throw new LoopPreviewError('Invalid raw obligation amount.') }
+  try {
+    amount = new PreciseDecimal(String(value))
+  } catch {
+    throw new LoopPreviewError('Invalid raw obligation amount.')
+  }
   if (!amount.isFinite() || amount.isNegative()) throw new LoopPreviewError('Invalid raw obligation amount.')
   return BigInt(amount.ceil().toFixed(0)).toString()
 }
@@ -123,8 +161,11 @@ export function sdkAmountBaseUnitsWithProtocolRounding(value, decimals, directio
 }
 
 export function sdkAmountWithProtocolRounding(value, decimals, direction) {
-  return decimalText(new PreciseDecimal(sdkAmountBaseUnitsWithProtocolRounding(value, decimals, direction))
-    .div(new PreciseDecimal(10).pow(decimals)))
+  return decimalText(
+    new PreciseDecimal(sdkAmountBaseUnitsWithProtocolRounding(value, decimals, direction)).div(
+      new PreciseDecimal(10).pow(decimals),
+    ),
+  )
 }
 
 // Same rounding as the installed SDK: raw borrow, exclusive protocol fee, half-up origination fee.
@@ -134,7 +175,10 @@ export function sdkBorrowDebtBaseUnitsWithProtocolFee(value, decimals, market, r
   }
   const receivedBaseUnits = sdkAmountBaseUnitsWithProtocolRounding(value, decimals, 'ceil')
   const debtWithFees = KaminoObligation.getDebtWithFeesForBorrowAmount(
-    new PreciseDecimal(receivedBaseUnits), market, reserve, hasReferrer,
+    new PreciseDecimal(receivedBaseUnits),
+    market,
+    reserve,
+    hasReferrer,
   )
   return obligationRawAmountBaseUnits(debtWithFees)
 }
@@ -166,18 +210,30 @@ function assertSupportedLoopObligationReserves(obligation, collateralReserveAddr
     const reserve = String(deposit.depositReserve)
     if (reserve === DEFAULT_RESERVE_ADDRESS) continue
     let amount
-    try { amount = BigInt(String(deposit.depositedAmount)) } catch { throw new LoopPreviewError('Multiply collateral reserve state is invalid.') }
+    try {
+      amount = BigInt(String(deposit.depositedAmount))
+    } catch {
+      throw new LoopPreviewError('Multiply collateral reserve state is invalid.')
+    }
     if (amount > 0n && reserve !== String(collateralReserveAddress)) {
-      throw new LoopPreviewError('Full close does not support extra active collateral reserves in this Multiply obligation.')
+      throw new LoopPreviewError(
+        'Full close does not support extra active collateral reserves in this Multiply obligation.',
+      )
     }
   }
   for (const borrow of obligation.state.borrows) {
     const reserve = String(borrow.borrowReserve)
     if (reserve === DEFAULT_RESERVE_ADDRESS) continue
     let amount
-    try { amount = BigInt(String(borrow.borrowedAmountSf)) } catch { throw new LoopPreviewError('Multiply debt reserve state is invalid.') }
+    try {
+      amount = BigInt(String(borrow.borrowedAmountSf))
+    } catch {
+      throw new LoopPreviewError('Multiply debt reserve state is invalid.')
+    }
     if (amount > 0n && reserve !== String(liabilityReserveAddress)) {
-      throw new LoopPreviewError('Full close does not support extra active borrow reserves in this Multiply obligation.')
+      throw new LoopPreviewError(
+        'Full close does not support extra active borrow reserves in this Multiply obligation.',
+      )
     }
   }
 }
@@ -192,10 +248,13 @@ export function obligationSimulationBalances(obligation) {
     const cTokenBaseUnits = String(deposit.depositedAmount)
     if (!/^\d+$/.test(cTokenBaseUnits)) throw new LoopPreviewError('Simulated obligation cToken amount is invalid.')
     const hydrated = obligation.getDepositByReserve(address(reserve))?.amount
-    return [{
-      reserve, cTokenBaseUnits: BigInt(cTokenBaseUnits).toString(),
-      amountBaseUnits: hydrated == null ? null : new PreciseDecimal(String(hydrated)).toString(),
-    }]
+    return [
+      {
+        reserve,
+        cTokenBaseUnits: BigInt(cTokenBaseUnits).toString(),
+        amountBaseUnits: hydrated == null ? null : new PreciseDecimal(String(hydrated)).toString(),
+      },
+    ]
   })
   const borrows = obligation.state.borrows.flatMap((borrow) => {
     const reserve = String(borrow.borrowReserve)
@@ -203,10 +262,13 @@ export function obligationSimulationBalances(obligation) {
     const amountScaled = String(borrow.borrowedAmountSf)
     if (!/^\d+$/.test(amountScaled)) throw new LoopPreviewError('Simulated obligation debt amount is invalid.')
     const hydrated = obligation.getBorrowByReserve(address(reserve))?.amount
-    return [{
-      reserve, amountScaled: BigInt(amountScaled).toString(),
-      amountBaseUnits: hydrated == null ? null : new PreciseDecimal(String(hydrated)).toString(),
-    }]
+    return [
+      {
+        reserve,
+        amountScaled: BigInt(amountScaled).toString(),
+        amountBaseUnits: hydrated == null ? null : new PreciseDecimal(String(hydrated)).toString(),
+      },
+    ]
   })
   return { deposits, borrows }
 }
@@ -214,14 +276,29 @@ export function obligationSimulationBalances(obligation) {
 function canonicalize(value) {
   if (typeof value === 'bigint') return value.toString()
   if (Array.isArray(value)) return value.map(canonicalize)
-  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().flatMap((key) =>
-    value[key] === undefined ? [] : [[key, canonicalize(value[key])]]))
+  if (value && typeof value === 'object')
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .flatMap((key) => (value[key] === undefined ? [] : [[key, canonicalize(value[key])]])),
+    )
   return value
 }
 
-export function createLoopAcknowledgementKey({ strategy, fundingAmount, leverage, leverageQuote, preview, sdkPosition, policyVersion = LOOP_ACK_POLICY_VERSION }) {
+export function createLoopAcknowledgementKey({
+  strategy,
+  fundingAmount,
+  leverage,
+  leverageQuote,
+  preview,
+  sdkPosition,
+  policyVersion = LOOP_ACK_POLICY_VERSION,
+}) {
   if (!strategy?.carry?.requiresAcknowledgement || !sdkPosition || !leverageQuote) return null
-  const fundingBaseUnits = parseBaseUnits(String(fundingAmount), TOKENS[loopByMarket(strategy.id)?.collateral ?? 'svm-usdc'].decimals).toString()
+  const fundingBaseUnits = parseBaseUnits(
+    String(fundingAmount),
+    TOKENS[loopByMarket(strategy.id)?.collateral ?? 'svm-usdc'].decimals,
+  ).toString()
   const signedPreview = {
     policyVersion,
     marketId: strategy.id,
@@ -245,7 +322,9 @@ export function createLoopAcknowledgementKey({ strategy, fundingAmount, leverage
       feeTotalUsd: preview.feeTotalUsd,
     },
   }
-  return createHash('sha256').update(JSON.stringify(canonicalize(signedPreview))).digest('hex')
+  return createHash('sha256')
+    .update(JSON.stringify(canonicalize(signedPreview)))
+    .digest('hex')
 }
 
 function sdkPositionExposure(position) {
@@ -257,7 +336,8 @@ function sdkPositionExposure(position) {
   const collateralValue = collateralAmount.mul(collateralPriceUsd)
   const debtAmount = debtBorrowAmount.mul(new PreciseDecimal(1).add(borrowFeeRatio))
   const debt = debtAmount.mul(liabilityPriceUsd)
-  if (!collateralValue.gt(0) || !debt.lt(collateralValue)) throw new LoopPreviewError('SDK position has no positive collateral equity.')
+  if (!collateralValue.gt(0) || !debt.lt(collateralValue))
+    throw new LoopPreviewError('SDK position has no positive collateral equity.')
   const equity = collateralValue.minus(debt)
   const projectedLtvPct = debt.div(collateralValue).mul(100)
   return {
@@ -283,13 +363,23 @@ function estimateSdkCosts(position, feePricesUsd) {
   const borrowFeeRatio = positiveDecimal(position.borrowFeeRatio ?? 0, 'borrow fee ratio', true)
   const debtPrice = positiveDecimal(position.liabilityPriceUsd, 'liability USD price')
   const borrowFee = debtBorrowAmount.mul(borrowFeeRatio)
-  costs.push({ action: 'borrow-origination-fee', mint: position.liabilityMint, amount: decimalText(borrowFee), usd: Number(borrowFee.mul(debtPrice).toString()) })
+  costs.push({
+    action: 'borrow-origination-fee',
+    mint: position.liabilityMint,
+    amount: decimalText(borrowFee),
+    usd: Number(borrowFee.mul(debtPrice).toString()),
+  })
 
   const flashBorrowAmount = positiveDecimal(position.flashBorrowAmount ?? 0, 'SDK flash borrow amount', true)
   const flashFeeRatio = positiveDecimal(position.flashFeeRatio ?? 0, 'flash fee ratio', true)
   const flashFee = flashBorrowAmount.mul(flashFeeRatio)
   const collateralPrice = positiveDecimal(position.collateralPriceUsd, 'collateral USD price')
-  costs.push({ action: 'flash-loan-fee', mint: position.collateralMint, amount: decimalText(flashFee), usd: Number(flashFee.mul(collateralPrice).toString()) })
+  costs.push({
+    action: 'flash-loan-fee',
+    mint: position.collateralMint,
+    amount: decimalText(flashFee),
+    usd: Number(flashFee.mul(collateralPrice).toString()),
+  })
 
   for (const fee of position.swapFees ?? []) {
     const amountBaseUnits = positiveDecimal(fee.amountBaseUnits, 'provider swap fee', true)
@@ -299,7 +389,9 @@ function estimateSdkCosts(position, feePricesUsd) {
       action: fee.action,
       mint: fee.mint,
       amountBaseUnits: amountBaseUnits.toFixed(0),
-      usd: Number.isFinite(price) ? Number(amountBaseUnits.div(new PreciseDecimal(10).pow(decimals)).mul(price).toString()) : null,
+      usd: Number.isFinite(price)
+        ? Number(amountBaseUnits.div(new PreciseDecimal(10).pow(decimals)).mul(price).toString())
+        : null,
     })
   }
   const known = costs.every((cost) => Number.isFinite(cost.usd))
@@ -311,12 +403,15 @@ async function resolveLookupTables(built, resolver) {
   if (!tables.length) return []
   if (typeof resolver === 'function') return resolver(tables, built.addressesByLookupTableAddress)
   if (!rpc) throw new LoopPreviewError('Lookup table accounts require a configured backend RPC.')
-  const accounts = await Promise.all(tables.map(async (table) => {
-    const account = await fetchAddressLookupTable(rpc, address(table), { commitment: 'confirmed' })
-    const expected = built.addressesByLookupTableAddress[table]
-    if (expected.some((item) => !account.data.addresses.includes(item))) throw new LoopPreviewError('Swap provider lookup table changed after quote.')
-    return account
-  }))
+  const accounts = await Promise.all(
+    tables.map(async (table) => {
+      const account = await fetchAddressLookupTable(rpc, address(table), { commitment: 'confirmed' })
+      const expected = built.addressesByLookupTableAddress[table]
+      if (expected.some((item) => !account.data.addresses.includes(item)))
+        throw new LoopPreviewError('Swap provider lookup table changed after quote.')
+      return account
+    }),
+  )
   return accounts
 }
 
@@ -339,18 +434,26 @@ export function createKaminoSwapCallbacks({
   routeQuotes = [],
   validateRoute = validateProviderSwapInstructions,
 } = {}) {
-  if (typeof wallet !== 'string' || !wallet) throw new LoopPreviewError('Wallet address is required for the loop quote.')
+  if (typeof wallet !== 'string' || !wallet)
+    throw new LoopPreviewError('Wallet address is required for the loop quote.')
   if (localForkSimulation) {
     let hostname
-    try { hostname = new URL(localForkRpcUrl).hostname.toLowerCase() } catch { throw new LoopPreviewError('Local simulation requires a loopback validator URL.') }
+    try {
+      hostname = new URL(localForkRpcUrl).hostname.toLowerCase()
+    } catch {
+      throw new LoopPreviewError('Local simulation requires a loopback validator URL.')
+    }
     if (!['localhost', '127.0.0.1', '[::1]'].includes(hostname) || typeof localRouteProgramVerifier !== 'function') {
-      throw new LoopPreviewError('Unapproved route composition requires a loopback RPC and verified deployed programs on the local validator.')
+      throw new LoopPreviewError(
+        'Unapproved route composition requires a loopback RPC and verified deployed programs on the local validator.',
+      )
     }
   }
   const routeCache = new Map()
   const composedRoutes = []
   let pricingQuoteOverride = null
-  const routeKey = (inputMint, outputMint, inputAmountBaseUnits) => `${wallet}:${inputMint}:${outputMint}:${inputAmountBaseUnits}`
+  const routeKey = (inputMint, outputMint, inputAmountBaseUnits) =>
+    `${wallet}:${inputMint}:${outputMint}:${inputAmountBaseUnits}`
   for (const quote of routeQuotes) {
     if (quote?.inputMint && quote?.outputMint && quote?.inputAmountBaseUnits) {
       routeCache.set(routeKey(quote.inputMint, quote.outputMint, quote.inputAmountBaseUnits), quote)
@@ -362,7 +465,11 @@ export function createKaminoSwapCallbacks({
     const outputMint = String(inputs?.outputMint ?? '')
     const inputAmountBaseUnits = rawAmount(inputs?.inputAmountLamports)
     const feeDestination = await getFeeAccount(outputMint)
-    if (!feeDestination || feeDestination.mint !== outputMint || (FEE_BPS && typeof feeDestination.account !== 'string')) {
+    if (
+      !feeDestination ||
+      feeDestination.mint !== outputMint ||
+      (FEE_BPS && typeof feeDestination.account !== 'string')
+    ) {
       throw new LoopPreviewError('A validated output-mint Nysa fee account is not configured for this swap.')
     }
     const key = routeKey(inputMint, outputMint, inputAmountBaseUnits)
@@ -384,24 +491,35 @@ export function createKaminoSwapCallbacks({
     } else if (FEE_BPS && (built.feeAccount !== feeDestination.account || built.feeAccountMint !== outputMint)) {
       throw new LoopPreviewError('The fee destination changed after the loop preview; build a fresh preview.')
     }
-    if (!built || !built.fee?.routeDeltaVerified || !built.programPolicy
-      || built.feeAccountMintVerified !== true || !Array.isArray(built.instructions) || built.instructions.length === 0
-      || typeof validateRoute !== 'function') {
+    if (
+      !built ||
+      !built.fee?.routeDeltaVerified ||
+      !built.programPolicy ||
+      built.feeAccountMintVerified !== true ||
+      !Array.isArray(built.instructions) ||
+      built.instructions.length === 0 ||
+      typeof validateRoute !== 'function'
+    ) {
       throw new LoopPreviewError('Swap route did not verify its Nysa fee and provider route.')
     }
     if (!localForkSimulation && !built.programPolicy.approved) {
       throw new LoopPreviewError('Swap route programs and fee-account mint are not approved for composition.')
     }
     try {
-      await validateRoute({
-        wallet,
-        inputMint,
-        outputMint,
-        amountBaseUnits: inputAmountBaseUnits,
-        slippageBps: built.slippageBps,
-      }, built)
+      await validateRoute(
+        {
+          wallet,
+          inputMint,
+          outputMint,
+          amountBaseUnits: inputAmountBaseUnits,
+          slippageBps: built.slippageBps,
+        },
+        built,
+      )
     } catch (error) {
-      throw new LoopPreviewError(`Swap route failed the shared router validator: ${error?.message ?? 'unsupported route.'}`)
+      throw new LoopPreviewError(
+        `Swap route failed the shared router validator: ${error?.message ?? 'unsupported route.'}`,
+      )
     }
     if (built.compositionValidated !== true) built = { ...built, compositionValidated: true }
     routeCache.set(key, built)
@@ -411,7 +529,10 @@ export function createKaminoSwapCallbacks({
   const quoter = async (inputs) => {
     const inputMint = String(inputs?.inputMint ?? '')
     const outputMint = String(inputs?.outputMint ?? '')
-    if (pricingQuoteOverride && (pricingQuoteOverride.inputMint !== inputMint || pricingQuoteOverride.outputMint !== outputMint)) {
+    if (
+      pricingQuoteOverride &&
+      (pricingQuoteOverride.inputMint !== inputMint || pricingQuoteOverride.outputMint !== outputMint)
+    ) {
       throw new LoopPreviewError('Pinned leverage quote does not match the SDK swap token pair.')
     }
     const quoteInputs = pricingQuoteOverride
@@ -431,23 +552,41 @@ export function createKaminoSwapCallbacks({
     const outputMint = String(inputs?.outputMint ?? '')
     const inputAmountBaseUnits = rawAmount(inputs?.inputAmountLamports)
     let built = quote?.quoteResponse
-    if (!built || built.inputMint !== inputMint || built.outputMint !== outputMint || built.inputAmountBaseUnits !== inputAmountBaseUnits) {
-      ({ built } = await prepare(inputs))
+    if (
+      !built ||
+      built.inputMint !== inputMint ||
+      built.outputMint !== outputMint ||
+      built.inputAmountBaseUnits !== inputAmountBaseUnits
+    ) {
+      ;({ built } = await prepare(inputs))
     }
-    if (built.fee?.bps !== FEE_BPS || (FEE_BPS && built.fee?.mint !== outputMint)) throw new LoopPreviewError('Kamino swapper requires the same fee-aware output-mint policy as its route quote.')
-    if (!Number.isFinite(built.quoteAt) || Date.now() - built.quoteAt < 0 || Date.now() - built.quoteAt > LOOP_COMPOSE_WINDOW_MS) {
+    if (built.fee?.bps !== FEE_BPS || (FEE_BPS && built.fee?.mint !== outputMint))
+      throw new LoopPreviewError('Kamino swapper requires the same fee-aware output-mint policy as its route quote.')
+    if (
+      !Number.isFinite(built.quoteAt) ||
+      Date.now() - built.quoteAt < 0 ||
+      Date.now() - built.quoteAt > LOOP_COMPOSE_WINDOW_MS
+    ) {
       throw new LoopPreviewError('Kamino swap quote expired before instruction composition.')
     }
-    if (built.compositionValidated !== true) throw new LoopPreviewError('Swap route was not validated for atomic composition.')
+    if (built.compositionValidated !== true)
+      throw new LoopPreviewError('Swap route was not validated for atomic composition.')
     if (localForkSimulation) {
-      if (!built.fee.routeDeltaVerified || !built.feeAccountMintVerified || !await localRouteProgramVerifier(built)) {
-        throw new LoopPreviewError('Local route must have a verified fee account and deployed local route programs before simulation.')
+      if (!built.fee.routeDeltaVerified || !built.feeAccountMintVerified || !(await localRouteProgramVerifier(built))) {
+        throw new LoopPreviewError(
+          'Local route must have a verified fee account and deployed local route programs before simulation.',
+        )
       }
     } else if (!built.programPolicy.approved || !built.feeAccountMintVerified || !built.fee?.routeDeltaVerified) {
       throw new LoopPreviewError('Swap route or fee account is not approved for atomic composition.')
     }
-    if (inputs.minOutAmountLamports != null && BigInt(built.minimumOutputBaseUnits) < BigInt(rawAmount(new Decimal(inputs.minOutAmountLamports).ceil()))) {
-      throw new LoopPreviewError(`Swap provider minimum output ${built.minimumOutputBaseUnits} is below Kamino’s required flash-repayment amount ${rawAmount(new Decimal(inputs.minOutAmountLamports).ceil())}.`)
+    if (
+      inputs.minOutAmountLamports != null &&
+      BigInt(built.minimumOutputBaseUnits) < BigInt(rawAmount(new Decimal(inputs.minOutAmountLamports).ceil()))
+    ) {
+      throw new LoopPreviewError(
+        `Swap provider minimum output ${built.minimumOutputBaseUnits} is below Kamino’s required flash-repayment amount ${rawAmount(new Decimal(inputs.minOutAmountLamports).ceil())}.`,
+      )
     }
     composedRoutes.push(built)
     if (typeof onSwapComposed === 'function') await onSwapComposed(built)
@@ -458,16 +597,26 @@ export function createKaminoSwapCallbacks({
   return {
     quoter,
     swapper,
-    sealQuotes() { quotesSealed = true },
-    beginComposition() { quotesSealed = false },
-    setPricingQuote(route) { pricingQuoteOverride = route ?? null },
-    composedQuotes() { return composedRoutes.slice() },
+    sealQuotes() {
+      quotesSealed = true
+    },
+    beginComposition() {
+      quotesSealed = false
+    },
+    setPricingQuote(route) {
+      pricingQuoteOverride = route ?? null
+    },
+    composedQuotes() {
+      return composedRoutes.slice()
+    },
     async authorizeComposedRoute(route) {
       if (!localForkSimulation) return route?.programPolicy?.approved === true
-      return route?.fee?.routeDeltaVerified === true
-        && route?.feeAccountMintVerified === true
-        && typeof localRouteProgramVerifier === 'function'
-        && await localRouteProgramVerifier(route)
+      return (
+        route?.fee?.routeDeltaVerified === true &&
+        route?.feeAccountMintVerified === true &&
+        typeof localRouteProgramVerifier === 'function' &&
+        (await localRouteProgramVerifier(route))
+      )
     },
   }
 }
@@ -488,60 +637,94 @@ export function buildLoopPreview({
 } = {}) {
   const parsedFundingPrice = Number(fundingPriceUsd)
   const fundingAmountUsd = new Decimal(String(fundingAmount))
-    .mul(Number.isFinite(parsedFundingPrice) && parsedFundingPrice > 0 ? String(parsedFundingPrice) : '1').toString()
-  const exposure = sdkPosition ? sdkPositionExposure(sdkPosition) : { ...loopExposure(fundingAmountUsd, leverage), source: 'target-estimate' }
+    .mul(Number.isFinite(parsedFundingPrice) && parsedFundingPrice > 0 ? String(parsedFundingPrice) : '1')
+    .toString()
+  const exposure = sdkPosition
+    ? sdkPositionExposure(sdkPosition)
+    : { ...loopExposure(fundingAmountUsd, leverage), source: 'target-estimate' }
   const ltvLimitPct = projectedLtvLimitPct(maxBorrowLtvPct, liquidationLtvPct, tighterProjectedLtvPct)
   const violations = []
   if (Number(exposure.projectedLtvPct) > ltvLimitPct) violations.push('projected-ltv-cap')
   if (Number(exposure.leverage) > DEFAULT_LOOP_LIMITS.maxLeverage) violations.push('leverage-cap')
   if (!riskInputs) violations.push('risk-data-unavailable')
   else {
-    if (!Number.isFinite(riskInputs.slippageBps) || riskInputs.slippageBps > DEFAULT_LOOP_LIMITS.maxSlippageBps) violations.push('slippage-cap')
-    if (!Number.isFinite(riskInputs.priceImpactPct) || riskInputs.priceImpactPct > DEFAULT_LOOP_LIMITS.maxPriceImpactPct) violations.push('price-impact-cap')
-    if (!Number.isFinite(riskInputs.quoteAgeSeconds) || riskInputs.quoteAgeSeconds > DEFAULT_LOOP_LIMITS.maxQuoteAgeSeconds) violations.push('stale-quote')
-    if (!Number.isFinite(riskInputs.oracleAgeSeconds) || !Number.isFinite(riskInputs.oracleHeartbeatSeconds)
-      || riskInputs.oracleHeartbeatSeconds <= 0 || riskInputs.oracleAgeSeconds > riskInputs.oracleHeartbeatSeconds) violations.push('stale-oracle')
+    if (!Number.isFinite(riskInputs.slippageBps) || riskInputs.slippageBps > DEFAULT_LOOP_LIMITS.maxSlippageBps)
+      violations.push('slippage-cap')
+    if (
+      !Number.isFinite(riskInputs.priceImpactPct) ||
+      riskInputs.priceImpactPct > DEFAULT_LOOP_LIMITS.maxPriceImpactPct
+    )
+      violations.push('price-impact-cap')
+    if (
+      !Number.isFinite(riskInputs.quoteAgeSeconds) ||
+      riskInputs.quoteAgeSeconds > DEFAULT_LOOP_LIMITS.maxQuoteAgeSeconds
+    )
+      violations.push('stale-quote')
+    if (
+      !Number.isFinite(riskInputs.oracleAgeSeconds) ||
+      !Number.isFinite(riskInputs.oracleHeartbeatSeconds) ||
+      riskInputs.oracleHeartbeatSeconds <= 0 ||
+      riskInputs.oracleAgeSeconds > riskInputs.oracleHeartbeatSeconds
+    )
+      violations.push('stale-oracle')
   }
-  const fees = leverageQuote ? [{ action: 'leverage-swap', fee: leverageQuote.fee }].map(({ action, fee }) => ({
-    action,
-    mint: fee?.mint ?? null,
-    amountBaseUnits: fee?.amountBaseUnits ?? null,
-    bps: fee?.bps ?? null,
-    usd: fee?.bps === 0 ? 0 : fee?.mint && fee?.amountBaseUnits && Number.isFinite(feePricesUsd[fee.mint])
-      ? Number(fee.amountBaseUnits) / 10 ** tokenDecimals(fee.mint) * feePricesUsd[fee.mint]
-      : null,
-  })) : []
+  const fees = leverageQuote
+    ? [{ action: 'leverage-swap', fee: leverageQuote.fee }].map(({ action, fee }) => ({
+        action,
+        mint: fee?.mint ?? null,
+        amountBaseUnits: fee?.amountBaseUnits ?? null,
+        bps: fee?.bps ?? null,
+        usd:
+          fee?.bps === 0
+            ? 0
+            : fee?.mint && fee?.amountBaseUnits && Number.isFinite(feePricesUsd[fee.mint])
+              ? (Number(fee.amountBaseUnits) / 10 ** tokenDecimals(fee.mint)) * feePricesUsd[fee.mint]
+              : null,
+      }))
+    : []
   const estimatedCosts = sdkPosition
     ? estimateSdkCosts({ ...sdkPosition, swapFees: fees.filter((fee) => fee.bps > 0) }, feePricesUsd)
-    : { costs: fees, knownCostsTotalUsd: fees.every((fee) => fee.usd != null) ? fees.reduce((sum, fee) => sum + fee.usd, 0) : null }
+    : {
+        costs: fees,
+        knownCostsTotalUsd: fees.every((fee) => fee.usd != null) ? fees.reduce((sum, fee) => sum + fee.usd, 0) : null,
+      }
   const projectedLtv = new PreciseDecimal(exposure.projectedLtvPct)
   const liquidationLimit = positiveDecimal(liquidationLtvPct, 'liquidation LTV')
   // Without an SDK quote, from the target exposure at the oracle price (it read $0 before).
-  const collateralPrice = sdkPosition ? positiveDecimal(sdkPosition.collateralPriceUsd, 'collateral USD price') : positiveDecimal(String(collateralPriceUsd ?? fundingPriceUsd), 'collateral USD price')
-  const collateralAmount = sdkPosition ? positiveDecimal(sdkPosition.collateralAmount, 'SDK collateral amount') : new Decimal(exposure.grossCollateral).div(collateralPrice)
+  const collateralPrice = sdkPosition
+    ? positiveDecimal(sdkPosition.collateralPriceUsd, 'collateral USD price')
+    : positiveDecimal(String(collateralPriceUsd ?? fundingPriceUsd), 'collateral USD price')
+  const collateralAmount = sdkPosition
+    ? positiveDecimal(sdkPosition.collateralAmount, 'SDK collateral amount')
+    : new Decimal(exposure.grossCollateral).div(collateralPrice)
   const debtAmountUsd = new Decimal(exposure.debt)
-  const liquidationPriceUsd = collateralAmount && collateralPrice
-    ? debtAmountUsd.div(collateralAmount.mul(liquidationLimit.div(100)))
-    : null
-  const liquidationPriceDeclinePct = liquidationPriceUsd && collateralPrice
-    ? new PreciseDecimal(1).minus(liquidationPriceUsd.div(collateralPrice)).mul(100)
-    : null
+  const liquidationPriceUsd =
+    collateralAmount && collateralPrice ? debtAmountUsd.div(collateralAmount.mul(liquidationLimit.div(100))) : null
+  const liquidationPriceDeclinePct =
+    liquidationPriceUsd && collateralPrice
+      ? new PreciseDecimal(1).minus(liquidationPriceUsd.div(collateralPrice)).mul(100)
+      : null
   const unavailableReasons = [...(strategy?.unavailableReasons ?? [])]
-  const strategyExecutionEligible = strategy?.enabled === true
-    || (strategy?.carry?.requiresAcknowledgement === true
-      && unavailableReasons.length > 0
-      && unavailableReasons.every((item) => item?.code === 'carry-acknowledgement-required'))
+  const strategyExecutionEligible =
+    strategy?.enabled === true ||
+    (strategy?.carry?.requiresAcknowledgement === true &&
+      unavailableReasons.length > 0 &&
+      unavailableReasons.every((item) => item?.code === 'carry-acknowledgement-required'))
   const riskMessages = {
     'projected-ltv-cap': `At this leverage the loan would pass Kamino's ${Number(ltvLimitPct)}% LTV limit once swap costs are counted. Lower the leverage a little.`,
     'leverage-cap': `Loops go up to ${DEFAULT_LOOP_LIMITS.maxLeverage}x.`,
     'price-impact-cap': `This size would move the pool price by more than ${DEFAULT_LOOP_LIMITS.maxPriceImpactPct}%. Try a smaller amount or lower leverage.`,
     'slippage-cap': 'The swap needs more slippage than loops allow right now. Try a smaller amount or lower leverage.',
     'stale-quote': 'The quote is refreshing. Try again in a moment.',
-    'stale-oracle': 'Kamino\'s price feed for this market is refreshing. Try again in a few seconds.',
+    'stale-oracle': "Kamino's price feed for this market is refreshing. Try again in a few seconds.",
     'risk-data-unavailable': 'Market risk data is still loading. Try again in a few seconds.',
   }
   for (const violation of violations) unavailableReasons.push({ code: violation, message: riskMessages[violation] })
-  if (fees.length !== 1) unavailableReasons.push({ code: 'swap-quotes-unavailable', message: 'The loop swap needs a fee-aware provider quote.' })
+  if (fees.length !== 1)
+    unavailableReasons.push({
+      code: 'swap-quotes-unavailable',
+      message: 'The loop swap needs a fee-aware provider quote.',
+    })
   const preview = {
     available: strategyExecutionEligible && violations.length === 0 && fees.length === 1,
     executionEnabled: false,
@@ -549,7 +732,8 @@ export function buildLoopPreview({
       atomicTransactions: 1,
       routerSwaps: fees.length,
       loopPasses: 1,
-      description: 'Kamino builds the target leverage in one flash-loan Multiply transaction; the leverage value is not a count of repeated wallet transactions.',
+      description:
+        'Kamino builds the target leverage in one flash-loan Multiply transaction; the leverage value is not a count of repeated wallet transactions.',
     },
     exposure,
     limits: { maxLeverage: DEFAULT_LOOP_LIMITS.maxLeverage, projectedLtvPct: ltvLimitPct },
@@ -561,8 +745,11 @@ export function buildLoopPreview({
       liquidationPriceDeclinePct: liquidationPriceDeclinePct ? decimalText(liquidationPriceDeclinePct) : null,
       violations,
     },
-    carry: { ...(strategy?.carry ?? { estimatedCarryPct: null }), acknowledgementKey: null,
-      ...(strategy?.carry?.requiresAcknowledgement ? { acknowledgementPolicyVersion: LOOP_ACK_POLICY_VERSION } : {}) },
+    carry: {
+      ...(strategy?.carry ?? { estimatedCarryPct: null }),
+      acknowledgementKey: null,
+      ...(strategy?.carry?.requiresAcknowledgement ? { acknowledgementPolicyVersion: LOOP_ACK_POLICY_VERSION } : {}),
+    },
     fees,
     costs: estimatedCosts.costs,
     knownCostsTotalUsd: estimatedCosts.knownCostsTotalUsd,
@@ -570,7 +757,12 @@ export function buildLoopPreview({
     unavailableReasons,
   }
   preview.carry.acknowledgementKey = createLoopAcknowledgementKey({
-    strategy, fundingAmount, leverage, leverageQuote, preview, sdkPosition,
+    strategy,
+    fundingAmount,
+    leverage,
+    leverageQuote,
+    preview,
+    sdkPosition,
   })
   return preview
 }
@@ -586,9 +778,20 @@ export const LOOP_PREVIEW_TTL_MS = 90_000
 export const LOOP_SIGNING_WINDOW_MS = 45_000
 export const LOOP_COMPOSE_WINDOW_MS = 30_000
 
-export async function quoteMultiplyOpenAtFinalAmount(inputs, callbacks, quoteSdk = quoteMultiplyOpen, { maxIterations = 6 } = {}) {
-  if (typeof quoteSdk !== 'function' || typeof callbacks?.quoter !== 'function' || typeof callbacks?.setPricingQuote !== 'function'
-    || !Number.isSafeInteger(maxIterations) || maxIterations < 1 || maxIterations > 12) {
+export async function quoteMultiplyOpenAtFinalAmount(
+  inputs,
+  callbacks,
+  quoteSdk = quoteMultiplyOpen,
+  { maxIterations = 6 } = {},
+) {
+  if (
+    typeof quoteSdk !== 'function' ||
+    typeof callbacks?.quoter !== 'function' ||
+    typeof callbacks?.setPricingQuote !== 'function' ||
+    !Number.isSafeInteger(maxIterations) ||
+    maxIterations < 1 ||
+    maxIterations > 12
+  ) {
     throw new LoopPreviewError('Cannot converge the final SDK swap quote.')
   }
   let sdkPreview
@@ -616,8 +819,12 @@ export async function quoteMultiplyOpenAtFinalAmount(inputs, callbacks, quoteSdk
       inputAmountLamports: new Decimal(finalAmount),
     })
     const exactRoute = finalQuote?.quoteResponse
-    if (!exactRoute || exactRoute.inputMint !== inputMint || exactRoute.outputMint !== outputMint
-      || exactRoute.inputAmountBaseUnits !== finalAmount) {
+    if (
+      !exactRoute ||
+      exactRoute.inputMint !== inputMint ||
+      exactRoute.outputMint !== outputMint ||
+      exactRoute.inputAmountBaseUnits !== finalAmount
+    ) {
       throw new LoopPreviewError('Router could not quote the SDK final swap amount exactly.')
     }
     callbacks.setPricingQuote(exactRoute)
@@ -626,10 +833,17 @@ export async function quoteMultiplyOpenAtFinalAmount(inputs, callbacks, quoteSdk
   // the final input, ignoring the first estimate, and accept it once three re-quotes settle within one base unit.
   // The economic builder still re-quotes that amount, and its simulation stays the authority.
   const finalAttempts = attempts.slice(-3)
-  const adjacentRoundingOnly = attempts.length === maxIterations && finalAttempts.length === 3 && finalAttempts.every(({ quotedAmountBaseUnits, sdkAmountBaseUnits }) =>
-    quotedAmountBaseUnits != null && /^\d+$/.test(quotedAmountBaseUnits) && /^\d+$/.test(sdkAmountBaseUnits)
-      && (BigInt(quotedAmountBaseUnits) - BigInt(sdkAmountBaseUnits) <= 1n)
-      && (BigInt(sdkAmountBaseUnits) - BigInt(quotedAmountBaseUnits) <= 1n))
+  const adjacentRoundingOnly =
+    attempts.length === maxIterations &&
+    finalAttempts.length === 3 &&
+    finalAttempts.every(
+      ({ quotedAmountBaseUnits, sdkAmountBaseUnits }) =>
+        quotedAmountBaseUnits != null &&
+        /^\d+$/.test(quotedAmountBaseUnits) &&
+        /^\d+$/.test(sdkAmountBaseUnits) &&
+        BigInt(quotedAmountBaseUnits) - BigInt(sdkAmountBaseUnits) <= 1n &&
+        BigInt(sdkAmountBaseUnits) - BigInt(quotedAmountBaseUnits) <= 1n,
+    )
   if (adjacentRoundingOnly && sdkPreview) {
     const swapInputs = sdkPreview.swapInputs
     const finalAmount = rawAmount(swapInputs?.inputAmountLamports)
@@ -638,17 +852,25 @@ export async function quoteMultiplyOpenAtFinalAmount(inputs, callbacks, quoteSdk
     callbacks.setPricingQuote(null)
     const finalQuote = await callbacks.quoter({ inputMint, outputMint, inputAmountLamports: new Decimal(finalAmount) })
     const route = finalQuote?.quoteResponse
-    if (route?.inputMint === inputMint && route?.outputMint === outputMint && route?.inputAmountBaseUnits === finalAmount) {
+    if (
+      route?.inputMint === inputMint &&
+      route?.outputMint === outputMint &&
+      route?.inputAmountBaseUnits === finalAmount
+    ) {
       callbacks.setPricingQuote(route)
       const priorSwapQuote = sdkPreview.initialInputs?.swapQuote
-      const normalizedPreview = priorSwapQuote ? {
-        ...sdkPreview,
-        initialInputs: { ...sdkPreview.initialInputs, swapQuote: { ...priorSwapQuote, quoteResponse: route } },
-      } : sdkPreview
+      const normalizedPreview = priorSwapQuote
+        ? {
+            ...sdkPreview,
+            initialInputs: { ...sdkPreview.initialInputs, swapQuote: { ...priorSwapQuote, quoteResponse: route } },
+          }
+        : sdkPreview
       return { sdkPreview: normalizedPreview, leverageQuote: route }
     }
   }
-  throw new LoopPreviewError(`Kamino SDK final swap quote did not converge within ${maxIterations} iterations: ${JSON.stringify(attempts)}.`)
+  throw new LoopPreviewError(
+    `Kamino SDK final swap quote did not converge within ${maxIterations} iterations: ${JSON.stringify(attempts)}.`,
+  )
 }
 
 export function quoteMultiplyFullClose(inputs, callbacks) {
@@ -656,19 +878,31 @@ export function quoteMultiplyFullClose(inputs, callbacks) {
 }
 
 export function buildMultiplyOpenIxs(inputs, callbacks, builder = getDepositWithLeverageIxs) {
-  if (typeof callbacks?.quoter !== 'function' || typeof callbacks?.swapper !== 'function') throw new LoopPreviewError('Open requires fee-aware quote and swap callbacks.')
+  if (typeof callbacks?.quoter !== 'function' || typeof callbacks?.swapper !== 'function')
+    throw new LoopPreviewError('Open requires fee-aware quote and swap callbacks.')
   if (inputs?.obligation) {
     const deposits = inputs.obligation.refreshedStats?.userTotalDeposit
     const borrows = inputs.obligation.refreshedStats?.userTotalBorrow
-    if (deposits == null || borrows == null) throw new LoopPreviewError('Cannot verify that the target Multiply obligation is empty; opening cannot top up an existing position.')
-    if (positiveDecimal(deposits, 'existing obligation deposits', true).gt(0)
-      || positiveDecimal(borrows, 'existing obligation debt', true).gt(0)) {
+    if (deposits == null || borrows == null)
+      throw new LoopPreviewError(
+        'Cannot verify that the target Multiply obligation is empty; opening cannot top up an existing position.',
+      )
+    if (
+      positiveDecimal(deposits, 'existing obligation deposits', true).gt(0) ||
+      positiveDecimal(borrows, 'existing obligation debt', true).gt(0)
+    ) {
       throw new LoopPreviewError('A Multiply position already exists for this pair; opening cannot top it up.')
     }
   }
   const leverage = positiveDecimal(inputs?.targetLeverage, 'target leverage')
-  if (leverage.lte(1) || leverage.gt(DEFAULT_LOOP_LIMITS.maxLeverage)) throw new LoopPreviewError(`Target leverage must be above 1 and at most ${DEFAULT_LOOP_LIMITS.maxLeverage}.`)
-  return builder({ ...inputs, obligationTypeTagOverride: ObligationTypeTag.Multiply, quoter: callbacks.quoter, swapper: callbacks.swapper })
+  if (leverage.lte(1) || leverage.gt(DEFAULT_LOOP_LIMITS.maxLeverage))
+    throw new LoopPreviewError(`Target leverage must be above 1 and at most ${DEFAULT_LOOP_LIMITS.maxLeverage}.`)
+  return builder({
+    ...inputs,
+    obligationTypeTagOverride: ObligationTypeTag.Multiply,
+    quoter: callbacks.quoter,
+    swapper: callbacks.swapper,
+  })
 }
 
 export function buildMultiplyFullCloseIxs(inputs, callbacks, builder = getWithdrawWithLeverageIxs) {
@@ -678,22 +912,43 @@ export function buildMultiplyFullCloseIxs(inputs, callbacks, builder = getWithdr
   }
   const deposited = positiveDecimal(inputs.deposited, 'obligation collateral amount')
   positiveDecimal(inputs.borrowed, 'obligation debt amount')
-  return builder({ ...inputs, withdrawAmount: deposited, isClosingPosition: true, quoter: callbacks.quoter, swapper: callbacks.swapper })
+  return builder({
+    ...inputs,
+    withdrawAmount: deposited,
+    isClosingPosition: true,
+    quoter: callbacks.quoter,
+    swapper: callbacks.swapper,
+  })
 }
 
-async function assertComposableFeeRoute(route, inputMint, outputMint, {
-  wallet,
-  validateRoute = validateProviderSwapInstructions,
-  authorizeRoute = async (candidate) => candidate?.programPolicy?.approved === true,
-  now = Date.now(),
-} = {}) {
-  if (!route || route.inputMint !== inputMint || route.outputMint !== outputMint
-    || route.fee?.bps !== FEE_BPS || route.fee?.routeDeltaVerified !== true || route.feeAccountMintVerified !== true
-    || FEE_BPS && (route.fee?.mint !== outputMint || route.feeAccountMint !== outputMint || typeof route.feeAccount !== 'string')
-    || !Array.isArray(route.instructions) || route.instructions.length === 0) {
+async function assertComposableFeeRoute(
+  route,
+  inputMint,
+  outputMint,
+  {
+    wallet,
+    validateRoute = validateProviderSwapInstructions,
+    authorizeRoute = async (candidate) => candidate?.programPolicy?.approved === true,
+    now = Date.now(),
+  } = {},
+) {
+  if (
+    !route ||
+    route.inputMint !== inputMint ||
+    route.outputMint !== outputMint ||
+    route.fee?.bps !== FEE_BPS ||
+    route.fee?.routeDeltaVerified !== true ||
+    route.feeAccountMintVerified !== true ||
+    (FEE_BPS &&
+      (route.fee?.mint !== outputMint ||
+        route.feeAccountMint !== outputMint ||
+        typeof route.feeAccount !== 'string')) ||
+    !Array.isArray(route.instructions) ||
+    route.instructions.length === 0
+  ) {
     throw new LoopPreviewError('Loop swap does not satisfy the shared router composition fee and route policy.')
   }
-  if (typeof authorizeRoute !== 'function' || await authorizeRoute(route) !== true) {
+  if (typeof authorizeRoute !== 'function' || (await authorizeRoute(route)) !== true) {
     throw new LoopPreviewError('Loop swap route programs are not approved for this execution environment.')
   }
   if (!Number.isFinite(route.quoteAt) || now < route.quoteAt || now - route.quoteAt > LOOP_COMPOSE_WINDOW_MS) {
@@ -701,41 +956,53 @@ async function assertComposableFeeRoute(route, inputMint, outputMint, {
   }
   if (typeof validateRoute !== 'function') throw new LoopPreviewError('Shared router route validation is unavailable.')
   try {
-    await validateRoute({
-      wallet,
-      inputMint,
-      outputMint,
-      amountBaseUnits: route.inputAmountBaseUnits,
-      slippageBps: route.slippageBps,
-    }, route)
+    await validateRoute(
+      {
+        wallet,
+        inputMint,
+        outputMint,
+        amountBaseUnits: route.inputAmountBaseUnits,
+        slippageBps: route.slippageBps,
+      },
+      route,
+    )
   } catch (error) {
-    throw new LoopPreviewError(`Loop swap failed the shared router validator: ${error?.message ?? 'unsupported route.'}`)
+    throw new LoopPreviewError(
+      `Loop swap failed the shared router validator: ${error?.message ?? 'unsupported route.'}`,
+    )
   }
   return route.compositionValidated === true ? route : { ...route, compositionValidated: true }
 }
 
 function mergeApplicationParts({ routes, instructionGroups, lookupTables = [], simulationAccounts = [] }) {
-  const feeEvents = routes.filter((route) => route.fee.bps > 0).map((route) => ({
-    account: route.feeAccount,
-    mint: route.fee.mint,
-    amountBaseUnits: String(route.fee.amountBaseUnits),
-    bps: route.fee.bps,
-  }))
+  const feeEvents = routes
+    .filter((route) => route.fee.bps > 0)
+    .map((route) => ({
+      account: route.feeAccount,
+      mint: route.fee.mint,
+      amountBaseUnits: String(route.fee.amountBaseUnits),
+      bps: route.fee.bps,
+    }))
   const routePrograms = routes.flatMap((route) => route.programIds ?? [])
   const routeLabels = [...new Set(routes.flatMap((route) => route.routeLabels ?? []))]
   const routeProgramIdsByLabel = {}
   const addressesByLookupTableAddress = {}
-  for (const route of routes) for (const [label, programs] of Object.entries(route.routeProgramIdsByLabel ?? {})) {
-    routeProgramIdsByLabel[label] = [...new Set([...(routeProgramIdsByLabel[label] ?? []), ...programs.map(String)])]
-  }
-  for (const route of routes) for (const [table, addresses] of Object.entries(route.addressesByLookupTableAddress ?? {})) {
-    addressesByLookupTableAddress[table] = [...new Set([...(addressesByLookupTableAddress[table] ?? []), ...addresses.map(String)])]
-  }
+  for (const route of routes)
+    for (const [label, programs] of Object.entries(route.routeProgramIdsByLabel ?? {})) {
+      routeProgramIdsByLabel[label] = [...new Set([...(routeProgramIdsByLabel[label] ?? []), ...programs.map(String)])]
+    }
+  for (const route of routes)
+    for (const [table, addresses] of Object.entries(route.addressesByLookupTableAddress ?? {})) {
+      addressesByLookupTableAddress[table] = [
+        ...new Set([...(addressesByLookupTableAddress[table] ?? []), ...addresses.map(String)]),
+      ]
+    }
   const instructionPrograms = instructionGroups.flat().map((instruction) => String(instruction.programAddress))
   const routeTables = routes.flatMap((route) => Object.keys(route.addressesByLookupTableAddress ?? {}))
-  const sdkTables = lookupTables.map((table) => typeof table === 'string' ? table : String(table?.address ?? ''))
+  const sdkTables = lookupTables.map((table) => (typeof table === 'string' ? table : String(table?.address ?? '')))
   const instructions = instructionGroups.flat()
-  if (instructions.length === 0 || instructions.length > 160) throw new LoopPreviewError('Atomic loop transaction has an invalid instruction count.')
+  if (instructions.length === 0 || instructions.length > 160)
+    throw new LoopPreviewError('Atomic loop transaction has an invalid instruction count.')
   return {
     atomic: true,
     instructions,
@@ -759,7 +1026,8 @@ export async function buildAtomicMultiplyOpenApplication({
   builder = getDepositWithLeverageIxs,
   now = Date.now(),
 } = {}) {
-  if (typeof wallet !== 'string' || !wallet || !sdkInputs || !callbacks) throw new LoopPreviewError('Open application builder inputs are incomplete.')
+  if (typeof wallet !== 'string' || !wallet || !sdkInputs || !callbacks)
+    throw new LoopPreviewError('Open application builder inputs are incomplete.')
   const leverageTransactions = await buildMultiplyOpenIxs(sdkInputs, callbacks, builder)
   if (!Array.isArray(leverageTransactions) || leverageTransactions.length !== 1) {
     throw new LoopPreviewError('Open requires one Kamino SDK transaction; split economic fallback is disabled.')
@@ -767,16 +1035,23 @@ export async function buildAtomicMultiplyOpenApplication({
   const leverage = leverageTransactions[0]
   const leverageInputBaseUnits = leverage?.swapInputs?.inputAmountLamports?.toString() ?? null
   const capturedRoutes = typeof callbacks.composedQuotes === 'function' ? callbacks.composedQuotes() : []
-  const composedLeverageRoute = capturedRoutes.filter((candidate) => candidate.inputMint === mints.debt
-    && candidate.outputMint === mints.collateral
-    && (leverageInputBaseUnits == null || candidate.inputAmountBaseUnits === leverageInputBaseUnits)).at(-1)
+  const composedLeverageRoute = capturedRoutes
+    .filter(
+      (candidate) =>
+        candidate.inputMint === mints.debt &&
+        candidate.outputMint === mints.collateral &&
+        (leverageInputBaseUnits == null || candidate.inputAmountBaseUnits === leverageInputBaseUnits),
+    )
+    .at(-1)
   if (typeof callbacks.composedQuotes === 'function' && !composedLeverageRoute) {
     throw new LoopPreviewError('The exact fee-aware leverage route composed by Kamino could not be identified.')
   }
-  const route = await assertComposableFeeRoute(composedLeverageRoute ?? leverage?.quote,
-    mints.debt, mints.collateral, {
-      wallet, validateRoute, authorizeRoute: callbacks.authorizeComposedRoute, now: Math.max(now, Date.now()),
-    })
+  const route = await assertComposableFeeRoute(composedLeverageRoute ?? leverage?.quote, mints.debt, mints.collateral, {
+    wallet,
+    validateRoute,
+    authorizeRoute: callbacks.authorizeComposedRoute,
+    now: Math.max(now, Date.now()),
+  })
   const instructions = composeAtomicOpenInstructions([], leverage.ixs ?? [])
   const application = mergeApplicationParts({
     routes: [route],
@@ -815,15 +1090,21 @@ export async function buildAtomicMultiplyFullCloseApplication({
   const leverage = leverageTransactions[0]
   const leverageInputBaseUnits = leverage?.swapInputs?.inputAmountLamports?.toString() ?? null
   const capturedRoutes = typeof callbacks.composedQuotes === 'function' ? callbacks.composedQuotes() : []
-  const composedCloseRoute = capturedRoutes.filter((candidate) => candidate.inputMint === mints.collateral
-    && candidate.outputMint === mints.debt
-    && (leverageInputBaseUnits == null || candidate.inputAmountBaseUnits === leverageInputBaseUnits)).at(-1)
+  const composedCloseRoute = capturedRoutes
+    .filter(
+      (candidate) =>
+        candidate.inputMint === mints.collateral &&
+        candidate.outputMint === mints.debt &&
+        (leverageInputBaseUnits == null || candidate.inputAmountBaseUnits === leverageInputBaseUnits),
+    )
+    .at(-1)
   if (typeof callbacks.composedQuotes === 'function' && !composedCloseRoute) {
     throw new LoopPreviewError('The exact fee-aware close route composed by Kamino could not be identified.')
   }
-  const route = await assertComposableFeeRoute(composedCloseRoute ?? leverage?.quote,
-    mints.collateral, mints.debt, {
-    wallet: wallet ?? String(sdkInputs.owner?.address ?? sdkInputs.owner ?? ''), validateRoute, now: Math.max(now, Date.now()),
+  const route = await assertComposableFeeRoute(composedCloseRoute ?? leverage?.quote, mints.collateral, mints.debt, {
+    wallet: wallet ?? String(sdkInputs.owner?.address ?? sdkInputs.owner ?? ''),
+    validateRoute,
+    now: Math.max(now, Date.now()),
     authorizeRoute: callbacks.authorizeComposedRoute,
   })
   const application = mergeApplicationParts({
@@ -845,15 +1126,20 @@ export async function buildAtomicMultiplyFullCloseApplication({
 
 export function verifyAtomicLoopFeeDeltas(feeEvents, tokenDeltas) {
   // No Nysa fee: no fee events, so there is no fee account delta to check.
-  if (!FEE_BPS && Array.isArray(feeEvents) && !feeEvents.length && Array.isArray(tokenDeltas) && !tokenDeltas.length) return
+  if (!FEE_BPS && Array.isArray(feeEvents) && !feeEvents.length && Array.isArray(tokenDeltas) && !tokenDeltas.length)
+    return
   if (!Array.isArray(feeEvents) || !feeEvents.length || !Array.isArray(tokenDeltas)) {
     throw new LoopPreviewError('Atomic loop fee balance deltas are unavailable.')
   }
   const expected = new Map()
   const eventCounts = new Map()
   for (const fee of feeEvents) {
-    if (typeof fee?.account !== 'string' || typeof fee.mint !== 'string'
-      || !/^[1-9]\d*$/.test(String(fee.amountBaseUnits)) || fee.bps !== FEE_BPS) {
+    if (
+      typeof fee?.account !== 'string' ||
+      typeof fee.mint !== 'string' ||
+      !/^[1-9]\d*$/.test(String(fee.amountBaseUnits)) ||
+      fee.bps !== FEE_BPS
+    ) {
       throw new LoopPreviewError('Atomic loop contains an invalid router fee event.')
     }
     const key = `${fee.account}:${fee.mint}`
@@ -862,18 +1148,25 @@ export function verifyAtomicLoopFeeDeltas(feeEvents, tokenDeltas) {
   }
   const actual = new Map()
   for (const delta of tokenDeltas) {
-    if (typeof delta?.account !== 'string' || typeof delta.mint !== 'string' || !/^[1-9]\d*$/.test(String(delta.deltaBaseUnits))) {
+    if (
+      typeof delta?.account !== 'string' ||
+      typeof delta.mint !== 'string' ||
+      !/^[1-9]\d*$/.test(String(delta.deltaBaseUnits))
+    ) {
       throw new LoopPreviewError('Atomic loop fee account balance delta is invalid.')
     }
     const key = `${delta.account}:${delta.mint}`
     if (actual.has(key)) throw new LoopPreviewError('Atomic loop fee account balance delta is duplicated.')
     actual.set(key, BigInt(delta.deltaBaseUnits))
   }
-  if (expected.size !== actual.size || [...expected].some(([key, amount]) => {
-    const collected = actual.get(key)
-    const roundingAllowance = BigInt(eventCounts.get(key) ?? 0) * MAX_ROUTER_FEE_ROUNDING_BASE_UNITS
-    return collected == null || collected > amount + roundingAllowance || amount > collected + roundingAllowance
-  })) {
+  if (
+    expected.size !== actual.size ||
+    [...expected].some(([key, amount]) => {
+      const collected = actual.get(key)
+      const roundingAllowance = BigInt(eventCounts.get(key) ?? 0) * MAX_ROUTER_FEE_ROUNDING_BASE_UNITS
+      return collected == null || collected > amount + roundingAllowance || amount > collected + roundingAllowance
+    })
+  ) {
     throw new LoopPreviewError('Atomic loop simulated fee account balance delta does not match the router fee.')
   }
   return [...expected].map(([key, amount]) => {
@@ -892,11 +1185,26 @@ function loopContext(wallet, marketId) {
   const liability = TOKENS[loop.debt]
   const collateralReserve = reserveOf(market, collateral)
   const liabilityReserve = reserveOf(market, liability)
-  return { owner, marketConfig, market, currentLedgerInstant, collateral, liability, collateralReserve, liabilityReserve }
+  return {
+    owner,
+    marketConfig,
+    market,
+    currentLedgerInstant,
+    collateral,
+    liability,
+    collateralReserve,
+    liabilityReserve,
+  }
 }
 
 // Metadata-only setup through Kamino's own builder, never mixed with economic actions.
-export async function buildLoopMetadataSetupBundle({ kaminoMarket, owner, payer = owner, referrer = none(), sdkBuilder } = {}) {
+export async function buildLoopMetadataSetupBundle({
+  kaminoMarket,
+  owner,
+  payer = owner,
+  referrer = none(),
+  sdkBuilder,
+} = {}) {
   if (!kaminoMarket || !owner?.address || typeof kaminoMarket.getUserMetadata !== 'function') {
     throw new LoopPreviewError('Kamino metadata setup dependencies are incomplete.')
   }
@@ -904,33 +1212,46 @@ export async function buildLoopMetadataSetupBundle({ kaminoMarket, owner, payer 
   if (existing) return { required: false, metadataAddress: String(metadataAddress) }
   const buildSetup = sdkBuilder ?? ((args) => KaminoAction.buildUserMetadataSetupIxs(args))
   const setupBundle = await buildSetup({
-    kaminoMarket, owner, payer, referrer,
+    kaminoMarket,
+    owner,
+    payer,
+    referrer,
     initUserMetadata: { skipInitialization: false, skipLutCreation: true },
   })
-  if (!Array.isArray(setupBundle?.ixs) || setupBundle.ixs.length !== 1
-    || String(setupBundle.ixs[0]?.programAddress) !== String(PROGRAM_ID)) {
-    throw new LoopPreviewError('Kamino metadata setup did not produce the expected single SDK initialization instruction.')
+  if (
+    !Array.isArray(setupBundle?.ixs) ||
+    setupBundle.ixs.length !== 1 ||
+    String(setupBundle.ixs[0]?.programAddress) !== String(PROGRAM_ID)
+  ) {
+    throw new LoopPreviewError(
+      'Kamino metadata setup did not produce the expected single SDK initialization instruction.',
+    )
   }
-  if ((setupBundle.luts ?? []).length) throw new LoopPreviewError('Kamino metadata setup unexpectedly requires lookup-table creation.')
+  if ((setupBundle.luts ?? []).length)
+    throw new LoopPreviewError('Kamino metadata setup unexpectedly requires lookup-table creation.')
   return { required: true, metadataAddress: String(metadataAddress), ixs: setupBundle.ixs }
 }
 
 export async function loopMetadataStatus({ wallet, market } = {}) {
-  if (typeof wallet !== 'string' || !wallet) throw new LoopPreviewError('Wallet address is required for Kamino metadata status.')
+  if (typeof wallet !== 'string' || !wallet)
+    throw new LoopPreviewError('Wallet address is required for Kamino metadata status.')
   await refreshMarketForExecution()
   const fresh = loopContext(wallet, market)
   const [metadataAddress, metadata] = await fresh.market.getUserMetadata(fresh.owner)
-  if (metadata && String(metadata.owner) !== wallet) throw new LoopPreviewError('Kamino UserMetadata owner does not match this wallet.')
+  if (metadata && String(metadata.owner) !== wallet)
+    throw new LoopPreviewError('Kamino UserMetadata owner does not match this wallet.')
   return { required: !metadata, metadataAddress: String(metadataAddress) }
 }
 
 export async function buildLoopMetadataSetupApplication({ wallet, market } = {}) {
-  if (typeof wallet !== 'string' || !wallet) throw new LoopPreviewError('Wallet address is required for Kamino metadata setup.')
+  if (typeof wallet !== 'string' || !wallet)
+    throw new LoopPreviewError('Wallet address is required for Kamino metadata setup.')
   await refreshMarketForExecution()
   const fresh = loopContext(wallet, market)
   const owner = createNoopSigner(fresh.owner)
   const [, existing] = await fresh.market.getUserMetadata(fresh.owner)
-  if (existing && String(existing.owner) !== wallet) throw new LoopPreviewError('Kamino UserMetadata owner does not match this wallet.')
+  if (existing && String(existing.owner) !== wallet)
+    throw new LoopPreviewError('Kamino UserMetadata owner does not match this wallet.')
   const setup = await buildLoopMetadataSetupBundle({ kaminoMarket: fresh.market, owner, payer: owner })
   if (!setup.required) return { required: false, metadataAddress: setup.metadataAddress }
   return {
@@ -957,11 +1278,17 @@ export function verifyLoopMetadataSetupSimulation({ built, simulation } = {}) {
   try {
     const metadata = UserMetadata.decode(Buffer.from(data))
     return String(metadata.owner) === context.wallet
-  } catch { return false }
+  } catch {
+    return false
+  }
 }
 
 export async function buildLoopOpenApplication({
-  wallet, amount, leverage, preview, now = Date.now(),
+  wallet,
+  amount,
+  leverage,
+  preview,
+  now = Date.now(),
   flashBorrowType = 'coll',
   validateRoute = validateProviderSwapInstructions,
   refreshMarket = refreshMarketForExecution,
@@ -970,8 +1297,12 @@ export async function buildLoopOpenApplication({
   readObligation = obligationByWallet,
 } = {}) {
   const application = preview?.applicationContext
-  if (!application || application.wallet !== wallet || application.fundingAmount !== amount
-    || Number(application.leverage) !== Number(leverage)) {
+  if (
+    !application ||
+    application.wallet !== wallet ||
+    application.fundingAmount !== amount ||
+    Number(application.leverage) !== Number(leverage)
+  ) {
     throw new LoopPreviewError('The exact server-side loop preview is unavailable; build a fresh preview.')
   }
   await refreshMarket()
@@ -979,16 +1310,26 @@ export async function buildLoopOpenApplication({
   const freshRisk = assertCurrentLoopMarketRisk(preview.sdk?.marketRisk, fresh)
   const [, userMetadata] = await fresh.market.getUserMetadata(fresh.owner)
   if (!userMetadata || String(userMetadata.owner) !== wallet) {
-    throw new LoopPreviewError('Initialize this wallet’s Kamino UserMetadata account before opening a Multiply position.')
+    throw new LoopPreviewError(
+      'Initialize this wallet’s Kamino UserMetadata account before opening a Multiply position.',
+    )
   }
-  const multiplyType = getObligationType(fresh.market, ObligationTypeTag.Multiply,
-    some(fresh.collateralReserve.address), some(fresh.liabilityReserve.address))
+  const multiplyType = getObligationType(
+    fresh.market,
+    ObligationTypeTag.Multiply,
+    some(fresh.collateralReserve.address),
+    some(fresh.liabilityReserve.address),
+  )
   const existing = await readObligation(fresh.market, fresh.owner, multiplyType, fresh.currentLedgerInstant)
   if (existing) {
     const deposits = existing.refreshedStats?.userTotalDeposit
     const debt = existing.refreshedStats?.userTotalBorrow
-    if (deposits == null || debt == null || positiveDecimal(deposits, 'existing Multiply deposits', true).gt(0)
-      || positiveDecimal(debt, 'existing Multiply debt', true).gt(0)) {
+    if (
+      deposits == null ||
+      debt == null ||
+      positiveDecimal(deposits, 'existing Multiply deposits', true).gt(0) ||
+      positiveDecimal(debt, 'existing Multiply debt', true).gt(0)
+    ) {
       throw new LoopPreviewError('A Multiply position already exists for this pair; opening cannot top it up.')
     }
   }
@@ -1034,36 +1375,53 @@ export async function buildLoopOpenApplication({
       validateRoute,
       now,
     })
-  } finally { application.callbacks?.sealQuotes?.() }
-  if (built.quotePlan.acquisitionQuote != null
-    || !loopRoutesMatchWithinRounding(application.leverageQuote, built.quotePlan.leverageQuote)
-    || !withinOneBaseUnit(built.quotePlan.leverageSwapInputBaseUnits, preview.sdk?.leverageSwapInputBaseUnits)
-    || built.quotePlan.leverageSwapMinimumOutputBaseUnits !== preview.sdk?.leverageSwapMinimumOutputBaseUnits
-    || built.quotePlan.flashBorrowFee !== preview.sdk?.flashBorrowFee
-    || built.quotePlan.collateralToDeposit !== preview.sdk?.collateralToDeposit
-    || !withinOneBaseUnit(
-      sdkAmountBaseUnitsWithProtocolRounding(built.quotePlan.debtToBorrow, fresh.liabilityReserve.stats.decimals, 'ceil'),
+  } finally {
+    application.callbacks?.sealQuotes?.()
+  }
+  if (
+    built.quotePlan.acquisitionQuote != null ||
+    !loopRoutesMatchWithinRounding(application.leverageQuote, built.quotePlan.leverageQuote) ||
+    !withinOneBaseUnit(built.quotePlan.leverageSwapInputBaseUnits, preview.sdk?.leverageSwapInputBaseUnits) ||
+    built.quotePlan.leverageSwapMinimumOutputBaseUnits !== preview.sdk?.leverageSwapMinimumOutputBaseUnits ||
+    built.quotePlan.flashBorrowFee !== preview.sdk?.flashBorrowFee ||
+    built.quotePlan.collateralToDeposit !== preview.sdk?.collateralToDeposit ||
+    !withinOneBaseUnit(
+      sdkAmountBaseUnitsWithProtocolRounding(
+        built.quotePlan.debtToBorrow,
+        fresh.liabilityReserve.stats.decimals,
+        'ceil',
+      ),
       sdkAmountBaseUnitsWithProtocolRounding(preview.sdk?.debtToBorrow, fresh.liabilityReserve.stats.decimals, 'ceil'),
-    )) {
-    throw new LoopPreviewError(`Loop economics changed after preview; build a fresh preview before opening. ${JSON.stringify({
-      expectedInput: application.leverageQuote?.inputAmountBaseUnits,
-      builtInput: built.quotePlan.leverageQuote?.inputAmountBaseUnits,
-      expectedDebt: preview.sdk?.debtToBorrow,
-      builtDebt: built.quotePlan.debtToBorrow,
-    })}`)
+    )
+  ) {
+    throw new LoopPreviewError(
+      `Loop economics changed after preview; build a fresh preview before opening. ${JSON.stringify({
+        expectedInput: application.leverageQuote?.inputAmountBaseUnits,
+        builtInput: built.quotePlan.leverageQuote?.inputAmountBaseUnits,
+        expectedDebt: preview.sdk?.debtToBorrow,
+        builtDebt: built.quotePlan.debtToBorrow,
+      })}`,
+    )
   }
   const [walletUsdc, walletUsdy] = await Promise.all([
     ataOf(fresh.owner, address(fresh.liability.mint), fresh.liabilityReserve.getLiquidityTokenProgram()),
     ataOf(fresh.owner, address(fresh.collateral.mint), fresh.collateralReserve.getLiquidityTokenProgram()),
   ])
   const collateralExchangeRate = fresh.collateralReserve.getEstimatedCollateralExchangeRate(
-    fresh.currentLedgerInstant, fresh.market.state.referralFeeBps,
+    fresh.currentLedgerInstant,
+    fresh.market.state.referralFeeBps,
   )
   const authorizedCollateral = sdkDepositPositionBaseUnitsWithExchangeRate(
-    built.quotePlan.collateralToDeposit, fresh.collateralReserve.stats.decimals, collateralExchangeRate,
+    built.quotePlan.collateralToDeposit,
+    fresh.collateralReserve.stats.decimals,
+    collateralExchangeRate,
   )
   const authorizedDebtBaseUnits = sdkBorrowDebtBaseUnitsWithProtocolFee(
-    built.quotePlan.debtToBorrow, fresh.liabilityReserve.stats.decimals, fresh.market, fresh.liabilityReserve, false,
+    built.quotePlan.debtToBorrow,
+    fresh.liabilityReserve.stats.decimals,
+    fresh.market,
+    fresh.liabilityReserve,
+    false,
   )
   const maxProjectedLtvPct = projectedLtvLimitPct(
     freshRisk.maxBorrowLtvPct,
@@ -1078,8 +1436,10 @@ export async function buildLoopOpenApplication({
     ],
     simulationAccounts: [...built.simulationAccounts, String(multiplyObligationAddress)],
     simulationContext: {
-      kind: 'loop-open', wallet,
-      collateralMint: fresh.collateral.mint, debtMint: fresh.liability.mint,
+      kind: 'loop-open',
+      wallet,
+      collateralMint: fresh.collateral.mint,
+      debtMint: fresh.liability.mint,
       market: fresh.market,
       marketAddress: fresh.marketConfig.kaminoMarket,
       currentLedgerInstant: fresh.currentLedgerInstant,
@@ -1091,13 +1451,19 @@ export async function buildLoopOpenApplication({
       fundingBaseUnits: application.fundingBaseUnits,
       collateralExchangeRate: String(collateralExchangeRate),
       authorizedPosition: {
-        collateralAmount: decimalText(new PreciseDecimal(authorizedCollateral.positionRawAmount)
-          .div(positiveDecimal(fresh.collateralReserve.getMintFactor(), 'collateral mint factor'))),
+        collateralAmount: decimalText(
+          new PreciseDecimal(authorizedCollateral.positionRawAmount).div(
+            positiveDecimal(fresh.collateralReserve.getMintFactor(), 'collateral mint factor'),
+          ),
+        ),
         collateralBaseUnits: authorizedCollateral.positionBaseUnits,
         collateralCTokenBaseUnits: authorizedCollateral.cTokenBaseUnits,
         liquidityBaseUnits: authorizedCollateral.liquidityBaseUnits,
-        debtAmount: decimalText(new PreciseDecimal(authorizedDebtBaseUnits)
-          .div(positiveDecimal(fresh.liabilityReserve.getMintFactor(), 'liability mint factor'))),
+        debtAmount: decimalText(
+          new PreciseDecimal(authorizedDebtBaseUnits).div(
+            positiveDecimal(fresh.liabilityReserve.getMintFactor(), 'liability mint factor'),
+          ),
+        ),
         debtBaseUnits: authorizedDebtBaseUnits,
         collateralPriceUsd: freshRisk.collateralPriceUsd,
         debtPriceUsd: freshRisk.liabilityPriceUsd,
@@ -1110,7 +1476,8 @@ export async function buildLoopOpenApplication({
 
 // Only for the exact wallet-owned Nysa Multiply PDA.
 export async function buildLoopCloseApplication({
-  wallet, position,
+  wallet,
+  position,
   flashBorrowType = 'coll',
   validateRoute = validateProviderSwapInstructions,
   localForkSimulation = false,
@@ -1122,16 +1489,30 @@ export async function buildLoopCloseApplication({
   applicationBuilder = buildAtomicMultiplyFullCloseApplication,
   readObligation = obligationByWallet,
 } = {}) {
-  if (!position || position.wallet !== wallet || !loopByMarket(position.market?.id)
-    || position.obligation?.type !== 'multiply') throw new LoopPreviewError('The selected Multiply position is not owned by this wallet.')
+  if (
+    !position ||
+    position.wallet !== wallet ||
+    !loopByMarket(position.market?.id) ||
+    position.obligation?.type !== 'multiply'
+  )
+    throw new LoopPreviewError('The selected Multiply position is not owned by this wallet.')
   await refreshMarket()
   const fresh = contextReader(wallet, position.market.id)
-  const multiplyType = getObligationType(fresh.market, ObligationTypeTag.Multiply,
-    some(fresh.collateralReserve.address), some(fresh.liabilityReserve.address))
+  const multiplyType = getObligationType(
+    fresh.market,
+    ObligationTypeTag.Multiply,
+    some(fresh.collateralReserve.address),
+    some(fresh.liabilityReserve.address),
+  )
   const obligationAddress = await multiplyType.toPda(address(fresh.marketConfig.kaminoMarket), fresh.owner)
-  if (String(obligationAddress) !== position.obligation.address) throw new LoopPreviewError('Multiply obligation identity changed; refresh the selected position.')
+  if (String(obligationAddress) !== position.obligation.address)
+    throw new LoopPreviewError('Multiply obligation identity changed; refresh the selected position.')
   const obligation = await readObligation(fresh.market, fresh.owner, multiplyType, fresh.currentLedgerInstant)
-  if (!obligation || String(obligation.obligationAddress) !== position.obligation.address || String(obligation.state.owner) !== wallet) {
+  if (
+    !obligation ||
+    String(obligation.obligationAddress) !== position.obligation.address ||
+    String(obligation.state.owner) !== wallet
+  ) {
     throw new LoopPreviewError('The selected Multiply obligation is no longer owned by this wallet.')
   }
   assertSupportedLoopObligationReserves(obligation, fresh.collateralReserve.address, fresh.liabilityReserve.address)
@@ -1142,7 +1523,15 @@ export async function buildLoopCloseApplication({
   if (!deposited.gt(0)) throw new LoopPreviewError('The selected Multiply obligation has no collateral to close.')
   const collateralPrice = positiveDecimal(fresh.collateralReserve.getOracleMarketPrice(), 'collateral oracle price')
   const liabilityPrice = positiveDecimal(fresh.liabilityReserve.getOracleMarketPrice(), 'debt oracle price')
-  const callbacks = suppliedCallbacks ?? createKaminoSwapCallbacks({ wallet, validateRoute, localForkSimulation, localForkRpcUrl, localRouteProgramVerifier })
+  const callbacks =
+    suppliedCallbacks ??
+    createKaminoSwapCallbacks({
+      wallet,
+      validateRoute,
+      localForkSimulation,
+      localForkRpcUrl,
+      localRouteProgramVerifier,
+    })
   const sdkInputs = {
     owner: createNoopSigner(fresh.owner),
     kaminoMarket: fresh.market,
@@ -1168,8 +1557,17 @@ export async function buildLoopCloseApplication({
   callbacks.setPricingQuote?.(null)
   callbacks.beginComposition?.()
   let built
-  try { built = await applicationBuilder({ sdkInputs, mints: { collateral: fresh.collateral.mint, debt: fresh.liability.mint }, callbacks, wallet, validateRoute }) }
-  finally { callbacks.sealQuotes?.() }
+  try {
+    built = await applicationBuilder({
+      sdkInputs,
+      mints: { collateral: fresh.collateral.mint, debt: fresh.liability.mint },
+      callbacks,
+      wallet,
+      validateRoute,
+    })
+  } finally {
+    callbacks.sealQuotes?.()
+  }
   const [walletUsdc, walletUsdy] = await Promise.all([
     ataOf(fresh.owner, address(fresh.liability.mint), fresh.liabilityReserve.getLiquidityTokenProgram()),
     ataOf(fresh.owner, address(fresh.collateral.mint), fresh.collateralReserve.getLiquidityTokenProgram()),
@@ -1182,8 +1580,10 @@ export async function buildLoopCloseApplication({
     ],
     simulationAccounts: [...built.simulationAccounts, String(obligationAddress)],
     simulationContext: {
-      kind: 'loop-close', wallet,
-      collateralMint: fresh.collateral.mint, debtMint: fresh.liability.mint,
+      kind: 'loop-close',
+      wallet,
+      collateralMint: fresh.collateral.mint,
+      debtMint: fresh.liability.mint,
       market: fresh.market,
       marketAddress: fresh.marketConfig.kaminoMarket,
       currentLedgerInstant: fresh.currentLedgerInstant,
@@ -1198,15 +1598,25 @@ export async function buildLoopCloseApplication({
 
 export async function simulateLoopApplication({ built, compiled, simulate = simulateAtomicTransaction } = {}) {
   if (!built?.simulationContext) throw new LoopPreviewError('Loop simulation context is unavailable.')
-  const tokenAccounts = [...new Map([...built.feeEvents, ...built.ownerTokenAccounts]
-    .map((item) => [`${item.account}:${item.mint}`, { account: item.account, mint: item.mint }])).values()]
+  const tokenAccounts = [
+    ...new Map(
+      [...built.feeEvents, ...built.ownerTokenAccounts].map((item) => [
+        `${item.account}:${item.mint}`,
+        { account: item.account, mint: item.mint },
+      ]),
+    ).values(),
+  ]
   const simulated = await simulate({ compiled, accounts: built.simulationAccounts, tokenAccounts })
   const context = built.simulationContext
   if (context.kind === 'loop-setup') return simulated
   const accountData = simulated.accountData.get(context.positionObligationAddress)
   const accountOwner = simulated.accountOwners?.get(context.positionObligationAddress)
-  if (context.kind === 'loop-close' && accountData instanceof Uint8Array && accountData.length === 0
-    && accountOwner === DEFAULT_RESERVE_ADDRESS) {
+  if (
+    context.kind === 'loop-close' &&
+    accountData instanceof Uint8Array &&
+    accountData.length === 0 &&
+    accountOwner === DEFAULT_RESERVE_ADDRESS
+  ) {
     // Kamino may close the Multiply PDA on a full close: its system-owned empty post-state is the protocol's zero
     // position (the pre-build path already verified PDA ownership).
     simulated.remainingDebtBaseUnits = '0'
@@ -1220,7 +1630,8 @@ export async function simulateLoopApplication({ built, compiled, simulate = simu
     simulated.positionClosed = true
     return simulated
   }
-  if (!(accountData instanceof Uint8Array)) throw new LoopPreviewError('Simulation did not return the selected Multiply obligation account.')
+  if (!(accountData instanceof Uint8Array))
+    throw new LoopPreviewError('Simulation did not return the selected Multiply obligation account.')
   let obligation
   try {
     obligation = KaminoObligation.fromAccountData(
@@ -1230,13 +1641,19 @@ export async function simulateLoopApplication({ built, compiled, simulate = simu
       context.currentLedgerInstant,
     )
   } catch {
-    throw new LoopPreviewError(`Simulated Multiply obligation could not be decoded (kind=${context.kind}, owner=${accountOwner ?? 'missing'}, dataLength=${accountData.length}).`)
+    throw new LoopPreviewError(
+      `Simulated Multiply obligation could not be decoded (kind=${context.kind}, owner=${accountOwner ?? 'missing'}, dataLength=${accountData.length}).`,
+    )
   }
-  if (!obligation || String(obligation.state.owner) !== context.wallet) throw new LoopPreviewError('Simulated Multiply obligation owner did not verify.')
+  if (!obligation || String(obligation.state.owner) !== context.wallet)
+    throw new LoopPreviewError('Simulated Multiply obligation owner did not verify.')
   const collateral = obligation.getDepositByReserve(address(context.collateralReserveAddress))?.amount ?? 0
   const debt = obligation.getBorrowByReserve(address(context.liabilityReserveAddress))?.amount ?? 0
   const collateralBaseUnits = obligationRawAmountBaseUnits(collateral)
-  const collateralCTokenBaseUnits = obligationDepositCTokenBaseUnits(obligation, address(context.collateralReserveAddress))
+  const collateralCTokenBaseUnits = obligationDepositCTokenBaseUnits(
+    obligation,
+    address(context.collateralReserveAddress),
+  )
   const debtBaseUnits = obligationRawAmountBaseUnits(debt)
   simulated.remainingDebtBaseUnits = debtBaseUnits
   simulated.positionOwner = String(obligation.state.owner)
@@ -1244,8 +1661,9 @@ export async function simulateLoopApplication({ built, compiled, simulate = simu
   simulated.positionCollateralCTokenBaseUnits = collateralCTokenBaseUnits
   simulated.positionDebtBaseUnits = debtBaseUnits
   simulated.obligationBalances = obligationSimulationBalances(obligation)
-  simulated.positionCollateralAmount = decimalText(new PreciseDecimal(String(collateral))
-    .div(positiveDecimal(context.collateralMintFactor, 'collateral mint factor')))
+  simulated.positionCollateralAmount = decimalText(
+    new PreciseDecimal(String(collateral)).div(positiveDecimal(context.collateralMintFactor, 'collateral mint factor')),
+  )
   simulated.positionDebtAmount = decimalText(new Decimal(debtBaseUnits).div(context.liabilityMintFactor))
   return simulated
 }
@@ -1259,69 +1677,111 @@ export function debtWithinAccrual(simulated, authorized) {
 
 export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}) {
   const context = built?.simulationContext
-  if (!context || context.kind !== kind || simulation?.ok !== true || simulation.positionOwner !== context.wallet) return false
+  if (!context || context.kind !== kind || simulation?.ok !== true || simulation.positionOwner !== context.wallet)
+    return false
   const feeAccounts = new Set(built.feeEvents.map((fee) => `${fee.account}:${fee.mint}`))
   const feeDeltas = simulation.tokenDeltas.filter((delta) => feeAccounts.has(`${delta.account}:${delta.mint}`))
-  try { verifyAtomicLoopFeeDeltas(built.feeEvents, feeDeltas) } catch { return false }
+  try {
+    verifyAtomicLoopFeeDeltas(built.feeEvents, feeDeltas)
+  } catch {
+    return false
+  }
   if (kind === 'loop-open') {
     // Funded in the collateral: the wallet's collateral account pays it, the debt account is never charged.
     const fundingAccount = built.ownerTokenAccounts.find((item) => item.mint === context.collateralMint)
     const debtAccount = built.ownerTokenAccounts.find((item) => item.mint === context.debtMint)
     // An unchanged account has no delta entry: read it as 0.
-    const deltaOf = (account, mint) => simulation.tokenDeltas.find((item) => item.account === account?.account && item.mint === mint)?.deltaBaseUnits ?? '0'
+    const deltaOf = (account, mint) =>
+      simulation.tokenDeltas.find((item) => item.account === account?.account && item.mint === mint)?.deltaBaseUnits ??
+      '0'
     const fundingDelta = deltaOf(fundingAccount, context.collateralMint)
     const debtDelta = deltaOf(debtAccount, context.debtMint)
     const authorized = context.authorizedPosition
-    if (!authorized || !fundingAccount || !debtAccount
-      || !/^-?\d+$/.test(String(fundingDelta)) || !/^-?\d+$/.test(String(debtDelta))) return false
+    if (
+      !authorized ||
+      !fundingAccount ||
+      !debtAccount ||
+      !/^-?\d+$/.test(String(fundingDelta)) ||
+      !/^-?\d+$/.test(String(debtDelta))
+    )
+      return false
     try {
       const fundingBaseUnits = BigInt(context.fundingBaseUnits)
       const fundingChange = BigInt(fundingDelta)
       // The wallet pays at most the approved funding (a swap surplus may come back); no debt token is ever taken.
       if (fundingBaseUnits <= 0n || -fundingChange > fundingBaseUnits || BigInt(debtDelta) < 0n) return false
-    } catch { return false }
+    } catch {
+      return false
+    }
     try {
-      if (!/^\d+$/.test(String(simulation.positionCollateralBaseUnits))
-        || !/^\d+$/.test(String(simulation.positionCollateralCTokenBaseUnits))
-        || !/^\d+$/.test(String(simulation.positionDebtBaseUnits))
-        || !/^\d+$/.test(String(authorized.collateralBaseUnits))
-        || !/^\d+$/.test(String(authorized.collateralCTokenBaseUnits))
-        || !/^\d+$/.test(String(authorized.debtBaseUnits))
-        || simulation.positionCollateralBaseUnits !== authorized.collateralBaseUnits
-        || simulation.positionCollateralCTokenBaseUnits !== authorized.collateralCTokenBaseUnits
-        || !debtWithinAccrual(simulation.positionDebtBaseUnits, authorized.debtBaseUnits)) return false
+      if (
+        !/^\d+$/.test(String(simulation.positionCollateralBaseUnits)) ||
+        !/^\d+$/.test(String(simulation.positionCollateralCTokenBaseUnits)) ||
+        !/^\d+$/.test(String(simulation.positionDebtBaseUnits)) ||
+        !/^\d+$/.test(String(authorized.collateralBaseUnits)) ||
+        !/^\d+$/.test(String(authorized.collateralCTokenBaseUnits)) ||
+        !/^\d+$/.test(String(authorized.debtBaseUnits)) ||
+        simulation.positionCollateralBaseUnits !== authorized.collateralBaseUnits ||
+        simulation.positionCollateralCTokenBaseUnits !== authorized.collateralCTokenBaseUnits ||
+        !debtWithinAccrual(simulation.positionDebtBaseUnits, authorized.debtBaseUnits)
+      )
+        return false
       const collateralAmount = positiveDecimal(simulation.positionCollateralAmount, 'simulated collateral amount')
-      const debtAmount = positiveDecimal(new PreciseDecimal(simulation.positionDebtBaseUnits)
-        .div(positiveDecimal(context.liabilityMintFactor, 'liability mint factor')), 'simulated debt amount')
+      const debtAmount = positiveDecimal(
+        new PreciseDecimal(simulation.positionDebtBaseUnits).div(
+          positiveDecimal(context.liabilityMintFactor, 'liability mint factor'),
+        ),
+        'simulated debt amount',
+      )
       const expectedCollateral = positiveDecimal(authorized.collateralAmount, 'approved collateral amount')
-      const expectedDebt = positiveDecimal(new PreciseDecimal(authorized.debtBaseUnits)
-        .div(positiveDecimal(context.liabilityMintFactor, 'liability mint factor')), 'approved debt amount')
+      const expectedDebt = positiveDecimal(
+        new PreciseDecimal(authorized.debtBaseUnits).div(
+          positiveDecimal(context.liabilityMintFactor, 'liability mint factor'),
+        ),
+        'approved debt amount',
+      )
       const collateralPrice = positiveDecimal(authorized.collateralPriceUsd, 'approved collateral price')
       const debtPrice = positiveDecimal(authorized.debtPriceUsd, 'approved debt price')
       const collateralUsd = collateralAmount.mul(collateralPrice)
       const debtUsd = debtAmount.mul(debtPrice)
       const ltvPct = debtUsd.div(collateralUsd).mul(100)
       const leverage = collateralUsd.div(collateralUsd.minus(debtUsd))
-      return collateralAmount.eq(expectedCollateral)
-        && debtAmount.minus(expectedDebt).abs().lte(expectedDebt.mul('0.0001').plus('0.000002'))
-        && debtUsd.lt(collateralUsd)
-        && ltvPct.lte(positiveDecimal(authorized.maxProjectedLtvPct, 'approved projected LTV'))
-        && leverage.lte(positiveDecimal(authorized.maxLeverage, 'approved leverage'))
-    } catch { return false }
+      return (
+        collateralAmount.eq(expectedCollateral) &&
+        debtAmount.minus(expectedDebt).abs().lte(expectedDebt.mul('0.0001').plus('0.000002')) &&
+        debtUsd.lt(collateralUsd) &&
+        ltvPct.lte(positiveDecimal(authorized.maxProjectedLtvPct, 'approved projected LTV')) &&
+        leverage.lte(positiveDecimal(authorized.maxLeverage, 'approved leverage'))
+      )
+    } catch {
+      return false
+    }
   }
   if (kind === 'loop-close') {
-    const ownerDeltas = simulation.tokenDeltas.filter((item) => built.ownerTokenAccounts.some((account) => account.account === item.account && account.mint === item.mint))
+    const ownerDeltas = simulation.tokenDeltas.filter((item) =>
+      built.ownerTokenAccounts.some((account) => account.account === item.account && account.mint === item.mint),
+    )
     const balances = simulation.obligationBalances
     const exactZero = (value) => typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value) && !/[1-9]/.test(value)
-    const allCollateralZero = Array.isArray(balances?.deposits) && balances.deposits.every((item) =>
-      typeof item?.reserve === 'string' && exactZero(item.cTokenBaseUnits) && exactZero(item.amountBaseUnits))
-    const allDebtZero = Array.isArray(balances?.borrows) && balances.borrows.every((item) =>
-      typeof item?.reserve === 'string' && exactZero(item.amountScaled) && exactZero(item.amountBaseUnits))
-    return simulation.remainingDebtBaseUnits === '0'
-      && new Decimal(String(simulation.positionCollateralAmount ?? '-1')).isZero()
-      && allCollateralZero && allDebtZero
-      && ownerDeltas.every((item) => /^-?\d+$/.test(item.deltaBaseUnits) && BigInt(item.deltaBaseUnits) >= 0n)
-      && ownerDeltas.some((item) => item.mint === context.collateralMint && BigInt(item.deltaBaseUnits) > 0n)
+    const allCollateralZero =
+      Array.isArray(balances?.deposits) &&
+      balances.deposits.every(
+        (item) =>
+          typeof item?.reserve === 'string' && exactZero(item.cTokenBaseUnits) && exactZero(item.amountBaseUnits),
+      )
+    const allDebtZero =
+      Array.isArray(balances?.borrows) &&
+      balances.borrows.every(
+        (item) => typeof item?.reserve === 'string' && exactZero(item.amountScaled) && exactZero(item.amountBaseUnits),
+      )
+    return (
+      simulation.remainingDebtBaseUnits === '0' &&
+      new Decimal(String(simulation.positionCollateralAmount ?? '-1')).isZero() &&
+      allCollateralZero &&
+      allDebtZero &&
+      ownerDeltas.every((item) => /^-?\d+$/.test(item.deltaBaseUnits) && BigInt(item.deltaBaseUnits) >= 0n) &&
+      ownerDeltas.some((item) => item.mint === context.collateralMint && BigInt(item.deltaBaseUnits) > 0n)
+    )
   }
   return false
 }
@@ -1332,8 +1792,8 @@ export function verifyLoopApplicationSimulation({ kind, built, simulation } = {}
 export function leverageImpactPct(quote, input, output, marketRisk) {
   if (!quote) return Infinity
   if (quote.priceImpactPct < 100) return quote.priceImpactPct
-  const paid = Number(quote.inputAmountBaseUnits) / 10 ** input.decimals * Number(marketRisk.liabilityPriceUsd)
-  const got = Number(quote.outputAmountBaseUnits) / 10 ** output.decimals * Number(marketRisk.collateralPriceUsd)
+  const paid = (Number(quote.inputAmountBaseUnits) / 10 ** input.decimals) * Number(marketRisk.liabilityPriceUsd)
+  const got = (Number(quote.outputAmountBaseUnits) / 10 ** output.decimals) * Number(marketRisk.collateralPriceUsd)
   return paid > 0 && got > 0 ? Math.max(0, (1 - got / paid) * 100) : Infinity
 }
 
@@ -1353,8 +1813,20 @@ export function leverageWithin(capacity, needed, leverage) {
   return Math.floor((1 + ((leverage - 1) * capacity) / needed) * 10) / 10
 }
 
-export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount, leverage, snapshot, strategy, now = Date.now(), signal, onApplicationContext,
-  localForkSimulation = false, localForkRpcUrl, localRouteProgramVerifier } = {}) {
+export async function buildReadOnlyLoopPreview({
+  marketId,
+  wallet,
+  fundingAmount,
+  leverage,
+  snapshot,
+  strategy,
+  now = Date.now(),
+  signal,
+  onApplicationContext,
+  localForkSimulation = false,
+  localForkRpcUrl,
+  localRouteProgramVerifier,
+} = {}) {
   const loop = loopByMarket(marketId)
   if (!loop) throw new LoopPreviewError('Unknown loop strategy.')
   const collateral = TOKENS[loop.collateral]
@@ -1363,23 +1835,26 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
   const feeAccount = configuredFeeAccountForMint(collateral.mint)
   const strategyView = strategy ?? { enabled: false, unavailableReasons: [], carry: { estimatedCarryPct: null } }
   const reserves = snapshot?.reserves?.[marketId] ?? {}
-  const snapshotPrice = (token) => Number(reserves[token.token_id]?.price) > 0 ? Number(reserves[token.token_id].price) : token.price
+  const snapshotPrice = (token) =>
+    Number(reserves[token.token_id]?.price) > 0 ? Number(reserves[token.token_id].price) : token.price
   const limits = {
     fundingPriceUsd: snapshotPrice(collateral),
     collateralPriceUsd: snapshotPrice(collateral),
     maxBorrowLtvPct: reserves[collateral.token_id]?.maxLtv,
     liquidationLtvPct: reserves[collateral.token_id]?.liqLtv,
   }
-  if (!feeAccount) return {
-    ...buildLoopPreview({ fundingAmount, leverage, strategy: strategyView, ...limits }),
-    quoteStatus: 'fee-account-unavailable',
-    quoteError: `The ${collateral.name} fee account is not configured.`,
-  }
-  if (!rpc) return {
-    ...buildLoopPreview({ fundingAmount, leverage, strategy: strategyView, ...limits }),
-    quoteStatus: 'rpc-unavailable',
-    quoteError: 'Backend RPC is not configured.',
-  }
+  if (!feeAccount)
+    return {
+      ...buildLoopPreview({ fundingAmount, leverage, strategy: strategyView, ...limits }),
+      quoteStatus: 'fee-account-unavailable',
+      quoteError: `The ${collateral.name} fee account is not configured.`,
+    }
+  if (!rpc)
+    return {
+      ...buildLoopPreview({ fundingAmount, leverage, strategy: strategyView, ...limits }),
+      quoteStatus: 'rpc-unavailable',
+      quoteError: 'Backend RPC is not configured.',
+    }
 
   const live = getLive({ id: marketId })
   const market = live.market
@@ -1390,45 +1865,58 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
   const taker = wallet || '11111111111111111111111111111111'
   const validatePreviewRoute = async (request, built) => {
     if (!localForkSimulation) return validateProviderSwapInstructions(request, built)
-    if (typeof localRouteProgramVerifier !== 'function' || !await localRouteProgramVerifier(built)) {
-      throw new LoopPreviewError('The local route does not use only the approved DEX and executable programs cloned into Surfpool.')
+    if (typeof localRouteProgramVerifier !== 'function' || !(await localRouteProgramVerifier(built))) {
+      throw new LoopPreviewError(
+        'The local route does not use only the approved DEX and executable programs cloned into Surfpool.',
+      )
     }
     return validateProviderSwapInstructions(request, { ...built, programPolicy: { approved: true, unreviewed: [] } })
   }
   const funding = new Decimal(fundingBaseUnits).div(new Decimal(10).pow(collateral.decimals))
-  const callbacks = createKaminoSwapCallbacks({ wallet: taker, slippageBps: 49, signal,
-    localForkSimulation, localForkRpcUrl, localRouteProgramVerifier, validateRoute: validatePreviewRoute })
-  const sdkQuote = await quoteMultiplyOpenAtFinalAmount({
-    owner: createNoopSigner(address(taker)),
-    kaminoMarket: market,
-    debtReserveAddress: debtReserve.address,
-    collReserveAddress: collReserve.address,
-    depositAmount: funding,
-    priceDebtToColl: new Decimal(marketRisk.liabilityPriceUsd).div(marketRisk.collateralPriceUsd),
-    slippagePct: sdkSlippagePctFromBps(50),
-    obligation: null,
-    referrer: none(),
-    currentLedgerInstant: live.now,
-    targetLeverage: new Decimal(String(leverage)),
-    selectedTokenMint: address(collateral.mint),
-    obligationTypeTagOverride: ObligationTypeTag.Multiply,
-    scopeRefreshIx: [],
-    budgetAndPriorityFeeIxs: [],
-    quoteBufferBps: new Decimal(0),
-    useV2Ixs: true,
-    logger: () => {},
-  }, callbacks)
+  const callbacks = createKaminoSwapCallbacks({
+    wallet: taker,
+    slippageBps: 49,
+    signal,
+    localForkSimulation,
+    localForkRpcUrl,
+    localRouteProgramVerifier,
+    validateRoute: validatePreviewRoute,
+  })
+  const sdkQuote = await quoteMultiplyOpenAtFinalAmount(
+    {
+      owner: createNoopSigner(address(taker)),
+      kaminoMarket: market,
+      debtReserveAddress: debtReserve.address,
+      collReserveAddress: collReserve.address,
+      depositAmount: funding,
+      priceDebtToColl: new Decimal(marketRisk.liabilityPriceUsd).div(marketRisk.collateralPriceUsd),
+      slippagePct: sdkSlippagePctFromBps(50),
+      obligation: null,
+      referrer: none(),
+      currentLedgerInstant: live.now,
+      targetLeverage: new Decimal(String(leverage)),
+      selectedTokenMint: address(collateral.mint),
+      obligationTypeTagOverride: ObligationTypeTag.Multiply,
+      scopeRefreshIx: [],
+      budgetAndPriorityFeeIxs: [],
+      quoteBufferBps: new Decimal(0),
+      useV2Ixs: true,
+      logger: () => {},
+    },
+    callbacks,
+  )
   const sdkPreview = sdkQuote.sdkPreview
   const leverageQuote = sdkQuote.leverageQuote
   callbacks.sealQuotes()
-  const oracleAges = [marketRisk.collateralOracleTimestamp, marketRisk.liabilityOracleTimestamp]
-    .map((timestamp) => marketBlockTime - timestamp)
+  const oracleAges = [marketRisk.collateralOracleTimestamp, marketRisk.liabilityOracleTimestamp].map(
+    (timestamp) => marketBlockTime - timestamp,
+  )
   const heartbeats = [marketRisk.collateralOracleHeartbeatSeconds, marketRisk.liabilityOracleHeartbeatSeconds]
   const quoteTimes = [leverageQuote?.quoteAt]
   const riskInputs = {
     slippageBps: 50,
     priceImpactPct: leverageImpactPct(leverageQuote, liability, collateral, marketRisk),
-    quoteAgeSeconds: Math.max(...quoteTimes.map((at) => at == null ? Infinity : (now - at) / 1000)),
+    quoteAgeSeconds: Math.max(...quoteTimes.map((at) => (at == null ? Infinity : (now - at) / 1000))),
     oracleAgeSeconds: Math.max(...oracleAges),
     oracleHeartbeatSeconds: Math.min(...heartbeats),
   }
@@ -1495,11 +1983,24 @@ export async function buildReadOnlyLoopPreview({ marketId, wallet, fundingAmount
     // Swap costs grow a little faster than leverage: suggest against 98% of what is there, so the suggestion fits.
     const fits = leverageWithin(have * 0.98, need, Number(leverage))
     result.available = false
-    result.unavailableReasons = [...(result.unavailableReasons ?? []), { code,
-      message: `${intro} ${have.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${name} in this market right now${fits >= 1.1 ? `: try ${fits}× or less, or a smaller amount.` : '. Try again later.'}` }]
+    result.unavailableReasons = [
+      ...(result.unavailableReasons ?? []),
+      {
+        code,
+        message: `${intro} ${have.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${name} in this market right now${fits >= 1.1 ? `: try ${fits}× or less, or a smaller amount.` : '. Try again later.'}`,
+      },
+    ]
   }
-  if (needed > capacity) blocked('borrow-capacity-exceeded', capacity, needed, liability.name, 'Kamino can lend at most')
-  else if (flashNeeded > flashAvailable) blocked('flash-liquidity-exceeded', flashAvailable, flashNeeded, collateral.name, 'To build this loop Kamino lends the collateral for a moment, and it has only')
+  if (needed > capacity)
+    blocked('borrow-capacity-exceeded', capacity, needed, liability.name, 'Kamino can lend at most')
+  else if (flashNeeded > flashAvailable)
+    blocked(
+      'flash-liquidity-exceeded',
+      flashAvailable,
+      flashNeeded,
+      collateral.name,
+      'To build this loop Kamino lends the collateral for a moment, and it has only',
+    )
   if (typeof onApplicationContext === 'function' && wallet) {
     await onApplicationContext({
       wallet,

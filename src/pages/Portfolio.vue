@@ -14,22 +14,35 @@ const router = useRouter()
 const view = ref('deposits')
 const on = computed(() => !!state.address)
 const loopPositions = computed(() => state.loopPositions ?? [])
-const loopTotals = computed(() => loopPortfolioTotals(
-  loopPositions.value,
-  Object.fromEntries(loopPositions.value.flatMap((p) => [p.collateral.tokenId, p.liability.tokenId]).map((id) => [id, priceOf(id)])),
-  state.reserves,
-))
+const loopTotals = computed(() =>
+  loopPortfolioTotals(
+    loopPositions.value,
+    Object.fromEntries(
+      loopPositions.value.flatMap((p) => [p.collateral.tokenId, p.liability.tokenId]).map((id) => [id, priceOf(id)]),
+    ),
+    state.reserves,
+  ),
+)
 
 const vaultDeposits = computed(() =>
   VAULTS.map((v) => ({ v, live: state.vaults[v.id], value: state.vaultPositions[v.id]?.value ?? 0 }))
     .filter((d) => d.value > 0)
-    .map((d) => ({ ...d, t: tok(d.live?.tokenId ?? 'svm-usdc'), usd: d.value * priceOf(d.live?.tokenId ?? 'svm-usdc'), apr: d.live?.apy ?? 0 })),
+    .map((d) => ({
+      ...d,
+      t: tok(d.live?.tokenId ?? 'svm-usdc'),
+      usd: d.value * priceOf(d.live?.tokenId ?? 'svm-usdc'),
+      apr: d.live?.apy ?? 0,
+    })),
 )
 // Loan-token deposits here predate lending through the vaults.
 const deposits = computed(() =>
   LIVE.flatMap((m) => tokensOf(m).map((t) => ({ m, t, units: rowOf(m, t.token_id)?.supplied ?? 0 })))
     .filter((d) => d.units > 0)
-    .map((d) => ({ ...d, usd: d.units * priceOf(d.t.token_id), apr: rowOf(d.m, d.t.token_id)?.reserve.supplyAPR ?? 0 })),
+    .map((d) => ({
+      ...d,
+      usd: d.units * priceOf(d.t.token_id),
+      apr: rowOf(d.m, d.t.token_id)?.reserve.supplyAPR ?? 0,
+    })),
 )
 const loans = computed(() =>
   LIVE.flatMap((m) =>
@@ -40,33 +53,65 @@ const loans = computed(() =>
       const collUsd = coll.reduce((s, c) => s + c.usd, 0)
       const pair = m.pairs.find((p) => p.liability === id)
       const liq = pair ? riskOf(m, pair).liqLtv : 0
-      return { m, t: tok(id), units, usd: debtUsd, coll, collUsd, hf: healthFactor(collUsd, liq, debtUsd), apr: rowOf(m, id)?.reserve.borrowAPR ?? 0 }
+      return {
+        m,
+        t: tok(id),
+        units,
+        usd: debtUsd,
+        coll,
+        collUsd,
+        hf: healthFactor(collUsd, liq, debtUsd),
+        apr: rowOf(m, id)?.reserve.borrowAPR ?? 0,
+      }
     }),
   ).filter((l) => l.units > 0),
 )
-const loanPair = computed(() => loans.value[0] && loans.value[0].m.pairs.find((p) => p.liability === loans.value[0].t.token_id))
-const supplied = computed(() => deposits.value.reduce((s, d) => s + d.usd, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd, 0) + loopTotals.value.suppliedUsd)
+const loanPair = computed(
+  () => loans.value[0] && loans.value[0].m.pairs.find((p) => p.liability === loans.value[0].t.token_id),
+)
+const supplied = computed(
+  () =>
+    deposits.value.reduce((s, d) => s + d.usd, 0) +
+    vaultDeposits.value.reduce((s, d) => s + d.usd, 0) +
+    loopTotals.value.suppliedUsd,
+)
 const directLending = computed(() => deposits.value.filter((d) => d.m.loans.includes(d.t.token_id)))
 const borrowed = computed(() => loans.value.reduce((s, l) => s + l.usd, 0) + loopTotals.value.borrowedUsd)
 const netApy = computed(() => {
   if (!supplied.value) return null
-  const earn = deposits.value.reduce((s, d) => s + d.usd * d.apr, 0) + vaultDeposits.value.reduce((s, d) => s + d.usd * d.apr, 0) - loans.value.reduce((s, l) => s + l.usd * l.apr, 0) + loopTotals.value.netAprUsd
+  const earn =
+    deposits.value.reduce((s, d) => s + d.usd * d.apr, 0) +
+    vaultDeposits.value.reduce((s, d) => s + d.usd * d.apr, 0) -
+    loans.value.reduce((s, l) => s + l.usd * l.apr, 0) +
+    loopTotals.value.netAprUsd
   return earn / supplied.value
 })
-const hf = computed(() => portfolioHealthFactor(loans.value.map((loan) => loan.hf), loopTotals.value))
-const hfText = (v) => (on.value ? v === null ? '—' : hfFmt(v) : '—')
+const hf = computed(() =>
+  portfolioHealthFactor(
+    loans.value.map((loan) => loan.hf),
+    loopTotals.value,
+  ),
+)
+const hfText = (v) => (on.value ? (v === null ? '—' : hfFmt(v)) : '—')
 const hfColor = (v) => (on.value && v !== null ? hfTone(v) : 'var(--n-text-3)')
 const pointsOpen = ref(false)
+function openPoints() {
+  pointsOpen.value = true
+  event('Farm Points opened', { from: 'portfolio' })
+}
 const points = computed(myPoints)
 onMounted(loadPoints)
-const go = (m, mode, tab, asset) => router.push({ name: 'market-detail', params: { id: m.id }, query: { mode, tab, asset } })
+const go = (m, mode, tab, asset) =>
+  router.push({ name: 'market-detail', params: { id: m.id }, query: { mode, tab, asset } })
 const goVault = (v, tab) => router.push({ name: 'vault', params: { id: v.id }, query: { tab } })
 const manageLoop = (position) => router.push({ name: 'loop', query: { position: position.id } })
-const claimable = computed(() => LIVE.map((m) => {
-  const by = {}
-  for (const p of state.claimable[m.id] ?? []) by[p.symbol] = (by[p.symbol] ?? 0) + p.amount
-  return { m, items: Object.entries(by) }
-}).filter((c) => c.items.length))
+const claimable = computed(() =>
+  LIVE.map((m) => {
+    const by = {}
+    for (const p of state.claimable[m.id] ?? []) by[p.symbol] = (by[p.symbol] ?? 0) + p.amount
+    return { m, items: Object.entries(by) }
+  }).filter((c) => c.items.length),
+)
 const { tx: claimTx, run: runClaim, reset: resetClaim } = useTx()
 const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards(m) }])
 </script>
@@ -79,100 +124,237 @@ const claim = (m) => runClaim([{ label: 'Claim rewards', run: () => claimRewards
   <div v-if="!on" class="n-banner">Connect a wallet to see your positions.</div>
 
   <div class="n-stats stat-4">
-    <div class="n-stat"><div class="k">Total deposits</div><div class="v">{{ on ? usd(supplied) : '—' }}</div></div>
-    <div class="n-stat"><div class="k">Total Borrowed</div><div class="v">{{ on ? usd(borrowed) : '—' }}</div></div>
-    <div class="n-stat"><div class="k">Net APY</div><div class="v" :class="on && netApy < 0 ? 'neg' : 'accent'">{{ on ? pct(netApy) : '—' }}</div></div>
-    <div class="n-stat"><div class="k">Health Factor</div><div class="v" :style="{ color: hfColor(hf) }">{{ hfText(hf) }}</div></div>
+    <div class="n-stat">
+      <div class="k">Total deposits</div>
+      <div class="v">{{ on ? usd(supplied) : '—' }}</div>
+    </div>
+    <div class="n-stat">
+      <div class="k">Total Borrowed</div>
+      <div class="v">{{ on ? usd(borrowed) : '—' }}</div>
+    </div>
+    <div class="n-stat">
+      <div class="k">Net APY</div>
+      <div class="v" :class="on && netApy < 0 ? 'neg' : 'accent'">{{ on ? pct(netApy) : '—' }}</div>
+    </div>
+    <div class="n-stat">
+      <div class="k">Health Factor</div>
+      <div class="v" :style="{ color: hfColor(hf) }">{{ hfText(hf) }}</div>
+    </div>
   </div>
 
   <section v-if="on && loopPositions.length" class="n-panel loop-position-panel">
-    <div class="loop-heading"><div><h2>Loop positions</h2><p class="n-muted">Loop collateral and debt stay separate from your deposits and loans.</p></div><span class="n-chip">{{ loopPositions.length }} identified</span></div>
+    <div class="loop-heading">
+      <div>
+        <h2>Loop positions</h2>
+        <p class="n-muted">Loop collateral and debt stay separate from your deposits and loans.</p>
+      </div>
+      <span class="n-chip">{{ loopPositions.length }} identified</span>
+    </div>
     <div v-for="position in loopPositions" :key="position.id" class="loop-position-row">
-      <div><div class="loop-market">{{ position.market.name }}</div><div class="n-muted">Loop · {{ position.obligation.address.slice(0, 6) }}…{{ position.obligation.address.slice(-4) }}</div></div>
-      <div><div class="loop-label">Collateral</div><div class="n-num">{{ amt(Number(position.collateral.amount), 4) }} {{ tok(position.collateral.tokenId)?.name ?? position.collateral.tokenId }}</div><div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div></div>
-      <div><div class="loop-label">Debt</div><div class="n-num">{{ amt(Number(position.liability.amount), 4) }} {{ tok(position.liability.tokenId)?.name ?? position.liability.tokenId }}</div><div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div></div>
-      <div><div class="loop-label">Health factor</div><div class="n-num">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div></div>
-      <div><button v-if="LOOP_ENABLED || state.loopVisible" class="n-btn-sm ghost" @click="manageLoop(position)">Manage in Loop</button></div>
+      <div>
+        <div class="loop-market">{{ position.market.name }}</div>
+        <div class="n-muted">
+          Loop · {{ position.obligation.address.slice(0, 6) }}…{{ position.obligation.address.slice(-4) }}
+        </div>
+      </div>
+      <div>
+        <div class="loop-label">Collateral</div>
+        <div class="n-num">
+          {{ amt(Number(position.collateral.amount), 4) }}
+          {{ tok(position.collateral.tokenId)?.name ?? position.collateral.tokenId }}
+        </div>
+        <div class="n-muted">{{ usd(Number(position.collateral.amount) * priceOf(position.collateral.tokenId)) }}</div>
+      </div>
+      <div>
+        <div class="loop-label">Debt</div>
+        <div class="n-num">
+          {{ amt(Number(position.liability.amount), 4) }}
+          {{ tok(position.liability.tokenId)?.name ?? position.liability.tokenId }}
+        </div>
+        <div class="n-muted">{{ usd(Number(position.liability.amount) * priceOf(position.liability.tokenId)) }}</div>
+      </div>
+      <div>
+        <div class="loop-label">Health factor</div>
+        <div class="n-num">{{ position.healthFactor == null ? '—' : position.healthFactor.toFixed(2) }}</div>
+      </div>
+      <div>
+        <button v-if="LOOP_ENABLED || state.loopVisible" class="n-btn-sm ghost" @click="manageLoop(position)">
+          Manage in Loop
+        </button>
+      </div>
     </div>
   </section>
 
   <div v-if="on" class="n-banner split">
-    <span v-if="points">Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span>
-    <span v-else>Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as deposited balance × time, snapshotted every hour.</span>
-    <button class="n-btn-sm ghost" @click="pointsOpen = true; event('Farm Points opened', { from: 'portfolio' })">View leaderboard</button>
+    <span v-if="points"
+      >Farm Points: <b>#{{ points.rank }}</b> with <b>{{ amt(points.points, 2) }}</b> points.</span
+    >
+    <span v-else
+      >Deposit in {{ VAULTS[0]?.name ?? 'an Earn vault' }} to start earning Farm Points. Points accrue as deposited
+      balance × time, snapshotted every hour.</span
+    >
+    <button class="n-btn-sm ghost" @click="openPoints">View leaderboard</button>
   </div>
 
   <div v-for="c in claimable" :key="c.m.id" class="n-banner reward split">
-    <span>Unclaimed rewards from {{ c.m.name }}: <b>{{ c.items.map(([name, a]) => `${amt(a, 4)} ${name}`).join(' + ') }}</b></span>
+    <span
+      >Unclaimed rewards from {{ c.m.name }}:
+      <b>{{ c.items.map(([name, a]) => `${amt(a, 4)} ${name}`).join(' + ') }}</b></span
+    >
     <button class="n-btn-sm" :disabled="claimTx.status === 'running'" @click="claim(c.m)">Claim</button>
   </div>
   <TxProgress :tx="claimTx" @dismiss="resetClaim" />
   <div v-if="directLending.length && VAULTS[0]" class="n-banner">
-    You have {{ directLending.map((d) => `${amt(d.units)} ${d.t.name}`).join(' + ') }} lent directly to a market. Lending now goes through
-    <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>: withdraw below and deposit there to earn the vault's yield.
+    You have {{ directLending.map((d) => `${amt(d.units)} ${d.t.name}`).join(' + ') }} lent directly to a market.
+    Lending now goes through
+    <RouterLink :to="{ name: 'vault', params: { id: VAULTS[0].id } }" class="link">{{ VAULTS[0].name }}</RouterLink>:
+    withdraw below and deposit there to earn the vault's yield.
   </div>
   <div v-if="state.swapVisible && loanPair" class="n-banner swap-portfolio-cta">
-    Want {{ tok(loanPair.collateral).name }} after borrowing {{ tok(loanPair.liability).name }}? <RouterLink :to="{ name: 'swap', query: { input: loanPair.liability, output: loanPair.collateral } }" class="link">Buy {{ tok(loanPair.collateral).name }} →</RouterLink>
+    Want {{ tok(loanPair.collateral).name }} after borrowing {{ tok(loanPair.liability).name }}?
+    <RouterLink :to="{ name: 'swap', query: { input: loanPair.liability, output: loanPair.collateral } }" class="link"
+      >Buy {{ tok(loanPair.collateral).name }} →</RouterLink
+    >
     Locked collateral is never used for a swap.
   </div>
 
   <div class="n-seg toggle">
-    <button :class="{ on: view === 'deposits' }" :aria-pressed="view === 'deposits'" @click="view = 'deposits'">Active deposits</button>
-    <button :class="{ on: view === 'loans' }" :aria-pressed="view === 'loans'" @click="view = 'loans'">Active loans</button>
+    <button :class="{ on: view === 'deposits' }" :aria-pressed="view === 'deposits'" @click="view = 'deposits'">
+      Active deposits
+    </button>
+    <button :class="{ on: view === 'loans' }" :aria-pressed="view === 'loans'" @click="view = 'loans'">
+      Active loans
+    </button>
   </div>
 
   <div v-if="view === 'deposits'" class="n-table">
-    <div class="n-thead dp-grid"><div>Vault / Market</div><div>Deposited</div><div>Value</div><div /></div>
+    <div class="n-thead dp-grid">
+      <div>Vault / Market</div>
+      <div>Deposited</div>
+      <div>Value</div>
+      <div />
+    </div>
     <div v-if="!on" class="n-empty">Connect a wallet to see your deposits.</div>
     <div v-else-if="!deposits.length && !vaultDeposits.length" class="n-empty">No active deposits.</div>
-    <template v-else><div v-for="d in vaultDeposits" :key="d.v.id" class="n-tr dp-grid">
-      <div class="n-cell" data-label="Market"><span class="mk">{{ d.live?.name ?? d.v.name }}</span> <span class="n-chip">Vault</span></div>
-      <div class="n-cell n-asset" data-label="Deposited"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.value) }} {{ d.t.name }}</span></div>
-      <div class="n-cell n-muted n-num" data-label="Value">{{ usd(d.usd) }}</div>
-      <div class="n-cell n-actions">
-        <button class="n-btn-sm" @click="goVault(d.v, 'deposit')">Deposit</button>
-        <button class="n-btn-sm ghost" @click="goVault(d.v, 'withdraw')">Withdraw</button>
+    <template v-else
+      ><div v-for="d in vaultDeposits" :key="d.v.id" class="n-tr dp-grid">
+        <div class="n-cell" data-label="Market">
+          <span class="mk">{{ d.live?.name ?? d.v.name }}</span> <span class="n-chip">Vault</span>
+        </div>
+        <div class="n-cell n-asset" data-label="Deposited">
+          <TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.value) }} {{ d.t.name }}</span>
+        </div>
+        <div class="n-cell n-muted n-num" data-label="Value">{{ usd(d.usd) }}</div>
+        <div class="n-cell n-actions">
+          <button class="n-btn-sm" @click="goVault(d.v, 'deposit')">Deposit</button>
+          <button class="n-btn-sm ghost" @click="goVault(d.v, 'withdraw')">Withdraw</button>
+        </div>
       </div>
-    </div><div v-for="d in deposits" :key="d.m.id + d.t.token_id" class="n-tr dp-grid">
-      <div class="n-cell" data-label="Market"><span class="mk">{{ d.m.name }}</span> <span class="n-chip mainnet">Solana</span></div>
-      <div class="n-cell n-asset" data-label="Deposited"><TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.units) }} {{ d.t.name }}</span></div>
-      <div class="n-cell n-muted n-num" data-label="Value">{{ usd(d.usd) }}</div>
-      <div class="n-cell n-actions">
-        <button class="n-btn-sm ghost" @click="go(d.m, 'withdraw', undefined, d.t.token_id)">Withdraw</button>
-      </div>
-    </div></template>
+      <div v-for="d in deposits" :key="d.m.id + d.t.token_id" class="n-tr dp-grid">
+        <div class="n-cell" data-label="Market">
+          <span class="mk">{{ d.m.name }}</span> <span class="n-chip mainnet">Solana</span>
+        </div>
+        <div class="n-cell n-asset" data-label="Deposited">
+          <TokenIcon :token="d.t" size="sm" /><span class="n-num">{{ amt(d.units) }} {{ d.t.name }}</span>
+        </div>
+        <div class="n-cell n-muted n-num" data-label="Value">{{ usd(d.usd) }}</div>
+        <div class="n-cell n-actions">
+          <button class="n-btn-sm ghost" @click="go(d.m, 'withdraw', undefined, d.t.token_id)">Withdraw</button>
+        </div>
+      </div></template
+    >
   </div>
 
   <div v-else class="n-table">
-    <div class="n-thead pl-grid"><div>Loan</div><div>Loan value</div><div>Collateral</div><div>Collateral value</div><div>Health factor</div><div /></div>
+    <div class="n-thead pl-grid">
+      <div>Loan</div>
+      <div>Loan value</div>
+      <div>Collateral</div>
+      <div>Collateral value</div>
+      <div>Health factor</div>
+      <div />
+    </div>
     <div v-if="!on" class="n-empty">Connect a wallet to see your loans.</div>
     <div v-else-if="!loans.length" class="n-empty">No active loans.</div>
-    <template v-else><div v-for="l in loans" :key="l.m.id + l.t.token_id" class="n-tr pl-grid">
-      <div class="n-cell n-asset" data-label="Loan"><TokenIcon :token="l.t" size="sm" /><span class="n-num">{{ amt(l.units) }} {{ l.t.name }}</span></div>
-      <div class="n-cell n-muted n-num" data-label="Loan value">{{ usd(l.usd) }}</div>
-      <div class="n-cell" data-label="Collateral"><div class="n-tok-group"><TokenIcon v-for="c in l.coll" :key="c.t.token_id" :token="c.t" size="sm" /></div></div>
-      <div class="n-cell n-muted n-num" data-label="Collateral value">{{ usd(l.collUsd) }}</div>
-      <div class="n-cell n-num" data-label="Health factor" :style="{ color: hfColor(l.hf), fontWeight: 600 }">{{ hfText(l.hf) }}</div>
-      <div class="n-cell n-actions">
-        <button class="n-btn-sm" @click="go(l.m, undefined, 'repay', l.t.token_id)">Repay</button>
-        <button class="n-btn-sm ghost" @click="go(l.m, undefined, 'borrow', l.t.token_id)">Add collateral</button>
-      </div>
-    </div></template>
+    <template v-else
+      ><div v-for="l in loans" :key="l.m.id + l.t.token_id" class="n-tr pl-grid">
+        <div class="n-cell n-asset" data-label="Loan">
+          <TokenIcon :token="l.t" size="sm" /><span class="n-num">{{ amt(l.units) }} {{ l.t.name }}</span>
+        </div>
+        <div class="n-cell n-muted n-num" data-label="Loan value">{{ usd(l.usd) }}</div>
+        <div class="n-cell" data-label="Collateral">
+          <div class="n-tok-group"><TokenIcon v-for="c in l.coll" :key="c.t.token_id" :token="c.t" size="sm" /></div>
+        </div>
+        <div class="n-cell n-muted n-num" data-label="Collateral value">{{ usd(l.collUsd) }}</div>
+        <div class="n-cell n-num" data-label="Health factor" :style="{ color: hfColor(l.hf), fontWeight: 600 }">
+          {{ hfText(l.hf) }}
+        </div>
+        <div class="n-cell n-actions">
+          <button class="n-btn-sm" @click="go(l.m, undefined, 'repay', l.t.token_id)">Repay</button>
+          <button class="n-btn-sm ghost" @click="go(l.m, undefined, 'borrow', l.t.token_id)">Add collateral</button>
+        </div>
+      </div></template
+    >
   </div>
   <FarmPointsModal v-if="pointsOpen" @close="pointsOpen = false" />
 </template>
 
 <style scoped>
-.mk { font-weight: 600; }
-.link { color: var(--n-pink); }
-.swap-portfolio-cta { line-height: 1.6; }
-.loop-position-panel { margin: 22px 0; }
-.loop-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
-.loop-heading h2 { margin: 0 0 6px; font-size: 18px; }
-.loop-heading p { margin: 0; }
-.loop-position-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr .7fr auto; gap: 16px; align-items: center; padding: 14px 0; border-top: 1px solid var(--n-border); }
-.loop-market { font-weight: 600; }
-.loop-label { margin-bottom: 5px; color: var(--n-text-3); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
-.loop-unavailable { margin: 8px 0 0; color: var(--n-text-3); font-size: 12px; }
-@media (max-width: 760px) { .loop-position-row { grid-template-columns: 1fr 1fr; } .loop-position-row > :first-child { grid-column: 1 / -1; } }
+.mk {
+  font-weight: 600;
+}
+.link {
+  color: var(--n-pink);
+}
+.swap-portfolio-cta {
+  line-height: 1.6;
+}
+.loop-position-panel {
+  margin: 22px 0;
+}
+.loop-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.loop-heading h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+.loop-heading p {
+  margin: 0;
+}
+.loop-position-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr 0.7fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid var(--n-border);
+}
+.loop-market {
+  font-weight: 600;
+}
+.loop-label {
+  margin-bottom: 5px;
+  color: var(--n-text-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.loop-unavailable {
+  margin: 8px 0 0;
+  color: var(--n-text-3);
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .loop-position-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .loop-position-row > :first-child {
+    grid-column: 1 / -1;
+  }
+}
 </style>

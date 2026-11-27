@@ -1,24 +1,53 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, riskOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, usdFull, num, cleanAmount, borrowCapacity, weightedLtv, floorTo, ceilTo, repayPlan, underLimit } from '../logic.js'
+import {
+  pct,
+  amt,
+  usdFull,
+  num,
+  cleanAmount,
+  borrowCapacity,
+  weightedLtv,
+  floorTo,
+  ceilTo,
+  repayPlan,
+  underLimit,
+} from '../logic.js'
 import TxProgress from './TxProgress.vue'
 
-const props = defineProps({ market: Object, collateralTokens: Array, loanTokens: Array, initialTab: String, initialAsset: String, repayOnly: Boolean })
+const props = defineProps({
+  market: Object,
+  collateralTokens: Array,
+  loanTokens: Array,
+  initialTab: String,
+  initialAsset: String,
+  repayOnly: Boolean,
+})
 const { tx, run, reset } = useTx()
 
 const tab = ref(props.repayOnly || props.initialTab === 'repay' ? 'repay' : 'borrow')
-const loanId = ref(props.loanTokens.some((t) => t.token_id === props.initialAsset) ? props.initialAsset : props.loanTokens[0]?.token_id)
+const loanId = ref(
+  props.loanTokens.some((t) => t.token_id === props.initialAsset) ? props.initialAsset : props.loanTokens[0]?.token_id,
+)
 const collId = ref(props.collateralTokens[0]?.token_id)
 const deposit = ref('')
 const borrowAmt = ref('')
 const repayAmt = ref('')
-watch(deposit, (v) => { deposit.value = cleanAmount(v, coll.value.decimals) })
-watch(borrowAmt, (v) => { borrowAmt.value = cleanAmount(v, loan.value.decimals) })
-watch(repayAmt, (v) => { repayAmt.value = cleanAmount(v, loan.value.decimals) })
+watch(deposit, (v) => {
+  deposit.value = cleanAmount(v, coll.value.decimals)
+})
+watch(borrowAmt, (v) => {
+  borrowAmt.value = cleanAmount(v, loan.value.decimals)
+})
+watch(repayAmt, (v) => {
+  repayAmt.value = cleanAmount(v, loan.value.decimals)
+})
 
 const loan = computed(() => props.loanTokens.find((t) => t.token_id === loanId.value) ?? props.loanTokens[0])
-const coll = computed(() => props.collateralTokens.find((t) => t.token_id === collId.value) ?? props.collateralTokens[0])
+const coll = computed(
+  () => props.collateralTokens.find((t) => t.token_id === collId.value) ?? props.collateralTokens[0],
+)
 const loanRow = computed(() => rowOf(props.market, loan.value.token_id))
 const collRow = computed(() => rowOf(props.market, coll.value.token_id))
 const on = computed(() => !!state.address)
@@ -34,7 +63,8 @@ const pairLtv = (cid) => {
 const collateral = computed(() =>
   props.collateralTokens
     .map((t) => {
-      const units = (rowOf(props.market, t.token_id)?.supplied ?? 0) + (t.token_id === coll.value.token_id ? num(deposit.value) : 0)
+      const units =
+        (rowOf(props.market, t.token_id)?.supplied ?? 0) + (t.token_id === coll.value.token_id ? num(deposit.value) : 0)
       return { token: t, usd: units * priceOf(t.token_id), ltv: pairLtv(t.token_id) }
     })
     .filter((c) => c.usd > 0),
@@ -45,7 +75,10 @@ const maxLtv = computed(() => weightedLtv(collateral.value))
 // under it: the program re-checks at the transaction's block.
 const capacity = computed(() => {
   const kamino = loanRow.value?.maxBorrow
-  const max = !num(deposit.value) && kamino != null ? Math.min(kamino, liquidity.value) : borrowCapacity(collateral.value, debtUsd.value, loanPrice.value, liquidity.value)
+  const max =
+    !num(deposit.value) && kamino != null
+      ? Math.min(kamino, liquidity.value)
+      : borrowCapacity(collateral.value, debtUsd.value, loanPrice.value, liquidity.value)
   return underLimit(max, loan.value.decimals)
 })
 const borrowUsd = computed(() => num(borrowAmt.value) * loanPrice.value)
@@ -62,12 +95,15 @@ const noData = 'Protocol data could not be read — actions are disabled until i
 const borrowWarning = computed(() => {
   if (!on.value) return 'Connect a Solana wallet to continue.'
   if (!loanRow.value) return noData
-  if (collUsd.value <= 0 && !num(deposit.value)) return `Deposit ${props.collateralTokens.map((t) => t.name).join(' or ')} as collateral before borrowing.`
-  if (num(deposit.value) > (collRow.value?.walletBalance ?? 0)) return `You only hold ${amt(collRow.value?.walletBalance ?? 0)} ${coll.value.name}.`
+  if (collUsd.value <= 0 && !num(deposit.value))
+    return `Deposit ${props.collateralTokens.map((t) => t.name).join(' or ')} as collateral before borrowing.`
+  if (num(deposit.value) > (collRow.value?.walletBalance ?? 0))
+    return `You only hold ${amt(collRow.value?.walletBalance ?? 0)} ${coll.value.name}.`
   const a = num(borrowAmt.value)
   if (!a) return null
   if (a > liquidity.value) return `The vault holds ${amt(liquidity.value)} ${loan.value.name} in borrowable cash.`
-  if (a > capacity.value) return `That exceeds your borrow capacity of ${amt(capacity.value)} ${loan.value.name} at ${pct(maxLtv.value, 0)} max LTV.`
+  if (a > capacity.value)
+    return `That exceeds your borrow capacity of ${amt(capacity.value)} ${loan.value.name} at ${pct(maxLtv.value, 0)} max LTV.`
   return null
 })
 const repayWarning = computed(() => {
@@ -76,39 +112,85 @@ const repayWarning = computed(() => {
   if (debt.value <= 0) return `You have no ${loan.value.name} debt to repay.`
   const name = loan.value.name
   const max = amt(plan.value.maxPartial, 6)
-  return {
-    short: `Your wallet is ${amt(shortfall.value, 6)} ${name} short of the full debt. Add a little ${name} to close the loan, or repay up to ${max} ${name} now.`,
-    wallet: `You only hold ${amt(repayWallet.value)} ${name}.`,
-    dust: `That would leave less than Kamino's minimum balance behind. Repay at most ${max} ${name}, or the full debt.`,
-  }[plan.value.issue] ?? null
+  return (
+    {
+      short: `Your wallet is ${amt(shortfall.value, 6)} ${name} short of the full debt. Add a little ${name} to close the loan, or repay up to ${max} ${name} now.`,
+      wallet: `You only hold ${amt(repayWallet.value)} ${name}.`,
+      dust: `That would leave less than Kamino's minimum balance behind. Repay at most ${max} ${name}, or the full debt.`,
+    }[plan.value.issue] ?? null
+  )
 })
-const canBorrow = computed(() => on.value && num(borrowAmt.value) > 0 && !borrowWarning.value && tx.status !== 'running')
+const canBorrow = computed(
+  () => on.value && num(borrowAmt.value) > 0 && !borrowWarning.value && tx.status !== 'running',
+)
 const canRepay = computed(() => on.value && num(repayAmt.value) > 0 && !repayWarning.value && tx.status !== 'running')
 const repayWallet = computed(() => loanRow.value?.walletBalance ?? 0)
 const plan = computed(() => repayPlan(num(repayAmt.value), debt.value, repayWallet.value, loan.value.decimals))
 const repayAll = computed(() => plan.value.all)
 const canCloseAll = computed(() => repayWallet.value >= ceilTo(debt.value, loan.value.decimals))
 const shortfall = computed(() => Math.max(ceilTo(debt.value, loan.value.decimals) - repayWallet.value, 0))
-const atMaxPartial = computed(() => !canCloseAll.value && debt.value > 0 && num(repayAmt.value) > 0 && num(repayAmt.value) === plan.value.maxPartial)
-const withdrawAsset = computed(() => (props.collateralTokens.find((t) => (rowOf(props.market, t.token_id)?.supplied ?? 0) > 0) ?? props.collateralTokens[0])?.token_id)
+const atMaxPartial = computed(
+  () =>
+    !canCloseAll.value && debt.value > 0 && num(repayAmt.value) > 0 && num(repayAmt.value) === plan.value.maxPartial,
+)
+const withdrawAsset = computed(
+  () =>
+    (
+      props.collateralTokens.find((t) => (rowOf(props.market, t.token_id)?.supplied ?? 0) > 0) ??
+      props.collateralTokens[0]
+    )?.token_id,
+)
 const quickRepay = (p) => {
   const d = loan.value.decimals
-  const v = p < 100 ? floorTo((debt.value * p) / 100, d) : canCloseAll.value ? ceilTo(debt.value, d) : repayPlan(0, debt.value, repayWallet.value, d).maxPartial
+  const v =
+    p < 100
+      ? floorTo((debt.value * p) / 100, d)
+      : canCloseAll.value
+        ? ceilTo(debt.value, d)
+        : repayPlan(0, debt.value, repayWallet.value, d).maxPartial
   repayAmt.value = v > 0 ? String(v) : ''
 }
 
-watch([tab, loanId, collId], () => { deposit.value = ''; borrowAmt.value = ''; repayAmt.value = ''; reset() })
+watch([tab, loanId, collId], () => {
+  deposit.value = ''
+  borrowAmt.value = ''
+  repayAmt.value = ''
+  reset()
+})
 
 async function submitBorrow() {
   const steps = []
   if (num(deposit.value) > 0)
-    steps.push({ label: `Deposit ${coll.value.name} as collateral`, run: () => sendKaminoAction('deposit', { market: props.market, token: coll.value, amount: num(deposit.value) }) })
-  steps.push({ label: `Borrow ${loan.value.name}`, run: () => sendKaminoAction('borrow', { market: props.market, token: loan.value, amount: num(borrowAmt.value) }) })
-  if (await run(steps)) { deposit.value = ''; borrowAmt.value = '' }
+    steps.push({
+      label: `Deposit ${coll.value.name} as collateral`,
+      run: () => sendKaminoAction('deposit', { market: props.market, token: coll.value, amount: num(deposit.value) }),
+    })
+  steps.push({
+    label: `Borrow ${loan.value.name}`,
+    run: () => sendKaminoAction('borrow', { market: props.market, token: loan.value, amount: num(borrowAmt.value) }),
+  })
+  if (await run(steps)) {
+    deposit.value = ''
+    borrowAmt.value = ''
+  }
 }
 async function submitRepay() {
   const label = repayAll.value ? `Repay all ${loan.value.name}` : `Repay ${loan.value.name}`
-  if (await run([{ label, run: () => sendKaminoAction('repay', { market: props.market, token: loan.value, amount: num(repayAmt.value), all: repayAll.value }) }])) repayAmt.value = ''
+  if (
+    await run([
+      {
+        label,
+        run: () =>
+          sendKaminoAction('repay', {
+            market: props.market,
+            token: loan.value,
+            amount: num(repayAmt.value),
+            all: repayAll.value,
+          }),
+      },
+    ])
+  )
+    repayAmt.value = ''
 }
 </script>
 
@@ -124,16 +206,49 @@ async function submitRepay() {
       <select v-model="collId" class="n-select" style="margin-bottom: 10px">
         <option v-for="t in collateralTokens" :key="t.token_id" :value="t.token_id">{{ t.name }}</option>
       </select>
-      <input v-model="deposit" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 8px" />
-      <div class="n-kv" style="margin-bottom: 22px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(collRow?.walletBalance ?? 0)} ${coll.name}` : '—' }}</span></div>
+      <input
+        v-model="deposit"
+        class="n-input"
+        type="text"
+        inputmode="decimal"
+        autocomplete="off"
+        placeholder="0.00"
+        :disabled="!on"
+        style="margin-bottom: 8px"
+      />
+      <div class="n-kv" style="margin-bottom: 22px">
+        <span class="k">In wallet</span
+        ><span class="v">{{ on ? `${amt(collRow?.walletBalance ?? 0)} ${coll.name}` : '—' }}</span>
+      </div>
       <!-- Balance read and exactly 0: point to Buy Collateral (a link: the panel's one gradient is its submit). -->
-      <p v-if="state.swapVisible && state.balances[coll.token_id] === 0" class="n-note buy">Are you looking to buy {{ coll.name }}? <RouterLink :to="{ name: 'swap', query: { input: loan.token_id, output: coll.token_id } }">Buy {{ coll.name }} →</RouterLink></p>
+      <p v-if="state.swapVisible && state.balances[coll.token_id] === 0" class="n-note buy">
+        Are you looking to buy {{ coll.name }}?
+        <RouterLink :to="{ name: 'swap', query: { input: loan.token_id, output: coll.token_id } }"
+          >Buy {{ coll.name }} →</RouterLink
+        >
+      </p>
 
       <div class="n-rule" style="padding-top: 20px">
-        <div class="n-kv" style="margin-bottom: 12px"><span class="k">Collateral value</span><span class="v">{{ usdFull(collUsd) }}</span></div>
-        <div class="n-kv" style="margin-bottom: 10px"><span class="k">Loan-to-Value</span><span class="v accent">{{ pct(ltv, 1) }}</span></div>
-        <input class="slider" type="range" min="0" :max="Math.max(maxLtv, 1)" step="0.5" :value="Math.min(ltv, maxLtv)" :disabled="collUsd <= 0" :style="{ '--fill': `${(Math.min(ltv, maxLtv) / Math.max(maxLtv, 1)) * 100}%` }" @input="setLtv(+$event.target.value)" />
-        <div class="scale"><span>0%</span><span>Max {{ pct(maxLtv, 0) }}</span></div>
+        <div class="n-kv" style="margin-bottom: 12px">
+          <span class="k">Collateral value</span><span class="v">{{ usdFull(collUsd) }}</span>
+        </div>
+        <div class="n-kv" style="margin-bottom: 10px">
+          <span class="k">Loan-to-Value</span><span class="v accent">{{ pct(ltv, 1) }}</span>
+        </div>
+        <input
+          class="slider"
+          type="range"
+          min="0"
+          :max="Math.max(maxLtv, 1)"
+          step="0.5"
+          :value="Math.min(ltv, maxLtv)"
+          :disabled="collUsd <= 0"
+          :style="{ '--fill': `${(Math.min(ltv, maxLtv) / Math.max(maxLtv, 1)) * 100}%` }"
+          @input="setLtv(+$event.target.value)"
+        />
+        <div class="scale">
+          <span>0%</span><span>Max {{ pct(maxLtv, 0) }}</span>
+        </div>
       </div>
 
       <div class="n-rule" style="padding-top: 20px; margin-top: 22px">
@@ -141,14 +256,34 @@ async function submitRepay() {
         <select v-model="loanId" class="n-select" style="margin-bottom: 14px">
           <option v-for="t in loanTokens" :key="t.token_id" :value="t.token_id">{{ t.name }}</option>
         </select>
-        <div class="n-kv" style="margin-bottom: 10px"><span class="k">Borrow APY</span><span class="v accent">{{ pct(loanRow?.reserve.borrowAPR) }}</span></div>
-        <div class="n-kv" style="margin-bottom: 10px"><span class="k">Available liquidity</span><span class="v">{{ amt(liquidity) }} {{ loan.name }}</span></div>
-        <div class="n-kv" style="margin-bottom: 18px"><span class="k">Max you can borrow</span><span class="v">{{ on ? `${amt(capacity)} ${loan.name}` : '—' }}</span></div>
+        <div class="n-kv" style="margin-bottom: 10px">
+          <span class="k">Borrow APY</span><span class="v accent">{{ pct(loanRow?.reserve.borrowAPR) }}</span>
+        </div>
+        <div class="n-kv" style="margin-bottom: 10px">
+          <span class="k">Available liquidity</span><span class="v">{{ amt(liquidity) }} {{ loan.name }}</span>
+        </div>
+        <div class="n-kv" style="margin-bottom: 18px">
+          <span class="k">Max you can borrow</span
+          ><span class="v">{{ on ? `${amt(capacity)} ${loan.name}` : '—' }}</span>
+        </div>
         <div class="n-label">Amount</div>
-        <input v-model="borrowAmt" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 14px" />
-        <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(borrowUsd) }}</span></div>
+        <input
+          v-model="borrowAmt"
+          class="n-input"
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
+          placeholder="0.00"
+          :disabled="!on"
+          style="margin-bottom: 14px"
+        />
+        <div class="n-kv" style="margin-bottom: 18px">
+          <span class="k">Value</span><span class="v">{{ usdFull(borrowUsd) }}</span>
+        </div>
         <p v-if="borrowWarning" class="n-warn" style="margin-bottom: 16px">{{ borrowWarning }}</p>
-        <button class="n-btn-block" :disabled="!canBorrow" @click="submitBorrow">{{ num(deposit) > 0 ? 'Deposit & borrow' : 'Borrow' }} {{ loan.name }}</button>
+        <button class="n-btn-block" :disabled="!canBorrow" @click="submitBorrow">
+          {{ num(deposit) > 0 ? 'Deposit & borrow' : 'Borrow' }} {{ loan.name }}
+        </button>
       </div>
     </template>
 
@@ -157,25 +292,50 @@ async function submitRepay() {
       <select v-model="loanId" class="n-select" style="margin-bottom: 14px">
         <option v-for="t in loanTokens" :key="t.token_id" :value="t.token_id">{{ t.name }}</option>
       </select>
-      <div class="n-kv" style="margin-bottom: 10px"><span class="k">Borrow APY (current)</span><span class="v accent">{{ pct(loanRow?.reserve.borrowAPR) }}</span></div>
-      <div class="n-kv" style="margin-bottom: 10px"><span class="k">Outstanding debt</span><span class="v">{{ on ? `${amt(debt)} ${loan.name}` : '—' }}</span></div>
-      <div class="n-kv" style="margin-bottom: 20px"><span class="k">In wallet</span><span class="v">{{ on ? `${amt(loanRow?.walletBalance ?? 0)} ${loan.name}` : '—' }}</span></div>
-      <div class="n-label">Amount</div>
-      <input v-model="repayAmt" class="n-input" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" :disabled="!on" style="margin-bottom: 10px" />
-      <div class="n-quick" style="margin-bottom: 18px">
-        <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on || debt <= 0" @click="quickRepay(p)">{{ p === 100 ? 'Max' : p + '%' }}</button>
+      <div class="n-kv" style="margin-bottom: 10px">
+        <span class="k">Borrow APY (current)</span><span class="v accent">{{ pct(loanRow?.reserve.borrowAPR) }}</span>
       </div>
-      <div class="n-kv" style="margin-bottom: 18px"><span class="k">Value</span><span class="v">{{ usdFull(num(repayAmt) * loanPrice) }}</span></div>
-      <p v-if="repayAll && canRepay" class="n-note" style="margin-bottom: 16px">Repaying in full. The exact debt is settled on-chain so no dust is left behind.</p>
+      <div class="n-kv" style="margin-bottom: 10px">
+        <span class="k">Outstanding debt</span><span class="v">{{ on ? `${amt(debt)} ${loan.name}` : '—' }}</span>
+      </div>
+      <div class="n-kv" style="margin-bottom: 20px">
+        <span class="k">In wallet</span
+        ><span class="v">{{ on ? `${amt(loanRow?.walletBalance ?? 0)} ${loan.name}` : '—' }}</span>
+      </div>
+      <div class="n-label">Amount</div>
+      <input
+        v-model="repayAmt"
+        class="n-input"
+        type="text"
+        inputmode="decimal"
+        autocomplete="off"
+        placeholder="0.00"
+        :disabled="!on"
+        style="margin-bottom: 10px"
+      />
+      <div class="n-quick" style="margin-bottom: 18px">
+        <button v-for="p in [25, 50, 75, 100]" :key="p" :disabled="!on || debt <= 0" @click="quickRepay(p)">
+          {{ p === 100 ? 'Max' : p + '%' }}
+        </button>
+      </div>
+      <div class="n-kv" style="margin-bottom: 18px">
+        <span class="k">Value</span><span class="v">{{ usdFull(num(repayAmt) * loanPrice) }}</span>
+      </div>
+      <p v-if="repayAll && canRepay" class="n-note" style="margin-bottom: 16px">
+        Repaying in full. The exact debt is settled on-chain so no dust is left behind.
+      </p>
       <p v-if="atMaxPartial && canRepay" class="n-note" style="margin-bottom: 16px">
-        Your wallet is {{ amt(shortfall, 6) }} {{ loan.name }} short of the full debt (interest accrued), so this repays all but a tiny balance.
-        Add a little {{ loan.name }} to your wallet to close the loan completely.
+        Your wallet is {{ amt(shortfall, 6) }} {{ loan.name }} short of the full debt (interest accrued), so this repays
+        all but a tiny balance. Add a little {{ loan.name }} to your wallet to close the loan completely.
       </p>
       <p v-if="repayWarning" class="n-warn" style="margin-bottom: 16px">{{ repayWarning }}</p>
       <button class="n-btn-block" :disabled="!canRepay" @click="submitRepay">Repay {{ loan.name }}</button>
       <div class="n-rule to-withdraw">
         <span>Looking to withdraw your collateral?</span>
-        <RouterLink :to="{ name: 'market-detail', params: { id: market.id }, query: { mode: 'withdraw', asset: withdrawAsset } }">Go to withdrawal section →</RouterLink>
+        <RouterLink
+          :to="{ name: 'market-detail', params: { id: market.id }, query: { mode: 'withdraw', asset: withdrawAsset } }"
+          >Go to withdrawal section →</RouterLink
+        >
       </div>
     </template>
 
@@ -184,11 +344,39 @@ async function submitRepay() {
 </template>
 
 <style scoped>
-.buy { margin: -10px 0 22px; }
-.buy a { color: var(--n-pink); font-weight: 500; white-space: nowrap; }
-.buy a:hover { text-decoration: underline; }
-.to-withdraw { margin-top: 20px; padding-top: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--n-text-3); }
-.to-withdraw a { color: var(--n-pink); font-weight: 500; width: fit-content; }
-.to-withdraw a:hover { text-decoration: underline; }
-.scale { display: flex; justify-content: space-between; color: var(--n-text-4); font-size: 11px; margin-top: 4px; }
+.buy {
+  margin: -10px 0 22px;
+}
+.buy a {
+  color: var(--n-pink);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.buy a:hover {
+  text-decoration: underline;
+}
+.to-withdraw {
+  margin-top: 20px;
+  padding-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--n-text-3);
+}
+.to-withdraw a {
+  color: var(--n-pink);
+  font-weight: 500;
+  width: fit-content;
+}
+.to-withdraw a:hover {
+  text-decoration: underline;
+}
+.scale {
+  display: flex;
+  justify-content: space-between;
+  color: var(--n-text-4);
+  font-size: 11px;
+  margin-top: 4px;
+}
 </style>

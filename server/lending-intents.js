@@ -1,8 +1,14 @@
 import { transactionMessageBytesFromBase64 } from './tx-intent.js'
 
 export function createLendingTransactionIntentService({ intentStore, build, relay, onBuild = () => {} } = {}) {
-  if (!intentStore || typeof intentStore.issue !== 'function' || typeof intentStore.assertAndConsume !== 'function'
-    || typeof build !== 'function' || typeof relay !== 'function' || typeof onBuild !== 'function') {
+  if (
+    !intentStore ||
+    typeof intentStore.issue !== 'function' ||
+    typeof intentStore.assertAndConsume !== 'function' ||
+    typeof build !== 'function' ||
+    typeof relay !== 'function' ||
+    typeof onBuild !== 'function'
+  ) {
     throw new TypeError('Lending transaction intent service requires a store, build, relay, and build callback.')
   }
   return {
