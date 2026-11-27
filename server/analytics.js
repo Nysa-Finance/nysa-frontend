@@ -77,8 +77,8 @@ async function readHolders(v, index) {
 }
 
 function cachedFor(ms, read) {
-  let cached = null,
-    cachedAt = 0
+  let cached = null
+  let cachedAt = 0
   const get = () => {
     if (!cached || Date.now() - cachedAt > ms) {
       cachedAt = Date.now()

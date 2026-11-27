@@ -305,9 +305,9 @@ async function loopAction(label, attempt) {
 // The build reuses the preview's swap quote, which must be seconds old: a fresh quote first, then the build at once.
 async function openLoop() {
   if (!openReadiness.value?.executionEnabled) return
-  const l = loop.value,
-    c = coll.value,
-    d = debt.value
+  const selectedLoop = loop.value
+  const collToken = coll.value
+  const debtToken = debt.value
   const before = new Set(positions.value.map((p) => p.id))
   const ok = await loopAction('Open loop', async () => {
     await runPreview()
@@ -320,7 +320,7 @@ async function openLoop() {
       )
     }
     return sendLoopAction('loop-open', {
-      market: l.market,
+      market: selectedLoop.market,
       amount: request.fundingAmount,
       leverage: request.leverage,
       previewId: actionPreview.previewId,
@@ -334,7 +334,7 @@ async function openLoop() {
   if (opened) {
     const v = positionView(opened)
     highlight.value = opened.id
-    tx.note = `${amt(v.coll, 2)} ${c.name} collateral, ${amt(Number(opened.liability.amount), 2)} ${d.name} debt, ${v.leverage ? lev(v.leverage) : ''} leverage. Liquidation if ${c.name} falls to $${v.liqPrice?.toFixed(4)}.`
+    tx.note = `${amt(v.coll, 2)} ${collToken.name} collateral, ${amt(Number(opened.liability.amount), 2)} ${debtToken.name} debt, ${v.leverage ? lev(v.leverage) : ''} leverage. Liquidation if ${collToken.name} falls to $${v.liqPrice?.toFixed(4)}.`
   }
   fundingAmount.value = ''
   tab.value = 'positions'
@@ -362,9 +362,9 @@ const lev = (value) => `${Number(value).toFixed(2).replace(/0$/, '')}×`
 // amounts with the quoted ones.
 const ratesOf = (l) => {
   const a = strategyOf(l)?.carry?.assumptions ?? {}
-  const supply = Number(a.collateralSupplyAprPct ?? 0),
-    native = a.collateralNativeApyPct,
-    borrow = a.liabilityBorrowAprPct
+  const supply = Number(a.collateralSupplyAprPct ?? 0)
+  const native = a.collateralNativeApyPct
+  const borrow = a.liabilityBorrowAprPct
   return {
     hold: supply + Number(native ?? 0),
     native: native ?? null,
@@ -392,8 +392,8 @@ const collPrice = computed(() => priceOf(loop.value.collateral))
 const amount = computed(() => num(fundingAmount.value))
 // Your funding (in the collateral) is the equity: the borrowed debt buys the rest, up to `leverage` times its value.
 const est = computed(() => {
-  const L = Number(leverage.value),
-    ltv = (L - 1) / L
+  const L = Number(leverage.value)
+  const ltv = (L - 1) / L
   const quoted =
     previewIsCurrent.value && preview.value?.exposure?.source === 'kamino-sdk-net-route' ? preview.value.exposure : null
   const debtPrice = priceOf(loop.value.debt)

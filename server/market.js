@@ -113,9 +113,9 @@ function farmRewards(tokens, t, r, farm, market) {
 
 async function readAll() {
   const now = await getCurrentLedgerInstant(rpc)
-  const live = new Map(),
-    reserves = {},
-    rewards = {}
+  const live = new Map()
+  const reserves = {}
+  const rewards = {}
   for (const m of MARKETS) {
     reserves[m.id] = {}
     rewards[m.id] = {}

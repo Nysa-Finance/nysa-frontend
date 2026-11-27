@@ -154,9 +154,9 @@ function stableValue(value) {
 
 export function simulateScenario(scenario) {
   const { events, costs } = validateScenario(scenario)
-  const inputTotals = new Map(),
-    feeTotals = new Map(),
-    directCostTotals = new Map()
+  const inputTotals = new Map()
+  const feeTotals = new Map()
+  const directCostTotals = new Map()
   const sourceInputTotals = { standalone: new Map(), loop: new Map() }
   const counts = { attempted: 0, completed: 0, failed: 0, rejected: 0, standalone: 0, loop: 0 }
   const eventResults = []
@@ -300,8 +300,8 @@ function usage() {
 }
 
 export async function main(args = process.argv.slice(2)) {
-  let scenarioPath,
-    json = false
+  let scenarioPath
+  let json = false
   for (let index = 0; index < args.length; index++) {
     if (args[index] === '--scenario' && args[index + 1]) scenarioPath = resolve(args[++index])
     else if (args[index] === '--json') json = true

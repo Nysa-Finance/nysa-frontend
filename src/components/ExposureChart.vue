@@ -32,9 +32,9 @@ const parts = computed(() => {
 const slices = computed(() => pieSlices(parts.value.map((p) => p.value)).map((s, i) => ({ ...s, ...parts.value[i] })))
 const hover = ref(null)
 const shown = computed(() => slices.value[hover.value] ?? null)
-const C = 90,
-  R = 84,
-  RI = 56
+const C = 90
+const R = 84
+const RI = 56
 </script>
 
 <template>

@@ -4,8 +4,8 @@ export function confirmedTokenDeltas(meta) {
   const post = new Map(meta.postTokenBalances.map((item) => [item.accountIndex, item]))
   const changes = new Map()
   for (const index of new Set([...pre.keys(), ...post.keys()])) {
-    const before = pre.get(index),
-      after = post.get(index)
+    const before = pre.get(index)
+    const after = post.get(index)
     const owner = after?.owner ?? before?.owner
     const mint = after?.mint ?? before?.mint
     if (typeof owner !== 'string' || typeof mint !== 'string') continue

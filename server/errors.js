@@ -117,7 +117,7 @@ export function chainError(logs = [], err = null) {
   }
   if (logs.some((l) => /Error: insufficient funds/i.test(l))) return BALANCE
   const custom = err?.InstructionError?.[1]?.Custom
-  if (custom === 1 && logs.length === 0) return BALANCE // ponytail: no logs means no program id, assumes the token program
+  if (custom === 1 && logs.length === 0) return BALANCE // ponytail: no logs means no program id, assumes the token program; match the failing instruction index if another program misreads as "not enough balance"
   return RUNTIME[runtimeName(err)] ?? null
 }
 

@@ -36,8 +36,8 @@ const sources = (assumptions) =>
   assumptions && Object.fromEntries(Object.entries(assumptions).filter(([key]) => !RATE_FIELDS.includes(key)))
 export function loopCarryStillCurrent(previewCarry, currentCarry, now = Date.now()) {
   if (!previewCarry || !currentCarry || !Number.isFinite(now)) return false
-  const previewPct = decimal(previewCarry.estimatedCarryPct),
-    currentPct = decimal(currentCarry.estimatedCarryPct)
+  const previewPct = decimal(previewCarry.estimatedCarryPct)
+  const currentPct = decimal(currentCarry.estimatedCarryPct)
   if (
     JSON.stringify(canonical(sources(previewCarry.assumptions ?? null))) !==
       JSON.stringify(canonical(sources(currentCarry.assumptions ?? null))) ||

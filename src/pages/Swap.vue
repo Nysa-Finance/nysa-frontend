@@ -135,7 +135,7 @@ async function fetchQuote() {
     const result = await post('/api/swap-quote', body, req.signal)
     if (!current()) return
     quote.value = { ...result, amountBaseUnits: body.amountBaseUnits }
-    // ponytail: re-quote on expiry only while the tab is visible; a hidden tab keeps the stale quote until it is used.
+    // ponytail: re-quote on expiry only while the tab is visible; a hidden tab keeps the stale quote until it is used; re-quote on visibilitychange if users hit stale-quote errors.
     refresh = setTimeout(
       () => {
         if (!document.hidden) fetchQuote()

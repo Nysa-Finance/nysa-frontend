@@ -11,15 +11,13 @@ const withLaunch = computed(() =>
 )
 const w30 = computed(() => windowApy(withLaunch.value, 30))
 const w7 = computed(() => windowApy(recorded.value, 7))
-const days = (d) => `${d < 1 ? d.toFixed(1) : Math.round(d)}d`
-const sub = (w, n) =>
-  !w
-    ? 'collecting data'
-    : w.from === props.history?.inception
-      ? `since launch · ${days(w.spanDays)}`
-      : w.full
-        ? `${n}-day window`
-        : `based on ${days(w.spanDays)}`
+const days = (count) => `${count < 1 ? count.toFixed(1) : Math.round(count)}d`
+function sub(apyWindow, windowDays) {
+  if (!apyWindow) return 'collecting data'
+  if (apyWindow.from === props.history?.inception) return `since launch · ${days(apyWindow.spanDays)}`
+  if (apyWindow.full) return `${windowDays}-day window`
+  return `based on ${days(apyWindow.spanDays)}`
+}
 const lastTs = computed(() => recorded.value.at(-1)?.ts)
 
 const RANGES = [7, 30]
@@ -27,10 +25,11 @@ const range = ref(30)
 const daily = computed(() => dailyApySeries(recorded.value))
 const series = computed(() => daily.value.filter((p) => p.ts > daily.value.at(-1).ts - range.value * 86400))
 const COLOR = '#EC008C'
-const H = 220,
-  R = 12,
-  T = 10,
-  B = 34
+// Chart height and the right, top and bottom padding, in px.
+const H = 220
+const R = 12
+const T = 10
+const B = 34
 const box = ref(null)
 const W = ref(600)
 // The chart only renders once history exists, so (re)attach the width observer whenever it appears.
