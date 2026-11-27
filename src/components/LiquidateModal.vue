@@ -2,8 +2,9 @@
 // The quote is the backend's simulation of the real transaction: exactly what the program would pay out.
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { state, priceOf, loadLiquidationInfo, previewLiquidation, liquidate, useTx } from '../store.js'
-import { tok } from '../config.js'
-import { amt, usdFull, num, cleanAmount, floorTo, short, hfText, hfColor } from '../logic.js'
+import { tok } from '../../shared/config.js'
+import { amt, usdFull, num, cleanAmount, short, hfText, hfColor } from '../../shared/format.js'
+import { floorTo } from '../../shared/finance.js'
 import TxProgress from './TxProgress.vue'
 
 // collateral, debt: the token ids of the loan's largest deposit and largest borrow (from /api/analytics).

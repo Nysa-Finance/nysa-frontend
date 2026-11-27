@@ -11,7 +11,7 @@ import { address, fetchEncodedAccounts, getAddressEncoder, getProgramDerivedAddr
 import { TOKEN_PROGRAM_ADDRESS, getTokenDecoder } from '@solana-program/token'
 import { TOKEN_2022_PROGRAM_ADDRESS } from '@solana-program/token-2022'
 import Decimal from 'decimal.js'
-import { MARKETS, TOKENS, VAULTS, loopByMarket, tokensOf } from '../src/config.js'
+import { MARKETS, TOKENS, VAULTS, loopByMarket, tokensOf } from '../shared/config.js'
 import { rpc } from './rpc.js'
 import { getLive, getVault, reserveOf, farms, num, obligationByWallet } from './market.js'
 import { LOOP_POSITION_MARKET_IDS } from './strategy.js'

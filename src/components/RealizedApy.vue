@@ -1,6 +1,8 @@
 <script setup>
 import { ref, computed, watch, onUnmounted } from 'vue'
-import { pct, windowApy, dailyApySeries, niceTicks } from '../logic.js'
+import { pct } from '../../shared/format.js'
+import { windowApy, dailyApySeries } from '../../shared/finance.js'
+import { niceTicks } from '../../shared/chart.js'
 
 const props = defineProps({ token: Object, history: Object, currentApy: Number })
 

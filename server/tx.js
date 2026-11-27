@@ -25,8 +25,8 @@ import {
   TRANSACTION_SIZE_LIMIT,
 } from '@solana/kit'
 import { createRequire } from 'node:module'
-import { LIVE, marketById, vaultById, tokensOf, tok } from '../src/config.js'
-import { floorTo } from '../src/logic.js'
+import { LIVE, marketById, vaultById, tokensOf, tok } from '../shared/config.js'
+import { floorTo } from '../shared/finance.js'
 import { rpc, NONE } from './rpc.js'
 import {
   getLive,

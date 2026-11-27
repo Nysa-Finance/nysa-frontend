@@ -14,9 +14,9 @@ import {
   UserMetadata,
   ObligationTypeTag,
 } from '@kamino-finance/klend-sdk'
-import { DEFAULT_LOOP_LIMITS, loopExposure, projectedLtvLimitPct } from '../src/loop-policy.js'
-import { TOKENS, loopByMarket, loopMarket } from '../src/config.js'
-import { parseBaseUnits } from '../src/swap-fees.js'
+import { DEFAULT_LOOP_LIMITS, loopExposure, projectedLtvLimitPct } from '../shared/loop-policy.js'
+import { TOKENS, loopByMarket, loopMarket } from '../shared/config.js'
+import { parseBaseUnits } from '../shared/swap-fees.js'
 import { buildSwap, configuredFeeAccountForMint, FEE_BPS } from './swap.js'
 import { rpc } from './rpc.js'
 import { getLive, reserveOf, refreshMarketForExecution, obligationByWallet } from './market.js'

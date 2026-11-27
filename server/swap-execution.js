@@ -24,7 +24,7 @@ import {
   getSetComputeUnitLimitInstructionDataDecoder,
   getSetComputeUnitPriceInstructionDataDecoder,
 } from '@solana-program/compute-budget'
-import { TOKENS } from '../src/config.js'
+import { TOKENS } from '../shared/config.js'
 import { TOKEN_PROGRAMS, ataOf } from './account.js'
 import { rpc } from './rpc.js'
 import { chainError } from './errors.js'

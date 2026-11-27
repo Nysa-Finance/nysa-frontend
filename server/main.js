@@ -21,8 +21,8 @@ import { marketUpdates, marketLiquidations } from './updates.js'
 import { runSnapshot } from './snapshot.js'
 import { isSanctioned, screeningReady, screeningStatus, startScreening } from './screening.js'
 import { read, POINTS, HISTORY } from './storage.js'
-import { priceApy } from '../src/logic.js'
-import { DEFAULT_LOOP_LIMITS } from '../src/loop-policy.js'
+import { priceApy } from '../shared/finance.js'
+import { DEFAULT_LOOP_LIMITS } from '../shared/loop-policy.js'
 import {
   LIVE,
   LOOP_ENABLED,
@@ -33,7 +33,7 @@ import {
   loopMarket,
   marketById,
   vaultById,
-} from '../src/config.js'
+} from '../shared/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy, LOOP_ALLOWED_MARKET_IDS } from './strategy.js'
 import {
   LoopPreviewError,

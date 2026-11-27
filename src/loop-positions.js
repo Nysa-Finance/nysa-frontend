@@ -1,4 +1,4 @@
-import { loopByMarket } from './config.js'
+import { loopByMarket } from '../shared/config.js'
 
 // Multiply positions stay separate from the vanilla and vault totals: no token-key collisions.
 // `rates` by market id, then token id (a token borrowed in two markets has two rates).

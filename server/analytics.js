@@ -1,5 +1,5 @@
 import { address, fetchEncodedAccounts, getAddressDecoder, isAddress } from '@solana/kit'
-import { LIVE, VAULTS, swapTokens } from '../src/config.js'
+import { LIVE, VAULTS, swapTokens } from '../shared/config.js'
 import { localForkExecutionEnabled } from './local-fork-execution.js'
 import { RPC_URL, rpc, isLoopbackRpc } from './rpc.js'
 import { getLive, getVault, num } from './market.js'

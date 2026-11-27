@@ -2,7 +2,7 @@
 // Without it a loop open is 1,432 bytes, over Solana's 1,232-byte limit. It holds the accounts every open and close of
 // that loop uses whoever the wallet is (COMMON plus the loop's list below, read off its transactions on a mainnet
 // fork); wallet accounts and the swap's tick arrays stay out. Put the printed address in the loop's `lookupTable`
-// (LOOPS in src/config.js).
+// (LOOPS in shared/config.js).
 // Run: node scripts/create-loop-lut.js --loop=<id> --rpc=<url> --keypair=<funded keypair JSON> [--table=<address>] [--dry-run]
 // The keypair pays the rent (about 0.007 SOL, kept by the frozen table) and fees; it holds no other power afterwards.
 import { readFile } from 'node:fs/promises'

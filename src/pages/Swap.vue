@@ -4,11 +4,11 @@ import { useRoute } from 'vue-router'
 import { amountToBaseUnits } from '../swap-flow.js'
 import { createLatestRequestGate } from '../swap-quote-request.js'
 import { signAndSendSwap, state, useTx } from '../store.js'
-import { LIVE, TOKENS } from '../config.js'
+import { LIVE, TOKENS } from '../../shared/config.js'
 import TokenIcon from '../components/TokenIcon.vue'
 import TxProgress from '../components/TxProgress.vue'
-import { formatBaseUnits } from '../swap-fees.js'
-import { cleanAmount } from '../logic.js'
+import { formatBaseUnits } from '../../shared/swap-fees.js'
+import { cleanAmount } from '../../shared/format.js'
 
 const SLIPPAGES = [10, 30, 50] // the server refuses more than 50
 const route = useRoute()

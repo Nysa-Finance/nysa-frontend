@@ -8,8 +8,9 @@ import {
   DEFAULT_RECENT_SLOT_DURATION_MS,
 } from '@kamino-finance/klend-sdk'
 import { address } from '@solana/kit'
-import { MARKETS, tokensOf } from '../src/config.js'
-import { rewardApr, short } from '../src/logic.js'
+import { MARKETS, tokensOf } from '../shared/config.js'
+import { rewardApr } from '../shared/finance.js'
+import { short } from '../shared/format.js'
 import { rpc, NONE, LOCAL_FORK } from './rpc.js'
 import { createLatestReadPublisher, createRefresher } from './refresh.js'
 import { readVaults } from './vault.js'

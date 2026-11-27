@@ -1,6 +1,6 @@
 import { TRANSACTION_SIZE_LIMIT, getTransactionDecoder, isAddress } from '@solana/kit'
 import { createSwapIntentStore, TransactionIntentError } from './tx-intent.js'
-import { loopByMarket } from '../src/config.js'
+import { loopByMarket } from '../shared/config.js'
 
 const ACTIONS = new Set(['loop-open', 'loop-close', 'loop-setup'])
 const messageDecoder = getTransactionDecoder()

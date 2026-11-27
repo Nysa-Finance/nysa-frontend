@@ -20,7 +20,7 @@ import {
   persistSignedSwapBeforeRelay,
   signatureFromSignedTransaction,
 } from './swap-recovery.js'
-import { TOKENS } from './config.js'
+import { TOKENS } from '../shared/config.js'
 
 const signer = await generateKeyPairSigner()
 const mint = TOKENS['svm-usdy'].mint

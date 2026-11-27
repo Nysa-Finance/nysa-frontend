@@ -2,7 +2,8 @@
 import Boost from './Boost.vue'
 import { ref, computed, watch } from 'vue'
 import { state, rowOf, priceOf, rewardAprOf, sendKaminoAction, useTx } from '../store.js'
-import { pct, amt, usdFull, num, cleanAmount, floorTo, coversAll, underLimit } from '../logic.js'
+import { pct, amt, usdFull, num, cleanAmount } from '../../shared/format.js'
+import { floorTo, coversAll, underLimit } from '../../shared/finance.js'
 import TxProgress from './TxProgress.vue'
 
 // withdrawOnly: the market page, for collateral and deposits made before the Earn vaults.

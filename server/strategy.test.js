@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { LIVE, MARKETS, TOKENS } from '../src/config.js'
+import { LIVE, MARKETS, TOKENS } from '../shared/config.js'
 import { evaluateLoopActionReadiness, evaluateLoopStrategy } from './strategy.js'
 
 const now = Date.parse('2026-11-05T12:00:00.000Z')

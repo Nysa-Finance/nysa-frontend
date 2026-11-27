@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import bs58 from 'bs58'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, TOKENS } from '../shared/config.js'
 import { indexedPositionSummary, loopPositionIdentity, recordIndexedObligation } from './positions.js'
 import { evaluateLoopActionReadiness, LOOP_ALLOWED_MARKET_IDS, LOOP_POSITION_MARKET_IDS } from './strategy.js'
 import {
@@ -10,7 +10,7 @@ import {
   portfolioHealthFactor,
   selectedLoopCloseReadiness,
 } from '../src/loop-positions.js'
-import { snapshotPoints } from '../src/logic.js'
+import { snapshotPoints } from '../shared/points.js'
 import { readPositions } from './analytics.js'
 import { readMarkets } from './snapshot.js'
 import { refreshIndex } from './updates.js'

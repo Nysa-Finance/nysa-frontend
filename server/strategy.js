@@ -1,5 +1,5 @@
-import { LOOPS, MARKETS, TOKENS, loopByMarket } from '../src/config.js'
-import { calculateCarryPct, carryNeedsAcknowledgement } from '../src/loop-policy.js'
+import { LOOPS, MARKETS, TOKENS, loopByMarket } from '../shared/config.js'
+import { calculateCarryPct, carryNeedsAcknowledgement } from '../shared/loop-policy.js'
 
 export const LOOP_ALLOWED_MARKET_IDS = Object.freeze(LOOPS.map((loop) => loop.market))
 // Keep reading configured Multiply PDAs even if entry allowlisting or allocation changes, so full-close management

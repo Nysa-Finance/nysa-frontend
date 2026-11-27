@@ -1,5 +1,5 @@
 import { isAddress } from '@solana/kit'
-import { LIVE, TOKENS, swapTokens } from '../src/config.js'
+import { LIVE, TOKENS, swapTokens } from '../shared/config.js'
 import { buildSwap, configuredFeeAccountForMint, FEE_BPS } from './swap.js'
 
 export const SWAP_QUOTE_MAX_AGE_MS = 15_000

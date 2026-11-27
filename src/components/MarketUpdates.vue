@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { txUrl } from '../config.js'
+import { txUrl } from '../../shared/config.js'
 
 const props = defineProps({ updates: Array, error: String })
 const all = ref(false)

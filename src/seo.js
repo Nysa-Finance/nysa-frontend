@@ -1,6 +1,6 @@
 // Set on every navigation (the app renders client-side; Google runs the JavaScript). Defaults for crawlers that don't
 // are in index.html.
-import { marketById, vaultById } from './config.js'
+import { marketById, vaultById } from '../shared/config.js'
 
 const SITE = 'https://app.nysa.finance'
 const DEFAULT =

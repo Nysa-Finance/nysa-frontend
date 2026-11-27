@@ -1,7 +1,7 @@
 // Byte values from real transactions on the Nysa market.
 import assert from 'node:assert/strict'
 import { describe, describeVault, liquidation } from './updates.js'
-import { LIVE, TOKENS } from '../src/config.js'
+import { LIVE, TOKENS } from '../shared/config.js'
 
 const USDC = TOKENS['svm-usdc'],
   USDY = TOKENS['svm-usdy']

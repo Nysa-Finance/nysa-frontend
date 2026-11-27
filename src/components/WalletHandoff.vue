@@ -9,7 +9,7 @@ import {
   reconcileLocalPendingAction,
   resumeLendingSetupRecovery,
 } from '../store.js'
-import { txUrl } from '../config.js'
+import { txUrl } from '../../shared/config.js'
 import TxProgress from './TxProgress.vue'
 
 const pendingAction = computed(() => {
