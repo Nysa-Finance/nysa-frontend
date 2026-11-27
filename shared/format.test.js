@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { usd, pct, compact, hfText, dur, amt, cleanAmount, num } from './format.js'
+import { usd, pct, compact, hfText, dur, amt, cleanAmount, num, leverageText, healthLevel } from './format.js'
 
 assert.equal(usd(0.81), '$0.81')
 assert.equal(usd(6600), '$6.6K')
@@ -32,4 +32,6 @@ assert.equal(cleanAmount('1 000a', 6), '1000')
 assert.equal(num('586,985732'), 586.985732)
 assert.equal(num(' 0.5 '), 0.5)
 for (const bad of ['1.000,5', '1,000.5', 'abc', '-3', '', null]) assert.equal(num(bad), 0, String(bad))
+assert.deepEqual([leverageText(3), leverageText(2.5), leverageText(1.75)], ['3.0×', '2.5×', '1.75×'])
+assert.deepEqual([healthLevel(2)[1], healthLevel(1.5)[1], healthLevel(1.1)[1]], ['Safe', 'Medium', 'Risky'])
 console.log('format ok')

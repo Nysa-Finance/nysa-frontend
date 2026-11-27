@@ -2,22 +2,15 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sendLoopAction, sendLoopSetup, state, priceOf, useTx } from '../store.js'
-import {
-  LOOP_ENABLED,
-  LOOPS,
-  TOKENS,
-  loopById,
-  loopByMarket,
-  loopMarket,
-  swapTokens,
-  tok,
-} from '../../shared/config.js'
-import { amt, pct, usd, usdFull, num, hfText, cleanAmount } from '../../shared/format.js'
+import { LOOP_ENABLED, LOOPS, loopById, loopByMarket, loopMarket, swapTokens, tok } from '../../shared/config.js'
+import { amt, pct, usd, num, cleanAmount, leverageText as lev } from '../../shared/format.js'
 import { floorTo } from '../../shared/finance.js'
-import { formatBaseUnits } from '../../shared/swap-fees.js'
 import { loopPreviewRequestMatches } from '../loop-preview-request.js'
 import { selectedLoopCloseReadiness } from '../loop-positions.js'
 import TokenIcon from '../components/TokenIcon.vue'
+import LoopTable from '../components/LoopTable.vue'
+import LoopPositionCard from '../components/LoopPositionCard.vue'
+import LoopEarnings from '../components/LoopEarnings.vue'
 import TxProgress from '../components/TxProgress.vue'
 import NotFound from './NotFound.vue'
 
@@ -362,12 +355,6 @@ async function closeLoop(position) {
     tx.note = `${amt(Math.max(0, (state.balances[c.token_id] ?? 0) - before), 2)} ${c.name} returned to your wallet.`
 }
 
-const feeLabel = (fee) => {
-  const t = Object.values(TOKENS).find((x) => x.mint === fee.mint)
-  return `${formatBaseUnits(BigInt(fee.amountBaseUnits), t.decimals)} ${t.name}`
-}
-const lev = (value) => `${Number(value).toFixed(2).replace(/0$/, '')}×`
-
 // Estimates for the chosen leverage, before any quote: the summary moves with the slider; a preview replaces the token
 // amounts with the quoted ones.
 const ratesOf = (l) => {
@@ -419,7 +406,6 @@ const est = computed(() => {
     netApy: netApyAt(L),
   }
 })
-const health = (hf) => (hf >= 1.8 ? ['ok', 'Safe'] : hf >= 1.3 ? ['warn', 'Medium'] : ['bad', 'Risky'])
 const setPct = (p) => {
   fundingAmount.value = String(floorTo(((state.balances[coll.value.token_id] ?? 0) * p) / 100, inputDecimals.value))
 }
@@ -491,6 +477,9 @@ const positionView = (position) => {
   }
 }
 const positionCards = computed(() => positions.value.map((position) => ({ position, view: positionView(position) })))
+const loopRows = computed(() =>
+  visibleLoops.value.map((l) => ({ loop: l, netApy: netApyOf(l, l.maxLeverage), ...marketOf(l) })),
+)
 onMounted(() => {
   loadStrategies()
   loadSetupStatus()
@@ -512,99 +501,21 @@ onMounted(() => {
       </button>
     </div>
 
-    <div v-if="tab === 'loops'" class="loops">
-      <div class="n-thead lp-grid">
-        <div>Asset</div>
-        <div>Max net APY</div>
-        <div>Max leverage</div>
-        <div>Available liquidity</div>
-        <div>Deposited</div>
-        <div>Borrow</div>
-      </div>
-      <div v-if="strategy && !visibleLoops.length" class="n-empty">Loops aren't open on Nysa yet.</div>
-      <div
-        v-for="l in visibleLoops"
-        :key="l.id"
-        class="n-tr click lp-grid lp-row"
-        role="link"
-        tabindex="0"
-        @click="openAsset(l)"
-        @keydown.enter="openAsset(l)"
-      >
-        <div class="n-cell n-asset" data-label="Asset">
-          <TokenIcon :token="tok(l.collateral)" /><span class="asset-name"
-            ><b>{{ tok(l.collateral).name }}</b
-            ><small>{{ l.fullName }}</small></span
-          >
-        </div>
-        <div class="n-cell n-num" :class="netApyOf(l, l.maxLeverage) < 0 ? 'neg' : 'up'" data-label="Max net APY">
-          {{ netApyOf(l, l.maxLeverage) == null ? '—' : pct(netApyOf(l, l.maxLeverage)) }}
-        </div>
-        <div class="n-cell n-num" data-label="Max leverage">{{ lev(l.maxLeverage) }}</div>
-        <div class="n-cell n-num" data-label="Available liquidity">{{ usd(marketOf(l).liquidity) }}</div>
-        <div class="n-cell n-num" data-label="Deposited">{{ usd(marketOf(l).deposited) }}</div>
-        <div class="n-cell" data-label="Borrow"><TokenIcon :token="tok(l.debt)" size="sm" /></div>
-      </div>
-    </div>
+    <LoopTable v-if="tab === 'loops'" :rows="loopRows" :loaded="!!strategy" @open="openAsset" />
 
     <template v-else>
       <div v-if="!positions.length" class="n-table">
         <div class="n-empty">No open loops yet. <button class="link" @click="tab = 'loops'">Explore loops</button></div>
       </div>
-      <section
+      <LoopPositionCard
         v-for="{ position, view } in positionCards"
         :key="position.id"
-        class="n-panel position"
-        :class="{ picked: route.query.position === position.id || highlight === position.id }"
-      >
-        <div class="panel-h">
-          <span class="pair"
-            ><TokenIcon :token="tok(position.collateral.tokenId)" size="sm" />{{
-              tok(position.collateral.tokenId).name
-            }}
-            / <TokenIcon :token="tok(position.liability.tokenId)" size="sm" />{{
-              tok(position.liability.tokenId).name
-            }}</span
-          >
-        </div>
-        <div class="n-stats pos-stats">
-          <div class="n-stat">
-            <div class="k">Net value</div>
-            <div class="v">{{ usdFull(view.net) }}</div>
-          </div>
-          <div class="n-stat">
-            <div class="k">Net APY</div>
-            <div class="v" :class="view.netApy < 0 ? 'neg' : 'accent'">{{ pct(view.netApy) }}</div>
-          </div>
-          <div class="n-stat">
-            <div class="k">Leverage</div>
-            <div class="v">{{ view.leverage ? lev(view.leverage) : '—' }}</div>
-          </div>
-          <div class="n-stat">
-            <div class="k">Liquidation price</div>
-            <div class="v">{{ view.liqPrice ? `$${view.liqPrice.toFixed(4)}` : '—' }}</div>
-          </div>
-          <div class="n-stat">
-            <div class="k">Health factor</div>
-            <div class="v">
-              {{ hfText(view.hf) }}
-              <span v-if="Number.isFinite(view.hf)" class="n-chip" :class="health(view.hf)[0]">{{
-                health(view.hf)[1]
-              }}</span>
-            </div>
-          </div>
-        </div>
-        <div class="close">
-          <button
-            class="n-btn-grad"
-            :disabled="acting || !view.readiness?.executionEnabled"
-            @click="closeLoop(position)"
-          >
-            {{ acting ? 'Preparing…' : 'Close loop' }}
-          </button>
-          <span v-if="!view.readiness?.executionEnabled" class="why">Closing isn't available yet.</span>
-        </div>
-      </section>
+        :position="position"
+        :view="view"
+        :picked="route.query.position === position.id || highlight === position.id"
+        :acting="acting"
+        @close="closeLoop(position)"
+      />
     </template>
   </template>
 
@@ -757,93 +668,20 @@ onMounted(() => {
         <p v-if="error" class="err" role="status">{{ error }}</p>
       </aside>
 
-      <section class="n-panel d-body">
-        <h2 class="side-h">How this loop earns</h2>
-        <div class="rows first">
-          <div class="n-kv">
-            <span class="k">{{ coll.name }} yield × {{ Number(leverage).toFixed(2) }}</span
-            ><span class="v">{{ pct(rates.hold * leverage) }}</span>
-          </div>
-          <div class="n-kv">
-            <span class="k">{{ debt.name }} borrow × {{ (leverage - 1).toFixed(2) }}</span
-            ><span class="v neg">{{ rates.borrow == null ? '—' : `−${pct(rates.borrow * (leverage - 1))}` }}</span>
-          </div>
-          <div class="n-kv total">
-            <span class="k">Net APY</span
-            ><span class="v" :class="est.netApy < 0 ? 'neg' : 'up'">{{
-              est.netApy == null ? '—' : pct(est.netApy)
-            }}</span>
-          </div>
-          <p v-if="est.netApy != null && (rates.native != null || !loop.priceYield)" class="vs">
-            vs {{ pct(rates.hold) }} holding {{ coll.name }}
-          </p>
-          <p v-else-if="loop.priceYield && rates.native == null" class="vs">
-            {{ coll.name }}'s own yield isn't included yet: it needs a week of recorded prices.
-          </p>
-        </div>
-        <div class="rows">
-          <div class="n-kv">
-            <span class="k">Liquidation price</span
-            ><span class="v"
-              >${{ est.liqPrice.toFixed(4) }}
-              <small>{{ coll.name }} −{{ ((1 - est.liqPrice / collPrice) * 100).toFixed(0) }}%</small></span
-            >
-          </div>
-          <div class="n-kv">
-            <span class="k">Health</span><span class="n-chip" :class="health(est.hf)[0]">{{ health(est.hf)[1] }}</span>
-          </div>
-          <div class="bar" aria-hidden="true">
-            <span class="lim" :style="{ left: `${liqLtv}%` }"></span
-            ><span class="mark" :style="{ left: `${est.ltv}%` }"></span>
-          </div>
-          <div class="bar-l">
-            <span>LTV {{ pct(est.ltv, 1) }}</span
-            ><span>liquidation {{ pct(liqLtv, 0) }}</span>
-          </div>
-        </div>
-        <div class="rows last">
-          <div v-if="feeBps" class="n-kv">
-            <span class="k">Nysa fee ({{ feeBps / 100 }}% of swap)</span
-            ><span class="v">{{
-              quoted && preview.feeTotalUsd != null
-                ? usdFull(preview.feeTotalUsd)
-                : `≈ ${usdFull((est.swap * feeBps) / 10000)}`
-            }}</span>
-          </div>
-          <p v-else class="fee-note">Nysa charges 0% fees. Standard slippage and routing fees apply.</p>
-          <div v-if="quoted && preview.knownCostsTotalUsd != null" class="n-kv">
-            <span class="k">Borrow and flash loan fees</span
-            ><span class="v">{{ usdFull(Math.max(0, preview.knownCostsTotalUsd - (preview.feeTotalUsd ?? 0))) }}</span>
-          </div>
-        </div>
-        <details class="more">
-          <summary>Details</summary>
-          <div class="n-kv">
-            <span class="k">Health factor</span><span class="v">{{ hfText(est.hf) }}</span>
-          </div>
-          <div class="n-kv"><span class="k">Max slippage</span><span class="v">0.5%</span></div>
-          <div v-for="fee in quoted ? fees.filter((f) => f.bps) : []" :key="fee.action" class="n-kv">
-            <span class="k">Nysa fee</span><span class="v">{{ feeLabel(fee) }}</span>
-          </div>
-          <div v-if="loop.priceYield" class="n-kv">
-            <span class="k">{{ coll.name }} yield</span
-            ><span class="v">{{
-              rates.native == null
-                ? '—'
-                : `${pct(rates.native)} (${rates.nativeSource === 'env' ? 'published rate' : '30-day price'})`
-            }}</span>
-          </div>
-          <div class="n-kv">
-            <span class="k">Closing</span><span class="v">returns {{ coll.name }}</span>
-          </div>
-          <div class="n-kv">
-            <span class="k">Rates as of</span
-            ><span class="v">{{
-              strategyOf(loop)?.carry?.asOf ? new Date(strategyOf(loop).carry.asOf).toLocaleString() : '—'
-            }}</span>
-          </div>
-        </details>
-      </section>
+      <LoopEarnings
+        class="d-body"
+        :loop="loop"
+        :coll="coll"
+        :debt="debt"
+        :leverage="Number(leverage)"
+        :rates="rates"
+        :est="est"
+        :liq-ltv="liqLtv"
+        :coll-price="collPrice"
+        :fee-bps="feeBps"
+        :quote="quoted ? preview : null"
+        :rates-as-of="strategyOf(loop)?.carry?.asOf"
+      />
     </div>
   </template>
 
@@ -861,48 +699,6 @@ onMounted(() => {
 }
 .seg-center {
   margin: 0 auto 26px;
-}
-/* Loops table: rows as cards, numbers right-aligned */
-.loops {
-  border: 1px solid var(--n-line);
-  border-radius: 12px;
-  background: var(--n-bg-2);
-  padding: 0 10px 10px;
-}
-.loops .n-thead {
-  border-bottom: 0;
-  padding: 14px 18px 6px;
-}
-.lp-grid {
-  grid-template-columns: minmax(0, 1.6fr) 1fr 0.9fr 1fr 1fr 0.6fr;
-}
-.lp-grid > :not(:first-child) {
-  justify-self: end;
-  text-align: right;
-}
-.lp-row {
-  background: #000;
-  border: 1px solid var(--n-line);
-  border-radius: 4px;
-  padding: 16px 18px;
-  margin-top: 8px;
-}
-.lp-row:last-child {
-  border-bottom: 1px solid var(--n-line);
-}
-.lp-row:hover,
-.lp-row:focus-visible {
-  border-color: var(--n-line-2);
-  outline: none;
-}
-.asset-name {
-  display: grid;
-  line-height: 1.25;
-}
-.asset-name small {
-  color: var(--n-text-3);
-  font-weight: 400;
-  font-size: 13px;
 }
 .up {
   color: var(--n-green);
@@ -974,27 +770,12 @@ onMounted(() => {
   font-weight: 600;
   margin-bottom: 16px;
 }
-.panel-h {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-.panel-h h2 {
-  font-size: 18px;
-  font-weight: 600;
-}
 .pair {
   display: flex;
   align-items: center;
   gap: 7px;
   color: var(--n-text-2);
   font-size: 13px;
-}
-.pair .n-chip {
-  margin-left: 4px;
 }
 .row {
   display: flex;
@@ -1166,147 +947,12 @@ onMounted(() => {
   display: grid;
   gap: 4px;
 }
-.more .n-kv {
-  margin-top: 8px;
-}
-.rows {
-  display: grid;
-  gap: 9px;
-  padding: 14px 0;
-  border-bottom: 1px solid var(--n-line);
-}
-.rows.first {
-  padding-top: 0;
-}
-.rows.last {
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-.n-kv.total {
-  padding-top: 6px;
-  border-top: 1px solid var(--n-hair);
-  font-weight: 600;
-}
-.n-kv.total .v {
-  font-size: 18px;
-}
-.n-kv .v.up {
-  color: var(--n-green);
-}
-.n-kv .v.neg {
-  color: var(--n-text-2);
-} /* the borrow cost line: a cost, not the result */
-.n-kv.total .v.neg {
-  color: var(--n-red);
-}
-.n-kv .v small {
-  color: var(--n-text-4);
-  font-weight: 400;
-  font-size: 12px;
-  margin-left: 6px;
-}
-.vs {
-  color: var(--n-text-4);
-  font-size: 12px;
-}
-.n-chip.ok {
-  color: var(--n-green);
-  border-color: #3ddc8459;
-}
-.n-chip.bad {
-  color: var(--n-red);
-  border-color: #ff5d5d66;
-}
-.bar {
-  position: relative;
-  height: 6px;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--n-green) 0%, var(--n-green) 45%, var(--n-amber) 70%, var(--n-red) 100%);
-  margin: 6px 0 0;
-  opacity: 0.85;
-}
-.bar .mark {
-  position: absolute;
-  top: -5px;
-  width: 3px;
-  height: 16px;
-  border-radius: 2px;
-  background: #fff;
-  transform: translateX(-50%);
-  transition: left 0.2s;
-}
-.bar .lim {
-  position: absolute;
-  top: -3px;
-  width: 1px;
-  height: 12px;
-  background: #fff8;
-}
-.bar-l {
-  display: flex;
-  justify-content: space-between;
-  color: var(--n-text-4);
-  font-size: 12px;
-}
-.position + .position,
-.position {
-  margin-top: 0;
-  margin-bottom: 18px;
-}
-.pos-stats {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-.pos-stats .n-stat {
-  padding: 18px 20px;
-}
-.pos-stats .n-stat .v {
-  font-size: 22px;
-}
-.pos-stats .n-chip {
-  vertical-align: middle;
-  margin-left: 6px;
-}
-.close {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-top: 18px;
-}
-.close .why {
-  margin: 0;
-  text-align: left;
-}
-.fee-note {
-  margin: 0;
-  padding: 6px 0;
-  color: var(--n-text-3);
-  font-size: 12px;
-}
-.close .n-btn-grad:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  filter: none;
-  box-shadow: none;
-}
 .mode-banner {
   margin-top: 22px;
 }
-.position.picked {
-  border-color: var(--n-pink);
-}
-@media (prefers-reduced-motion: reduce) {
-  .bar .mark {
-    transition: none;
-  }
-}
 @media (max-width: 1080px) {
-  .pos-stats,
   .d-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .pos-stats .n-stat:last-child {
-    grid-column: 1 / -1;
   }
 }
 @media (max-width: 860px) {
@@ -1329,13 +975,6 @@ onMounted(() => {
   .oracle {
     margin-left: 0;
     width: 100%;
-  }
-  .loops {
-    padding: 0 8px 8px;
-  }
-  .lp-grid > :not(:first-child) {
-    justify-self: stretch;
-    text-align: left;
   }
 }
 @media (max-width: 480px) {
