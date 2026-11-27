@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { getBase58Decoder } from '@solana/kit'
-import { installMockWebLocks } from './test-utils/mock-web-locks.js'
+import { installMockWebLocks } from '../tests/utils/mock-web-locks.js'
 
 const walletAddress = '11111111111111111111111111111111'
 const account = { address: walletAddress, chains: ['solana:mainnet'] }

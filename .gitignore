@@ -12,3 +12,7 @@ data-export
 .env.local
 docs
 data
+
+# Local fork state and UI screenshots
+.surfpool
+screenshots-*
