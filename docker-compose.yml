@@ -54,7 +54,7 @@ services:
     logging: *logs
 
   tunnel:
-    image: cloudflare/cloudflared:2026.11.0@sha256:b94b96edf2c9c4360f8879c8580cfaa99077f19c849ec595ca2f711b27d4f344
+    image: cloudflare/cloudflared:2026.11.2@sha256:55c7e3e8d89d5e8d20b75a82f3602cbf98e06db406e73e282073cfdc5a9a3af6
     command: tunnel --no-autoupdate run # public hostname -> http://caddy:80 is set in the Cloudflare dashboard
     environment:
       TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN in .env}
@@ -92,7 +92,7 @@ services:
 
   plausible_db:
     # Plausible CE supports Postgres 16; a major upgrade needs a dump/restore (18 refuses 16's data files).
-    image: postgres:16.15-alpine@sha256:aa6cb33cf4c19c765cefcf48d96176258800870a9a1e930ad126200f9d825139
+    image: postgres:16.16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
     environment:
       POSTGRES_PASSWORD: postgres # reachable only from the analytics network
     volumes:
