@@ -36,7 +36,10 @@ backend ── Solana RPC: market cache every 60s (~10 calls) + 3 calls per acco
 
 | Module | Role |
 |---|---|
-| `server/main.js` | HTTP server: static `dist/`, API routes, SSE, per-IP rate limits, snapshot schedule (hourly, random minute) |
+| `server/main.js` | HTTP server: static `dist/`, sitemap, route dispatch, graceful shutdown, snapshot schedule (hourly, random minute) |
+| `server/http.js` | Shared request helpers: JSON responses, per-IP rate limits, body parsing, sanctions and geo checks |
+| `server/routes/` | API routes by area: `public.js` (market stream, analytics, points, health), `lending.js` (accounts, `/api/tx`), `swap.js`, `loop.js` (release gates, previews, build and relay) |
+| `server/execution-mode.js` | Production vs local Surfpool fork: which wallets and routes may execute |
 | `server/rpc.js` | The single RPC client (429 backoff, call counter for `/api/health`) |
 | `server/market.js` | Market cache: reserves, oracle prices, risk params, rate curves, reward farms (`/api/market`, `/api/events`) |
 | `server/refresh.js` | Market cache timer: every 60s, sooner after our transactions confirm (never postponed, at most every 10s) |
@@ -54,7 +57,7 @@ names sanctioned crypto addresses (SOL, USDC, ETH, …). The full XML export is 
 builds and relays, and the frontend disconnects it with a notice. Until a list is loaded, viewing works but no
 transaction is built (fail closed).
 
-Geoblocking (`server/main.js`): in markets flagged `geoBlocked` in `shared/config.js` (the USDY market), visitors from the
+Geoblocking (`server/http.js`): in markets flagged `geoBlocked` in `shared/config.js` (the USDY market), visitors from the
 US, Canada, sanctioned countries (Cuba, Iran, North Korea, Syria, Russia, Belarus) and Tor get 403 on supplying,
 borrowing and liquidating; repaying and withdrawing stay open. The country is Cloudflare's `CF-IPCountry` header (IP
 Geolocation, on by default); `/api/geo` tells the page, which then shows a notice and only the Repay tab.

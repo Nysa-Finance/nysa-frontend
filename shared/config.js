@@ -86,7 +86,7 @@ export const LIVE = [
     id: 'sol-usdy-usdc',
     name: 'USDY Ondo Market',
     farmPoints: true,
-    geoBlocked: true, // no supplying or borrowing from the US, Canada and sanctioned countries (server/main.js)
+    geoBlocked: true, // no supplying or borrowing from the US, Canada and sanctioned countries (server/http.js)
     kaminoMarket: 'F4uLsGZT4YnHDcemtoYDz2LBZKLmwTB1wzkwS6oqygvy',
     reserves: {
       'svm-usdy': 'rpTGWR3JDjjPfXLCg5Fx1GpSdUxPt1pxW7fwXGUT6js',
@@ -125,7 +125,7 @@ export const LOOPS = [
     debt: 'svm-usdc',
     maxLeverage: 9, // Kamino lends up to 90% LTV on USDY (10x); 9x leaves room for swap costs
     lookupTable: 'BUu4Txt3UbRAEF5rFu3x1VMTUHuJr4ChAoGpWMwcwVVx',
-    priceYield: true, // earns through its price rising, not Kamino's supply APR (server/main.js)
+    priceYield: true, // earns through its price rising, not Kamino's supply APR (server/routes/loop.js)
     fullName: 'Ondo US Dollar Yield',
     blurb: "USDY is Ondo's tokenized note backed by short-term US Treasuries: its price rises as it earns.",
   },
