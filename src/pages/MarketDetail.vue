@@ -88,15 +88,13 @@ function openDd() {
             <div class="n-stat">
               <div class="k">Collateral deposited</div>
               <div class="v">
-                <span v-if="state.loaded">{{ usd(sum(m.collateral, 'supplyUsd')) }}</span
-                ><span v-else class="n-skel" />
+                <span v-if="state.loaded">{{ usd(sum(m.collateral, 'supplyUsd')) }}</span><span v-else class="n-skel" />
               </div>
             </div>
             <div class="n-stat">
               <div class="k">Global borrowed</div>
               <div class="v">
-                <span v-if="state.loaded">{{ usd(sum(m.loans, 'borrowUsd')) }}</span
-                ><span v-else class="n-skel" />
+                <span v-if="state.loaded">{{ usd(sum(m.loans, 'borrowUsd')) }}</span><span v-else class="n-skel" />
               </div>
             </div>
           </div>

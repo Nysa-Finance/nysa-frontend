@@ -151,8 +151,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <div class="n-stat">
       <div class="k">Total value locked</div>
       <div class="v">
-        <span v-if="state.loaded">{{ usd(tvl) }}</span
-        ><span v-else class="n-skel" />
+        <span v-if="state.loaded">{{ usd(tvl) }}</span><span v-else class="n-skel" />
       </div>
       <div class="s">
         {{ reserves.length }} reserves{{ vaultCashUsd >= 0.005 ? ` + ${usd(vaultCashUsd)} in vaults` : '' }} · borrowed
@@ -162,16 +161,14 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <div class="n-stat">
       <div class="k">Total borrowed</div>
       <div class="v">
-        <span v-if="state.loaded">{{ usd(borrowed) }}</span
-        ><span v-else class="n-skel" />
+        <span v-if="state.loaded">{{ usd(borrowed) }}</span><span v-else class="n-skel" />
       </div>
       <div class="s">{{ usd(lendable - borrowed) }} available</div>
     </div>
     <div class="n-stat">
       <div class="k">Avg utilization</div>
       <div class="v">
-        <span v-if="state.loaded">{{ pct(avgUtil, 1) }}</span
-        ><span v-else class="n-skel" />
+        <span v-if="state.loaded">{{ pct(avgUtil, 1) }}</span><span v-else class="n-skel" />
       </div>
       <div class="s">
         across {{ borrowable.length }} borrowable {{ borrowable.length === 1 ? 'reserve' : 'reserves' }}
@@ -180,8 +177,7 @@ const farming = computed(() => board.value?.rows.filter((r) => r.supplied > 0).l
     <div class="n-stat">
       <div class="k">RWA share of TVL</div>
       <div class="v accent">
-        <span v-if="state.loaded">{{ pct(tvl > 0 ? (rwaUsd / tvl) * 100 : 0, 1) }}</span
-        ><span v-else class="n-skel" />
+        <span v-if="state.loaded">{{ pct(tvl > 0 ? (rwaUsd / tvl) * 100 : 0, 1) }}</span><span v-else class="n-skel" />
       </div>
       <div class="s">{{ usd(rwaUsd) }} in RWAs</div>
     </div>

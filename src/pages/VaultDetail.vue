@@ -94,8 +94,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
             <div class="n-stat">
               <div class="k">Total deposits</div>
               <div class="v">
-                <span v-if="live">{{ usd(live.totalUsd) }}</span
-                ><span v-else class="n-skel" />
+                <span v-if="live">{{ usd(live.totalUsd) }}</span><span v-else class="n-skel" />
               </div>
             </div>
             <div class="n-stat">
@@ -108,8 +107,7 @@ const back = () => (history.state?.back ? router.back() : router.push({ name: 'e
             <div class="n-stat">
               <div class="k">Utilization</div>
               <div class="v">
-                <span v-if="live">{{ pct(live.utilization) }}</span
-                ><span v-else class="n-skel" />
+                <span v-if="live">{{ pct(live.utilization) }}</span><span v-else class="n-skel" />
               </div>
               <div class="s">of the vault's deposits are lent out</div>
             </div>

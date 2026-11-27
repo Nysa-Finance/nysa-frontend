@@ -74,24 +74,23 @@ const when = (ts) =>
     <div class="n-stat">
       <div class="k">Liquidations</div>
       <div class="v">
-        <span v-if="history">{{ history.length }}</span
-        ><span v-else-if="history === null">—</span><span v-else class="n-skel" />
+        <span v-if="history">{{ history.length }}</span><span v-else-if="history === null">—</span
+        ><span v-else class="n-skel" />
       </div>
       <div class="s">since {{ multi ? 'launch' : 'the market launched' }}</div>
     </div>
     <div class="n-stat">
       <div class="k">Debt repaid by liquidators</div>
       <div class="v">
-        <span v-if="history">{{ usd(repaid) }}</span
-        ><span v-else-if="history === null">—</span><span v-else class="n-skel" />
+        <span v-if="history">{{ usd(repaid) }}</span><span v-else-if="history === null">—</span
+        ><span v-else class="n-skel" />
       </div>
       <div class="s">all time</div>
     </div>
     <div class="n-stat">
       <div class="k">Loans at risk</div>
       <div class="v" :class="{ warn: atRisk }">
-        <span v-if="loans">{{ atRisk }}</span
-        ><span v-else-if="loans === null">—</span><span v-else class="n-skel" />
+        <span v-if="loans">{{ atRisk }}</span><span v-else-if="loans === null">—</span><span v-else class="n-skel" />
       </div>
       <div class="s">health factor below {{ AT_RISK }}</div>
     </div>
@@ -100,8 +99,7 @@ const when = (ts) =>
       <div class="v">
         <span v-if="loans" :style="lowest != null && { color: hfColor(lowest) }">{{
           lowest == null ? '—' : hfText(lowest)
-        }}</span
-        ><span v-else-if="loans === null">—</span><span v-else class="n-skel" />
+        }}</span><span v-else-if="loans === null">—</span><span v-else class="n-skel" />
       </div>
       <div class="s">
         {{ loans ? `across ${loans.length} open ${loans.length === 1 ? 'loan' : 'loans'}` : 'open loans' }}

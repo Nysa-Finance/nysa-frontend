@@ -107,8 +107,9 @@ const active = (t) => route.path === t.to || route.path.startsWith(`${t.to}/`) /
           <div v-if="menu" class="n-menu-shade" @click="menu = false" />
           <div v-if="menu" class="n-menu" role="menu" @click="menu = false">
             <div class="n-menu-addr">
-              <span>{{ short(state.address, 6) }}</span
-              ><button class="copy" @click.stop="copyAddress">{{ copied ? 'Copied ✓' : 'Copy' }}</button>
+              <span>{{ short(state.address, 6) }}</span><button class="copy" @click.stop="copyAddress">
+                {{ copied ? 'Copied ✓' : 'Copy' }}
+              </button>
             </div>
             <RouterLink to="/portfolio">Portfolio</RouterLink>
             <a :href="explorer(state.address)" target="_blank" rel="noopener noreferrer">View on Solscan ↗&#xFE0E;</a>
