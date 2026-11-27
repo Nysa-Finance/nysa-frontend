@@ -1,7 +1,7 @@
 // Phones have no wallet extensions. Android: Solana's Mobile Wallet Adapter. iOS: Phantom's and Solflare's deeplink
 // protocol, whose answers are encrypted (x25519 + XSalsa20-Poly1305, as in their reference app).
 import nacl from 'tweetnacl'
-import { getBase58Decoder, getBase58Encoder } from '@solana/kit'
+import { getBase58Decoder, getBase58Encoder, getTransactionDecoder, getTransactionEncoder } from '@solana/kit'
 
 const b58 = (bytes) => getBase58Decoder().decode(bytes)
 const fromB58 = (s) => new Uint8Array(getBase58Encoder().encode(s))
@@ -116,25 +116,9 @@ export function readDeeplinkReturn() {
 }
 
 // solana_signTransaction may return only the signature: it goes into the unsigned transaction at the signer's slot.
-// Wire format: compact-u16 signature count, the 64-byte signatures, then the message (v0: a 0x80 version byte, the
-// 3-byte header, compact-u16 key count, the 32-byte keys; signers first).
 export function withSignature(tx, address, signature) {
-  const out = new Uint8Array(tx)
-  const [nSigs, sigsAt] = compactU16(out, 0)
-  let m = sigsAt + 64 * nSigs
-  if (out[m] & 0x80) m++ // versioned message
-  const required = out[m]
-  const [nKeys, keysAt] = compactU16(out, m + 3)
-  const key = fromB58(address)
-  for (let i = 0; i < Math.min(required, nKeys); i++) {
-    if (key.every((b, j) => out[keysAt + 32 * i + j] === b)) {
-      out.set(signature, sigsAt + 64 * i)
-      return out
-    }
-  }
-  throw new Error('This transaction does not need a signature from the connected wallet')
-}
-function compactU16(bytes, at) {
-  let value = 0, i = 0
-  for (;;) { const b = bytes[at + i]; value |= (b & 0x7f) << (7 * i); i++; if (!(b & 0x80)) return [value, at + i] }
+  const decoded = getTransactionDecoder().decode(tx)
+  if (!(address in decoded.signatures)) throw new Error('This transaction does not need a signature from the connected wallet')
+  const signatures = { ...decoded.signatures, [address]: signature }
+  return new Uint8Array(getTransactionEncoder().encode({ ...decoded, signatures }))
 }

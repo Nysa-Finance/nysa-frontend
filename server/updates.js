@@ -7,6 +7,8 @@ import { getVault } from './market.js'
 import { compact, usd, dur, short } from '../src/logic.js'
 import { read, write, INDEX } from './storage.js'
 import { recordIndexedObligation } from './positions.js'
+import { TokenInstruction } from '@solana-program/token'
+import { TOKEN_PROGRAMS } from './account.js'
 
 const require = createRequire(import.meta.url)
 const KLEND = 'KLend2g3cP87fffoy8q1mQqGKjrxjC8boSyAYavgmjD'
@@ -130,16 +132,16 @@ export function describe(name, args, token) {
 function safe(fn) { try { return fn() } catch { return null } }
 
 const RESERVES = new Map(LIVE.flatMap((m) => Object.entries(m.reserves).map(([id, reserve]) => [reserve, TOKENS[id]])))
-const TOKEN_PROGRAMS = ['TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA', 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PhnBqCXEpPxuEb']
 
 function transfers(ixs, keys, b58) {
   const out = []
   for (const ix of ixs) {
-    if (!TOKEN_PROGRAMS.includes(keys[ix.programIdIndex])) continue
-    const d = Buffer.from(b58.encode(ix.data))
-    const a = ix.accounts.map((i) => keys[i])
-    if (d[0] === 3 && d.length >= 9) out.push({ source: a[0], dest: a[1], amount: d.readBigUInt64LE(1) })
-    if (d[0] === 12 && d.length >= 10) out.push({ source: a[0], dest: a[2], amount: d.readBigUInt64LE(1) })
+    if (!TOKEN_PROGRAMS.has(keys[ix.programIdIndex])) continue
+    const data = Buffer.from(b58.encode(ix.data))
+    const accounts = ix.accounts.map((i) => keys[i])
+    // Transfer: source, destination, …  TransferChecked: source, mint, destination, …  Both carry the amount at byte 1.
+    if (data[0] === TokenInstruction.Transfer && data.length >= 9) out.push({ source: accounts[0], dest: accounts[1], amount: data.readBigUInt64LE(1) })
+    if (data[0] === TokenInstruction.TransferChecked && data.length >= 10) out.push({ source: accounts[0], dest: accounts[2], amount: data.readBigUInt64LE(1) })
   }
   return out
 }

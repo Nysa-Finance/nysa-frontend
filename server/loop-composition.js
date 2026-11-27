@@ -1,7 +1,7 @@
 import { PROGRAM_ID } from '@kamino-finance/klend-sdk'
+import { COMPUTE_BUDGET_PROGRAM_ADDRESS } from '@solana-program/compute-budget'
 
 const ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'
-const COMPUTE_BUDGET_PROGRAM = 'ComputeBudget111111111111111111111111111111'
 const FLASH_BORROW_DISCRIMINATOR = Uint8Array.from([135, 231, 52, 167, 7, 52, 212, 193])
 const FLASH_REPAY_DISCRIMINATOR = Uint8Array.from([185, 117, 0, 203, 96, 245, 180, 186])
 
@@ -48,7 +48,7 @@ export function composeAtomicOpenInstructions(acquisitionInstructions, sdkOpenIn
   const computeBudget = []
   const seenComputeBudget = new Set()
   for (const instruction of allInstructions) {
-    if (String(instruction?.programAddress) !== COMPUTE_BUDGET_PROGRAM) continue
+    if (String(instruction?.programAddress) !== COMPUTE_BUDGET_PROGRAM_ADDRESS) continue
     const identity = JSON.stringify({ accounts: instruction.accounts ?? [], data: Buffer.from(instruction.data ?? []).toString('hex') })
     if (seenComputeBudget.has(identity)) continue
     seenComputeBudget.add(identity)
@@ -65,7 +65,7 @@ export function composeAtomicOpenInstructions(acquisitionInstructions, sdkOpenIn
     setup.push(instruction)
   }
   const economic = allInstructions.filter((instruction) =>
-    String(instruction?.programAddress) !== COMPUTE_BUDGET_PROGRAM && !isAssociatedTokenCreate(instruction))
+    String(instruction?.programAddress) !== COMPUTE_BUDGET_PROGRAM_ADDRESS && !isAssociatedTokenCreate(instruction))
   const composed = [...computeBudget, ...setup, ...economic]
   if (sdkFlash.borrowIndexes.length && (flashInstructionIndexes(composed).borrowIndexes.length !== 1 || flashInstructionIndexes(composed).repayIndexes.length !== 1)) {
     throw new Error('Composed Multiply open lost its flash borrow or repay instruction.')
