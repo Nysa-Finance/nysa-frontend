@@ -39,13 +39,13 @@ const kit = await import('@solana/kit')
 const { address, generateKeyPair, getAddressFromPublicKey, getTransactionDecoder, signTransaction, getBase64EncodedWireTransaction, getBase58Encoder, createNoopSigner } = kit
 const { default: Decimal } = await import('decimal.js')
 const { buildComputeBudgetIx } = await import('@kamino-finance/klend-sdk')
-const { rpc } = await import('../server/rpc.js')
-const { refreshMarket, getVault, getSnapshot } = await import('../server/market.js')
-const { buildTx, txStatus } = await import('../server/tx.js')
-const { vaultClient } = await import('../server/vault.js')
-const { getAccount } = await import('../server/account.js')
-const { TOKENS, VAULTS } = await import('../src/config.js')
-const { underLimit } = await import('../src/logic.js')
+const { rpc } = await import('../../server/rpc.js')
+const { refreshMarket, getVault, getSnapshot } = await import('../../server/market.js')
+const { buildTx, txStatus } = await import('../../server/tx.js')
+const { vaultClient } = await import('../../server/vault.js')
+const { getAccount } = await import('../../server/account.js')
+const { TOKENS, VAULTS } = await import('../../src/config.js')
+const { underLimit } = await import('../../src/logic.js')
 const USDY = TOKENS['svm-usdy'], USDC = TOKENS['svm-usdc'], MARKET = 'sol-usdy-usdc', VAULT = VAULTS[0].id
 
 // Oracle prices stop updating in a fork: give each reserve a long max price age, or Kamino refuses the stale prices.

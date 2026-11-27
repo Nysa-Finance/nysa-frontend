@@ -1,11 +1,15 @@
-// Runs with NYSA_FEE_BPS=0: swaps and loops with no Nysa fee (the other suites run with 10 bps).
+// Swaps and loops with no Nysa fee (the other suites run with 10 bps). The fee is read when swap.js loads, so it is
+// set before the dynamic imports below.
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { address, AccountRole } from '@solana/kit'
-import { ataOf } from './account.js'
-import { buildSwap, configuredFeeAccountForMint, FEE_BPS, feeBpsFromEnv, swapFeeAccountsConfigured } from './swap.js'
-import { assertSwapSimulationEffects, validateProviderSwapInstructions } from './swap-execution.js'
-import { verifyAtomicLoopFeeDeltas } from './loop.js'
+
+process.env.NYSA_FEE_BPS = '0'
+const { ataOf } = await import('./account.js')
+const { buildSwap, configuredFeeAccountForMint, FEE_BPS, feeBpsFromEnv, swapFeeAccountsConfigured } =
+  await import('./swap.js')
+const { assertSwapSimulationEffects, validateProviderSwapInstructions } = await import('./swap-execution.js')
+const { verifyAtomicLoopFeeDeltas } = await import('./loop.js')
 
 assert.equal(FEE_BPS, 0, 'run with NYSA_FEE_BPS=0')
 assert.equal(feeBpsFromEnv(''), 0)

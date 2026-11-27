@@ -13,7 +13,7 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from '@solana/kit'
-import { installMockWebLocks } from './test-utils/mock-web-locks.js'
+import { installMockWebLocks } from '../tests/utils/mock-web-locks.js'
 
 const signer = await generateKeyPairSigner()
 const walletAddress = String(signer.address)

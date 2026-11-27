@@ -10,7 +10,7 @@ npm test        # formatter, lending/rewards math and instruction-decoding check
 npm run test:e2e  # transactions landed on a local mainnet fork (needs surfpool), ~1-2 min
 ```
 
-`npm run test:e2e` (`e2e/fork.test.js`) starts a Surfpool fork of mainnet, funds throwaway wallets and lands every
+`npm run test:e2e` (`tests/e2e/fork.test.js`) starts a Surfpool fork of mainnet, funds throwaway wallets and lands every
 transaction the backend builds against the real Kamino market and vault: supply, borrow, repay all, withdraw all;
 vault deposit and withdraw all; withdraw of shares staked in the vault farm; the no-SOL message. It checks balances
 and that each transaction keeps our compute limit and priority fee. Run it before merging changes to `server/tx.js`,
