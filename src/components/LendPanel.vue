@@ -74,14 +74,20 @@ watch(options, (o) => {
 })
 
 async function submit() {
-  const t = token.value,
-    a = num(amount.value)
+  const selected = token.value
+  const amountValue = num(amount.value)
   const [label, kind] = tab.value === 'lend' ? ['Deposit', 'deposit'] : ['Withdraw', 'withdraw']
   if (
     await run([
       {
-        label: `${label} ${t.name}`,
-        run: () => sendKaminoAction(kind, { market: props.market, token: t, amount: a, all: withdrawAll.value }),
+        label: `${label} ${selected.name}`,
+        run: () =>
+          sendKaminoAction(kind, {
+            market: props.market,
+            token: selected,
+            amount: amountValue,
+            all: withdrawAll.value,
+          }),
       },
     ])
   )

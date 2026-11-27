@@ -71,8 +71,8 @@ export async function readVault(v, markets, now) {
       MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket)) ??
       OTHER_MARKETS.find((x) => x.kaminoMarket === String(r.state.lendingMarket))
     const invested = n(holdings.investedInReserves.get(a))
-    const supply = BigInt(String(r.state.collateral.mintTotalSupply)),
-      mine = ctokens.get(String(a)) ?? 0n
+    const supply = BigInt(String(r.state.collateral.mintTotalSupply))
+    const mine = ctokens.get(String(a)) ?? 0n
     const part = (raw) => (supply > 0n ? Number((raw * mine) / supply) / 10 ** dec : 0)
     return {
       reserve: String(a),
@@ -160,8 +160,8 @@ export async function readVault(v, markets, now) {
 
 // A vault that fails to read is left out (logged) so the markets still load.
 export async function readVaults(markets, now) {
-  const live = new Map(),
-    views = {}
+  const live = new Map()
+  const views = {}
   for (const v of VAULTS) {
     try {
       const r = await readVault(v, markets, now)

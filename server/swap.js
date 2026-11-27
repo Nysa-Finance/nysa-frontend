@@ -488,13 +488,7 @@ export async function buildSwap({
     feeVerified,
     feeAccountMintVerified,
     feeBalanceDeltaVerified,
-    feeVerificationReason: !feeAccountMintVerified
-      ? 'Configured fee-account mint has not been verified from the token account.'
-      : !feeBalanceDeltaVerified
-        ? 'Atomic fee-account balance delta has not been verified by transaction simulation.'
-        : fee.providerReported
-          ? null
-          : 'Jupiter V2 Build omits normalized fee metadata; the amount is derived from its route input/output delta and checked against the simulated fee-account balance.',
+    feeVerificationReason: feeVerificationReason(feeAccountMintVerified, feeBalanceDeltaVerified, fee.providerReported),
     routePlan,
     routeProgramIds: route.ids,
     routeLabels: route.labels,
@@ -513,4 +507,11 @@ export async function buildSwap({
     addressesByLookupTableAddress,
     blockhashWithMetadata,
   }
+}
+
+function feeVerificationReason(mintVerified, balanceDeltaVerified, providerReported) {
+  if (!mintVerified) return 'Configured fee-account mint has not been verified from the token account.'
+  if (!balanceDeltaVerified) return 'Atomic fee-account balance delta has not been verified by transaction simulation.'
+  if (providerReported) return null
+  return 'Jupiter V2 Build omits normalized fee metadata; the amount is derived from its route input/output delta and checked against the simulated fee-account balance.'
 }

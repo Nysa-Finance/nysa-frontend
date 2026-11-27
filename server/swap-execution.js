@@ -751,8 +751,8 @@ function validateCompiledSwapMessage(
       throw new SwapExecutionError('Compiled swap transaction contains an unapproved instruction program.')
     }
   }
-  const loadedWritable = [],
-    loadedReadonly = []
+  const loadedWritable = []
+  const loadedReadonly = []
   for (const lookup of message.addressTableLookups ?? []) {
     const table = String(lookup.lookupTableAddress)
     const addresses = resolvedLookupTables[table]
@@ -910,8 +910,8 @@ export function swapCostDisclosure({ totalNetworkFeeLamports, priorityFeeLamport
 }
 
 function priorityFeeLamports(instructions) {
-  let price = null,
-    limit = null
+  let price = null
+  let limit = null
   for (const instruction of instructions) {
     if (String(instruction.programAddress) !== COMPUTE_BUDGET_PROGRAM_ADDRESS) continue
     const data = instruction.data

@@ -123,8 +123,8 @@ const MAX_CU = 1_400_000 // Solana's per-transaction maximum: the first simulati
 const cuWithMargin = (used) => Math.min(MAX_CU, Math.ceil(used * 1.3) + 20_000)
 
 // 75th percentile of recent fees on our reserves, clamped (300k CU at 10,000 = 0.000003 SOL).
-const PRIORITY_MIN = 10_000,
-  PRIORITY_MAX = 1_000_000
+const PRIORITY_MIN = 10_000
+const PRIORITY_MAX = 1_000_000
 let fee = { at: 0, value: PRIORITY_MIN }
 async function priorityFee() {
   if (Date.now() - fee.at < 30_000) return fee.value
@@ -393,19 +393,20 @@ export async function liquidationInfo(m, borrower) {
 function liquidationLimits(market, ob, repay, debt, coll) {
   const pos = ob?.getBorrowByReserve(repay.address)
   if (!pos || pos.amount.lte(0)) throw new UserError('This wallet has no open loan in this market')
-  const s = ob.refreshedStats,
-    ms = market.state
-  const ltv = s.loanToValue.toNumber(),
-    liqLtv = s.liquidationLtv.toNumber()
-  const debtUsd = pos.marketValueRefreshed.toNumber(),
-    borrowed = pos.amount.toNumber() / 10 ** debt.decimals
-  const closeFactor = ltv * 100 > ms.insolvencyRiskUnhealthyLtvPct ? 1 : ms.liquidationMaxDebtCloseFactorPct / 100
+  const stats = ob.refreshedStats
+  const marketState = market.state
+  const ltv = stats.loanToValue.toNumber()
+  const liqLtv = stats.liquidationLtv.toNumber()
+  const debtUsd = pos.marketValueRefreshed.toNumber()
+  const borrowed = pos.amount.toNumber() / 10 ** debt.decimals
+  const closeFactor =
+    ltv * 100 > marketState.insolvencyRiskUnhealthyLtvPct ? 1 : marketState.liquidationMaxDebtCloseFactorPct / 100
   const maxUsd = Math.min(
-    s.userTotalBorrow.toNumber() * closeFactor,
+    stats.userTotalBorrow.toNumber() * closeFactor,
     debtUsd,
-    Number(ms.maxLiquidatableDebtMarketValueAtOnce),
+    Number(marketState.maxLiquidatableDebtMarketValueAtOnce),
   )
-  const fullOnly = debtUsd < Number(ms.minFullLiquidationValueThreshold)
+  const fullOnly = debtUsd < Number(marketState.minFullLiquidationValueThreshold)
   return {
     liquidatable: ltv >= liqLtv && liqLtv > 0,
     hf: ltv > 0 ? liqLtv / ltv : null,
@@ -424,8 +425,8 @@ async function liquidate(liquidator, m, borrower, amount, preview) {
   const { market, now } = getLive(m)
   const ob = await obligationByWallet(market, address(borrower), obligationType(), now)
   const { debt, coll } = pairOf(m, ob)
-  const repay = reserveOf(market, debt),
-    withdraw = reserveOf(market, coll)
+  const repay = reserveOf(market, debt)
+  const withdraw = reserveOf(market, coll)
   if (!ob?.getBorrowByReserve(repay.address)?.amount.gt(0))
     throw new UserError('This wallet has no open loan in this market')
   const base = new Decimal(amount).mul(new Decimal(10).pow(debt.decimals)).floor().toFixed()
@@ -452,8 +453,8 @@ async function liquidate(liquidator, m, borrower, amount, preview) {
   const accounts = await fetchEncodedAccounts(rpc, atas, { commitment: 'confirmed' }) // same commitment as the simulation
   const before = accounts.map((a) => (a.exists ? Buffer.from(a.data).readBigUInt64LE(64) : 0n))
   const after = await simulatedBalances(await make(0), atas)
-  const paid = before[0] - after[0],
-    received = after[1] - before[1]
+  const paid = before[0] - after[0]
+  const received = after[1] - before[1]
   if (received <= 0n) throw new UserError('This liquidation would not pay out any collateral')
   const quote = {
     repaid: Number(paid) / 10 ** debt.decimals,

@@ -193,8 +193,8 @@ export const vaultApyNote = (v) =>
 
 // Governance changes risk parameters (Market Updates), so the live on-chain values win over config.js.
 export function riskOf(m, pair) {
-  const c = reserveOf(m, pair.collateral),
-    l = reserveOf(m, pair.liability)
+  const c = reserveOf(m, pair.collateral)
+  const l = reserveOf(m, pair.liability)
   return {
     ...pair,
     ...(c && { maxLtv: c.maxLtv, liqLtv: c.liqLtv, supplyCap: c.supplyCap }),

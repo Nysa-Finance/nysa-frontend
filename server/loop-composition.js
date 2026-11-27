@@ -15,8 +15,8 @@ function hasDiscriminator(instruction, discriminator) {
 }
 
 function flashInstructionIndexes(instructions) {
-  const borrowIndexes = [],
-    repayIndexes = []
+  const borrowIndexes = []
+  const repayIndexes = []
   instructions.forEach((instruction, index) => {
     if (hasDiscriminator(instruction, FLASH_BORROW_DISCRIMINATOR)) borrowIndexes.push(index)
     if (hasDiscriminator(instruction, FLASH_REPAY_DISCRIMINATOR)) repayIndexes.push(index)
@@ -103,8 +103,8 @@ export function composeAtomicOpenInstructions(
 export function pointFlashRepayAtBorrow(instructions) {
   const { borrowIndexes, repayIndexes } = flashInstructionIndexes(instructions)
   if (borrowIndexes.length !== 1 || repayIndexes.length !== 1) return instructions
-  const [borrowInstructionIndex] = borrowIndexes,
-    [repayInstructionIndex] = repayIndexes
+  const [borrowInstructionIndex] = borrowIndexes
+  const [repayInstructionIndex] = repayIndexes
   if (borrowInstructionIndex >= repayInstructionIndex || borrowInstructionIndex > 255) {
     throw new Error('Composed Multiply open has an invalid flash-loan instruction order.')
   }

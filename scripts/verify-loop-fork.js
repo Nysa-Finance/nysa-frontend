@@ -954,17 +954,17 @@ async function executeLocalMultiplyScenario({
   log,
 }) {
   let currentLedgerInstant = await getCurrentLedgerInstant(rpcClient)
-  let selectedPosition = null,
-    activeApplication = null,
-    activeRoutes = [],
-    activeCompiled = null
-  let rawSimulation = null,
-    completedSimulation = null,
-    trackedSimulationAccounts = [],
-    beforeSimulationTokenAccounts = []
+  let selectedPosition = null
+  let activeApplication = null
+  let activeRoutes = []
+  let activeCompiled = null
+  let rawSimulation = null
+  let completedSimulation = null
+  let trackedSimulationAccounts = []
+  let beforeSimulationTokenAccounts = []
   const marketConfig = marketById('sol-usdy-usdc')
-  const collateralToken = TOKENS['svm-usdy'],
-    liabilityToken = TOKENS['svm-usdc']
+  const collateralToken = TOKENS['svm-usdy']
+  const liabilityToken = TOKENS['svm-usdc']
   const multiplyType = new MultiplyObligation(
     collReserve.getLiquidityMint(),
     debtReserve.getLiquidityMint(),
@@ -1039,8 +1039,8 @@ async function executeLocalMultiplyScenario({
     logger: () => {},
   }
   const sdkQuote = await quoteMultiplyOpenAtFinalAmount(openInputs, callbacks)
-  const leverageQuote = sdkQuote.leverageQuote,
-    sdkPreview = sdkQuote.sdkPreview
+  const leverageQuote = sdkQuote.leverageQuote
+  const sdkPreview = sdkQuote.sdkPreview
   const previewNow = Date.now()
   const oracleReserves = [collReserve, debtReserve].map((reserve) => ({
     oracleTs: Number(reserve.tokenOraclePrice?.timestamp ?? 0),

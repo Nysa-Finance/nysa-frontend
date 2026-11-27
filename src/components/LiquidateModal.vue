@@ -11,17 +11,17 @@ const props = defineProps({ market: Object, borrower: String, collateral: String
 const emit = defineEmits(['close', 'done'])
 const { tx, run, reset } = useTx()
 
-const debt = tok(props.debt),
-  coll = tok(props.collateral)
-const info = ref(null),
-  infoError = ref(null)
+const debt = tok(props.debt)
+const coll = tok(props.collateral)
+const info = ref(null)
+const infoError = ref(null)
 const amount = ref('')
 watch(amount, (v) => {
   amount.value = cleanAmount(v, debt.decimals)
 })
-const quote = ref(null),
-  quoting = ref(false),
-  quoteError = ref(null)
+const quote = ref(null)
+const quoting = ref(false)
+const quoteError = ref(null)
 const on = computed(() => !!state.address)
 const balance = computed(() => state.balances[debt.token_id] ?? 0)
 const max = computed(() =>
@@ -56,8 +56,8 @@ const warning = computed(() => {
 })
 
 // an older answer arriving late is ignored
-let timer,
-  seq = 0
+let timer
+let seq = 0
 watch([amount, info, on], () => {
   clearTimeout(timer)
   quote.value = null

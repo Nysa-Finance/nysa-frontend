@@ -95,11 +95,11 @@ export function createWalletConnectWallet(send) {
           if (silent) return { accounts: [] }
           const m = await within(modal(), START_TIMEOUT_MS)
           // Waiting for the wallet's approval has no limit; getting a pairing link to show does. Closing the modal cancels.
-          let shown = false,
-            done = false,
-            timer,
-            ready,
-            cancel
+          let shown = false
+          let done = false
+          let timer
+          let ready
+          let cancel
           const uriShown = new Promise((resolve, reject) => {
             ready = resolve
             timer = setTimeout(() => reject(new Error(UNAVAILABLE)), START_TIMEOUT_MS)

@@ -154,18 +154,14 @@ function validStaticRoles(message) {
     return null
   const writableSignerEnd = numSignerAccounts - numReadonlySignerAccounts
   const writableNonSignerEnd = staticAccounts.length - numReadonlyNonSignerAccounts
-  return new Map(
-    staticAccounts.map((account, index) => [
-      String(account),
-      index < writableSignerEnd
-        ? 'writable-signer'
-        : index < numSignerAccounts
-          ? 'readonly-signer'
-          : index < writableNonSignerEnd
-            ? 'writable'
-            : 'readonly',
-    ]),
-  )
+  // A message lists its accounts in this order: writable signers, readonly signers, writable, readonly.
+  const role = (index) => {
+    if (index < writableSignerEnd) return 'writable-signer'
+    if (index < numSignerAccounts) return 'readonly-signer'
+    if (index < writableNonSignerEnd) return 'writable'
+    return 'readonly'
+  }
+  return new Map(staticAccounts.map((account, index) => [String(account), role(index)]))
 }
 
 function loadedAccountKeys(message) {

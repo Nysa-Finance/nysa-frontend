@@ -181,13 +181,13 @@ export function pendingRewards(farmStates, userStates) {
 async function readAccount(wallet) {
   const owner = address(wallet)
   // a token lent in two markets is two positions
-  const balances = {},
-    balancesBaseUnits = {},
-    positions = {},
-    positionsBaseUnits = {},
-    claimable = {},
-    loopPositions = [],
-    loopPositionReadStatus = {}
+  const balances = {}
+  const balancesBaseUnits = {}
+  const positions = {}
+  const positionsBaseUnits = {}
+  const claimable = {}
+  const loopPositions = []
+  const loopPositionReadStatus = {}
   let sol = 0
   for (const m of MARKETS) {
     positions[m.id] = {}
@@ -266,8 +266,8 @@ export async function vaultShares(live, owners, config) {
         owners.map((o) => getUserStatePDA(farms.getProgramID(), address(live.farm.address), address(o))),
       )
     : []
-  const keys = [...atas, ...pdas],
-    accounts = []
+  const keys = [...atas, ...pdas]
+  const accounts = []
   for (let i = 0; i < keys.length; i += 100)
     accounts.push(...(await fetchEncodedAccounts(rpc, keys.slice(i, i + 100), config))) // RPC limit
   return new Map(

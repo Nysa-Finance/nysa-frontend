@@ -3,13 +3,13 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { borrowRateAt, supplyRateAt, pct, niceTicks } from '../logic.js'
 
 const props = defineProps({ irm: Object, utilization: Number })
-const BORROW = '#EC008C',
-  SUPPLY = '#3ddc84'
-const H = 240,
-  L = 44,
-  R = 12,
-  T = 10,
-  B = 40
+const BORROW = '#EC008C'
+const SUPPLY = '#3ddc84'
+const H = 240
+const L = 44
+const R = 12
+const T = 10
+const B = 40
 
 const box = ref(null)
 const W = ref(600)

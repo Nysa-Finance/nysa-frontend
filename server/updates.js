@@ -179,8 +179,8 @@ function transfers(ixs, keys, b58) {
 // accounts: liquidator, obligation, lendingMarket, authority, repayReserve, repayMint, repaySupply, withdrawReserve,
 // withdrawMint, collateralMint, collateralSupply, withdrawLiquiditySupply, …
 export function liquidation(accounts, moves, owners = {}) {
-  const repay = RESERVES.get(accounts[4]),
-    withdraw = RESERVES.get(accounts[7])
+  const repay = RESERVES.get(accounts[4])
+  const withdraw = RESERVES.get(accounts[7])
   const sum = (pick) => moves.filter(pick).reduce((s, m) => s + m.amount, 0n)
   const units = (n, t) => (t ? Number(n) / 10 ** t.decimals : null)
   return {
@@ -428,8 +428,8 @@ export async function refreshIndex(
   return state
 }
 
-let cached = null,
-  cachedAt = 0
+let cached = null
+let cachedAt = 0
 export function freshIndex() {
   if (!cached || Date.now() - cachedAt > 60_000) {
     cachedAt = Date.now()
